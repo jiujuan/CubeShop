@@ -52,6 +52,19 @@
             "@php artisan config:clear --ansi @no_additional_args",
             "@php artisan test"
         ],
+        "test:pgsql": [
+            "@php artisan config:clear",
+            "@php vendor/bin/pest --configuration=phpunit.pgsql.xml"
+        ],
+        "test:sqlite": [
+            "@php artisan config:clear",
+            "@php vendor/bin/pest"
+        ],
+        "test:pgsql-fresh": [
+            "@php -r \"file_exists('.env') || copy('.env.example', '.env');\"",
+            "@php artisan config:clear",
+            "@php vendor/bin/pest --configuration=phpunit.pgsql.xml"
+        ],
         "post-autoload-dump": [
             "Illuminate\\Foundation\\ComposerScripts::postAutoloadDump",
             "@php artisan package:discover --ansi"

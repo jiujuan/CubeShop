@@ -97,7 +97,7 @@ test('重复发货被状态机拒绝', function () {
 // ADMIN-003/004 商品管理
 test('TC-ADMIN-003 创建商品含 SKU 与库存', function () {
     $resp = $this->postJson('/api/admin/products', [
-        'category_id' => 1,
+        'category_id' => createTestCategory(),
         'title' => '测试新商品'.uniqid(),
         'status' => 1,
         'skus' => [['sku_code' => 'NT-'.uniqid(), 'specs' => ['规格' => '默认'], 'price' => '9.90', 'stock' => 7]],
@@ -108,7 +108,7 @@ test('TC-ADMIN-003 创建商品含 SKU 与库存', function () {
 
 test('TC-ADMIN-004 部分更新商品（仅状态）不报错且不影响 SKU', function () {
     $pid = $this->postJson('/api/admin/products', [
-        'category_id' => 1,
+        'category_id' => createTestCategory(),
         'title' => '部分更新测试'.uniqid(),
         'status' => 1,
         'skus' => [['sku_code' => 'PU-'.uniqid(), 'specs' => [], 'price' => '1.00', 'stock' => 3]],
@@ -126,12 +126,12 @@ test('TC-ADMIN-004 部分更新商品（仅状态）不报错且不影响 SKU', 
 test('SKU 编码重复返回业务错误而非系统错误', function () {
     $code = 'DUP-'.uniqid();
     $this->postJson('/api/admin/products', [
-        'category_id' => 1, 'title' => 'A'.uniqid(), 'status' => 1,
+        'category_id' => createTestCategory(), 'title' => 'A'.uniqid(), 'status' => 1,
         'skus' => [['sku_code' => $code, 'specs' => [], 'price' => '1.00', 'stock' => 1]],
     ], $this->adminAuth);
 
     $resp = $this->postJson('/api/admin/products', [
-        'category_id' => 1, 'title' => 'B'.uniqid(), 'status' => 1,
+        'category_id' => createTestCategory(), 'title' => 'B'.uniqid(), 'status' => 1,
         'skus' => [['sku_code' => $code, 'specs' => [], 'price' => '2.00', 'stock' => 2]],
     ], $this->adminAuth);
 
