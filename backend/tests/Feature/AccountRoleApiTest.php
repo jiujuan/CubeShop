@@ -248,9 +248,10 @@ test('TC-ROL-001 角色列表含内置标记与权限分组', function () {
     expect($modules)->toContain('product')->toContain('order')->toContain('report');
 });
 
-test('TC-ROL-002 新建角色并分配权限', function () {
+test('TC-ROL-002 新建角色并分配权限（含中文名）', function () {
     $resp = $this->postJson('/api/admin/roles', [
         'name' => 'cs_agent',
+        'display_name' => '客服专员',
         'permissions' => ['order.view', 'review.manage'],
     ], $this->adminAuth);
 
@@ -258,7 +259,33 @@ test('TC-ROL-002 新建角色并分配权限', function () {
 
     $role = \Spatie\Permission\Models\Role::where('name', 'cs_agent')->first();
     expect($role)->not->toBeNull()
+        ->and($role->display_name)->toBe('客服专员')
         ->and($role->permissions->pluck('name')->all())->toEqualCanonicalizing(['order.view', 'review.manage']);
+
+    // 列表 label 取中文名
+    $data = $this->getJson('/api/admin/roles', $this->adminAuth)->json('data');
+    $byName = collect($data['roles'])->keyBy('name');
+    expect($byName['cs_agent']['display_name'])->toBe('客服专员')
+        ->and($byName['cs_agent']['label'])->toBe('客服专员');
+});
+
+test('TC-ROL-002B 新建角色缺少中文名返回 422', function () {
+    $this->postJson('/api/admin/roles', [
+        'name' => 'no_display',
+        'permissions' => [],
+    ], $this->adminAuth)->assertStatus(422);
+});
+
+test('TC-ROL-002C 编辑内置角色中文名允许，英文标识仍拒绝', function () {
+    $role = \Spatie\Permission\Models\Role::where('name', 'operator')->first();
+
+    $this->putJson("/api/admin/roles/{$role->id}", ['display_name' => '运营人员'], $this->adminAuth)
+        ->assertStatus(200);
+    expect($role->fresh()->display_name)->toBe('运营人员');
+
+    // 英文标识仍不可改
+    expect($this->putJson("/api/admin/roles/{$role->id}", ['name' => 'op2'], $this->adminAuth)->json('code'))
+        ->toBe(40003);
 });
 
 test('TC-ROL-003 编辑角色权限', function () {

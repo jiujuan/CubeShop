@@ -934,6 +934,22 @@
 - **订单收货信息以下单时刻 `orders.address_snapshot` 快照为准，代改不影响历史订单。**
 - 前台新增地址上限每用户 20 条（超出 40000）。
 
+### 8.10 角色权限
+`GET    /admin/roles`（角色列表 + 权限分组一次返回）  
+`GET    /admin/permissions`（仅权限分组）  
+`POST   /admin/roles`  
+`PUT    /admin/roles/{id}`  
+`DELETE /admin/roles/{id}`
+
+**权限**：`role.manage`（超管专属）
+
+**角色中文名**：`name` 为英文标识（程序用、唯一），`display_name` 为中文名（展示用）。列表返回 `label`，取值顺序 `display_name` → 内置中文映射（super_admin=超级管理员 / operator=运营 / customer=买家）→ `name`。
+
+- 新增：`name` 必填（2~32 位 alpha_dash、唯一）、`display_name` **必填**（≤64 字符）、`permissions` 可选——一次提交即完成「建角色 + 配权限」。
+- 编辑：`name` / `display_name` / `permissions` 均 sometimes。内置角色的英文标识不可改（40003），但**中文名允许修改**（不影响权限判断）。
+- 删除：内置角色不可删（40003）；角色下仍有账号时拒绝（40009）。
+- 角色与权限变更均写操作日志（module=role，含 before/after），并刷新 spatie 权限缓存。
+
 ---
 
 ## 9. 权限码参考（与 spatie 对齐）
