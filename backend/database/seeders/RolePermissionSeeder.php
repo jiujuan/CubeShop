@@ -45,6 +45,10 @@ class RolePermissionSeeder extends Seeder
         'account.manage',
         'role.manage',
         'inventory.manage',
+        // 收银台与支付渠道（payment.channel.manage 仅超管，另两个运营也有）
+        'payment.channel.manage',
+        'payment.offline.review',
+        'balance.recharge.view',
     ];
 
     public function run(): void
@@ -83,6 +87,8 @@ class RolePermissionSeeder extends Seeder
             'review.manage', 'report.view', 'inventory.manage',
             // 支付只读（查看支付单/支付日志）+ 订单流水；关闭支付单需超管
             'payment.view', 'order.log',
+            // 收银台：线下核账 + 充值单查看（渠道配置为超管专属）
+            'payment.offline.review', 'balance.recharge.view',
         ]);
 
         // 超级管理员：全部权限
