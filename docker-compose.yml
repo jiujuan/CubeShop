@@ -1,0 +1,121 @@
+name: cubeshop
+
+services:
+  # PostgreSQL 主库
+  postgres:
+    image: postgres:16-alpine
+    container_name: cubeshop-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: cubeshop
+      POSTGRES_USER: cubeshop
+      POSTGRES_PASSWORD: cubeshop_secret
+      TZ: Asia/Shanghai
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cubeshop -d cubeshop"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # Redis（可选：缓存/队列；不使用时应用自动降级为 database 驱动）
+  redis:
+    image: redis:7-alpine
+    container_name: cubeshop-redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "no"]
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # Laravel 应用（PHP-FPM）
+  app:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: cubeshop-app
+    restart: unless-stopped
+    environment:
+      TZ: Asia/Shanghai
+      DB_CONNECTION: pgsql
+      DB_HOST: postgres
+      DB_PORT: "5432"
+      DB_DATABASE: cubeshop
+      DB_USERNAME: cubeshop
+      DB_PASSWORD: cubeshop_secret
+      CACHE_STORE: database
+      QUEUE_CONNECTION: database
+    volumes:
+      - app_storage:/var/www/html/storage/app
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  # Nginx：统一入口，反代 PHP-FPM
+  nginx:
+    image: nginx:1.27-alpine
+    container_name: cubeshop-nginx
+    restart: unless-stopped
+    ports:
+      - "8000:80"
+    volumes:
+      - ./docker/nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./backend/public:/var/www/html/public:ro
+    depends_on:
+      - app
+
+  # 队列 Worker（可选，按需启用：docker compose --profile queue up -d）
+  queue:
+    profiles: ["queue"]
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: cubeshop-queue
+    restart: unless-stopped
+    command: ["php", "artisan", "queue:work", "--tries=3", "--sleep=1"]
+    environment:
+      TZ: Asia/Shanghai
+      DB_CONNECTION: pgsql
+      DB_HOST: postgres
+      DB_PORT: "5432"
+      DB_DATABASE: cubeshop
+      DB_USERNAME: cubeshop
+      DB_PASSWORD: cubeshop_secret
+    depends_on:
+      - app
+
+  # 定时任务调度器（可选：docker compose --profile scheduler up -d）
+  scheduler:
+    profiles: ["queue"]
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: cubeshop-scheduler
+    restart: unless-stopped
+    entrypoint: ["sh", "-c", "while true; do php artisan schedule:run --no-ansi >> /var/www/html/storage/logs/schedule.log 2>&1; sleep 60; done"]
+    environment:
+      TZ: Asia/Shanghai
+      DB_CONNECTION: pgsql
+      DB_HOST: postgres
+      DB_PORT: "5432"
+      DB_DATABASE: cubeshop
+      DB_USERNAME: cubeshop
+      DB_PASSWORD: cubeshop_secret
+    depends_on:
+      - app
+
+volumes:
+  postgres_data:
+  redis_data:
+  app_storage:
