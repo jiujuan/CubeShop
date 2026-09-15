@@ -6,9 +6,11 @@ use App\Exceptions\BusinessException;
 use App\Models\Payment;
 use App\Models\PaymentChannel;
 use App\Services\Payment\Contracts\PaymentGateway;
+use App\Services\Payment\Gateways\AlipayGateway;
 use App\Services\Payment\Gateways\BalanceGateway;
 use App\Services\Payment\Gateways\MockGateway;
 use App\Services\Payment\Gateways\OfflineGateway;
+use App\Services\Payment\Gateways\WechatGateway;
 
 /**
  * 网关工厂（收银台方案 §3.2）
@@ -38,24 +40,26 @@ class PaymentGatewayFactory
     }
 
     /**
-     * 在线渠道：P3 前（或沙箱模式 / 配置不全）一律由 Mock 网关代理
+     * 在线渠道解析（§8.1）
+     *
+     * - 微信：V3 无官方沙箱 → 沙箱模式或配置不全时由 Mock 代理，配置齐全才走真实网关
+     * - 支付宝：配置齐全即走真实网关，sandbox=true 时指向支付宝官方沙箱网关（L2）
+     * - 其余情况降级 Mock，保证前台不 500
      */
     private function makeOnline(string $channel): PaymentGateway
     {
-        if ($this->channels->isSandbox($channel)) {
-            return new MockGateway($channel);
-        }
-
         $config = $this->channels->decryptedConfig($channel);
 
-        if (class_exists(\App\Services\Payment\Gateways\WechatGateway::class) && $this->configComplete($channel, $config)) {
-            return $channel === PaymentChannel::CHANNEL_WECHAT
-                ? new \App\Services\Payment\Gateways\WechatGateway()
-                : new \App\Services\Payment\Gateways\AlipayGateway();
+        if ($channel === PaymentChannel::CHANNEL_WECHAT) {
+            return (! $this->channels->isSandbox($channel) && $this->configComplete($channel, $config))
+                ? new WechatGateway()
+                : new MockGateway($channel);
         }
 
-        // 正式模式但配置不全 → 降级 Mock，避免前台直接 500
-        return new MockGateway($channel);
+        // alipay
+        return $this->configComplete($channel, $config)
+            ? new AlipayGateway()
+            : new MockGateway($channel);
     }
 
     /** 商户参数是否齐全（P3 真实网关的前置条件） */
