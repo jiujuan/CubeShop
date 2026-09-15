@@ -67,7 +67,7 @@ const router = createRouter({
     {
       path: '/orders/:id/pay',
       name: 'order-pay',
-      component: () => import('@/views/PayPlaceholderView.vue'),
+      component: () => import('@/views/PayView.vue'),
       meta: { title: '收银台 · CubeShop', requiresAuth: true },
     },
     {

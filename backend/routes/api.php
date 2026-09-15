@@ -5,11 +5,13 @@ use App\Http\Controllers\Admin\CategoryController;
 use App\Http\Controllers\Admin\ConfigController;
 use App\Http\Controllers\Admin\OperationLogController;
 use App\Http\Controllers\Admin\ProductController;
+use App\Http\Controllers\Admin\RefundController;
 use App\Http\Controllers\Admin\UploadController;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\CartController;
 use App\Http\Controllers\HealthController;
 use App\Http\Controllers\OrderController;
+use App\Http\Controllers\PaymentController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\Storefront\ProductController as StorefrontProductController;
 use Illuminate\Support\Facades\Route;
@@ -66,6 +68,11 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/orders', [OrderController::class, 'store'])->middleware('throttle:order');
     Route::get('/orders/{id}', [OrderController::class, 'show']);
     Route::post('/orders/{id}/cancel', [OrderController::class, 'cancel']);
+    Route::post('/orders/{id}/refund', [OrderController::class, 'refund']);
+
+    // 支付（API 文档 7 / Roadmap P5）
+    Route::post('/payments', [PaymentController::class, 'store']);
+    Route::get('/payments/{paymentNo}', [PaymentController::class, 'show']);
 
     // 收货地址（API 文档 3.3 ~ 3.7）
     Route::get('/user/addresses', [AddressController::class, 'index']);
@@ -99,5 +106,13 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/products/{id}', [ProductController::class, 'show'])->middleware('permission:product.view');
         Route::put('/products/{id}', [ProductController::class, 'update'])->middleware('permission:product.update');
         Route::post('/products/{id}/status', [ProductController::class, 'updateStatus'])->middleware('permission:product.update');
+
+        // 退款处理 refund.*（API 文档 8.4 / Roadmap P5）
+        Route::get('/refunds', [RefundController::class, 'index'])->middleware('permission:refund.view');
+        Route::post('/refunds/{id}/process', [RefundController::class, 'process'])->middleware('permission:refund.process');
     });
 });
+
+// 支付回调 / 沙箱模拟渠道（无需用户 Token，验签保护；API 文档 7.2）
+Route::post('/payments/callback/{channel}', [PaymentController::class, 'callback']);
+Route::post('/payments/sandbox/{paymentNo}', [PaymentController::class, 'sandbox']);

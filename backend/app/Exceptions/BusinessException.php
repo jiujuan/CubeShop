@@ -33,4 +33,9 @@ class BusinessException extends RuntimeException
     {
         return new self(40004, $message);
     }
+
+    public static function forbidden(string $message = '无权限执行此操作'): self
+    {
+        return new self(40003, $message);
+    }
 }

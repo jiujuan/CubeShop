@@ -59,10 +59,20 @@ export interface OrderDetail extends OrderBrief {
   remark: string | null
   address_snapshot: AddressSnapshot | null
   cancel_reason: string | null
+  refunds: RefundBrief[]
   paid_at: string | null
   shipped_at: string | null
   completed_at: string | null
   cancelled_at: string | null
+}
+
+export interface RefundBrief {
+  refund_no: string
+  amount: string
+  reason: string | null
+  status: 'pending' | 'approved' | 'rejected' | 'success' | 'failed'
+  admin_remark: string | null
+  created_at: string
 }
 
 export interface OrderListResult {
@@ -94,4 +104,12 @@ export function getOrder(id: number) {
 
 export function cancelOrder(id: number, reason?: string) {
   return request.post<ApiResult<OrderDetail>>(`/orders/${id}/cancel`, { reason })
+}
+
+/** 申请退款（API 文档 6.5） */
+export function applyRefund(id: number, reason?: string) {
+  return request.post<ApiResult<{ refund_id: number; refund_no: string; amount: string; status: string }>>(
+    `/orders/${id}/refund`,
+    { reason },
+  )
 }

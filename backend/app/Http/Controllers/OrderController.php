@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Exceptions\BusinessException;
 use App\Models\Order;
 use App\Services\Order\OrderService;
+use App\Services\Refund\RefundService;
 use App\Support\ApiResponse;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -114,6 +115,34 @@ class OrderController extends Controller
         return $this->success($this->detail($order->load('items')), '订单已取消');
     }
 
+    /** 申请退款（API 文档 6.5 / Roadmap P5） */
+    public function refund(Request $request, int $id, RefundService $refunds): JsonResponse
+    {
+        $data = $request->validate([
+            'reason' => ['nullable', 'string', 'max:200'],
+            'amount' => ['nullable', 'numeric', 'min:0.01'],
+        ]);
+
+        $order = Order::where('user_id', $request->user()->id)->find($id);
+        if (! $order) {
+            throw BusinessException::notFound('订单不存在');
+        }
+
+        $refund = $refunds->apply(
+            order: $order,
+            userId: $request->user()->id,
+            reason: $data['reason'] ?? null,
+            amount: $data['amount'] ?? null,
+        );
+
+        return $this->success([
+            'refund_id' => $refund->id,
+            'refund_no' => $refund->refund_no,
+            'amount' => (string) $refund->amount,
+            'status' => $refund->status,
+        ], '退款申请已提交，等待审核');
+    }
+
     /** 列表项简要结构 */
     private function brief(Order $order): array
     {
@@ -141,10 +170,20 @@ class OrderController extends Controller
     /** 详情结构 */
     private function detail(Order $order): array
     {
+        $refunds = $order->refunds()->orderByDesc('id')->get()->map(fn ($r) => [
+            'refund_no' => $r->refund_no,
+            'amount' => (string) $r->amount,
+            'reason' => $r->reason,
+            'status' => $r->status,
+            'admin_remark' => $r->admin_remark,
+            'created_at' => $r->created_at?->format('Y-m-d H:i:s'),
+        ])->all();
+
         return $this->brief($order) + [
             'remark' => $order->remark,
             'address_snapshot' => $order->address_snapshot,
             'cancel_reason' => $order->cancel_reason,
+            'refunds' => $refunds,
             'paid_at' => $order->paid_at?->format('Y-m-d H:i:s'),
             'shipped_at' => $order->shipped_at?->format('Y-m-d H:i:s'),
             'completed_at' => $order->completed_at?->format('Y-m-d H:i:s'),
