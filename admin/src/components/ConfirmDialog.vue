@@ -45,6 +45,7 @@ const emit = defineEmits<{ (e: 'confirm'): void; (e: 'cancel'): void }>()
           >{{ cancelText }}</button>
           <button
             type="button"
+            data-testid="confirm-ok"
             class="rounded-md px-4 py-1.5 text-[13px] text-white transition-colors"
             :class="danger ? 'bg-[#ff4d4f] hover:bg-[#ff7875]' : 'bg-[#1677ff] hover:bg-[#4096ff]'"
             @click="emit('confirm')"

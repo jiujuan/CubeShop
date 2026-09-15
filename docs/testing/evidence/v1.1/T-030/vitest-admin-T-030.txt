@@ -1,0 +1,21 @@
+
+[1m[30m[46m RUN [49m[39m[22m [36mv5.0.1 [39m[90mD:/codeproject/PHP/CubeShop/admin[39m
+
+ [32m✓[39m tests/auth-store.test.ts [2m([22m[2m7 tests[22m[2m)[22m[32m 20[2mms[22m[39m
+ [32m✓[39m tests/permission-directive.test.ts [2m([22m[2m3 tests[22m[2m)[22m[32m 33[2mms[22m[39m
+ [32m✓[39m tests/review-admin.test.ts [2m([22m[2m8 tests[22m[2m)[22m[32m 167[2mms[22m[39m
+ [32m✓[39m tests/account-role.test.ts [2m([22m[2m8 tests[22m[2m)[22m[32m 158[2mms[22m[39m
+[90mstderr[2m | tests/report-center.test.ts[2m > [22m[2mT-021 驾驶舱 Dashboard[2m > [22m[2m待办卡点击跳转对应列表（mock router.push）
+[22m[39m[Vue Router warn]: No match found for location with path "/orders?status=paid"
+
+[90mstderr[2m | tests/report-center.test.ts[2m > [22m[2mT-021 驾驶舱 Dashboard[2m > [22m[2m待办卡点击跳转对应列表（mock router.push）
+[22m[39m[Vue Router warn]: No match found for location with path "/reviews?status=pending"
+
+ [32m✓[39m tests/report-center.test.ts [2m([22m[2m9 tests[22m[2m)[22m[32m 230[2mms[22m[39m
+ [32m✓[39m tests/product-attribute.test.ts [2m([22m[2m9 tests[22m[2m)[22m[32m 256[2mms[22m[39m
+
+[2m Test Files [22m [1m[32m6 passed[39m[22m[90m (6)[39m
+[2m      Tests [22m [1m[32m44 passed[39m[22m[90m (44)[39m
+[2m   Start at [22m 02:02:10
+[2m   Duration [22m 2.58s[2m (environment 56%, transform 21%, import 15%, tests 8%, worker 1%, setup 1%)[22m
+

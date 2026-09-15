@@ -19,15 +19,21 @@ class AuthController extends Controller
     public function __construct(
         private readonly CaptchaService $captchaService,
         private readonly OperationLogService $operationLog,
+        private readonly \App\Services\Common\ConfigService $config,
+        private readonly \App\Services\Notification\NotificationService $notifications,
     ) {}
 
     /**
      * 获取图形验证码（登录页）
      * POST /auth/captcha
+     *
+     * @param scene admin=后台管理端（默认）；web=用户端（风格与管理端区分）
      */
-    public function captcha()
+    public function captcha(Request $request)
     {
-        return $this->success($this->captchaService->generate());
+        $scene = (string) $request->input('scene', 'admin');
+
+        return $this->success($this->captchaService->generate($scene));
     }
 
     /**
@@ -144,22 +150,50 @@ class AuthController extends Controller
      */
     public function changePassword(Request $request)
     {
+        $min = $this->config->getInt('auth.password_min_length', 8);
+        $max = $this->config->getInt('auth.password_max_length', 32);
+        $requireMixed = (bool) $this->config->getInt('auth.password_require_mixed', 1);
+
+        $rules = ['required', 'string', "min:{$min}", "max:{$max}", 'different:old_password'];
+        if ($requireMixed) {
+            $rules[] = 'regex:/^(?=.*[A-Za-z])(?=.*\d).+$/';
+        }
+
         $data = $request->validate([
             'old_password' => ['required', 'current_password:sanctum'],
-            'password' => ['required', 'string', Password::min(6), 'different:old_password'],
+            'password' => $rules,
             'password_confirmation' => ['required', 'same:password'],
+        ], [
+            'password.regex' => "新密码需 {$min}~{$max} 位，且同时包含字母与数字",
+            'password.min' => "新密码需 {$min}~{$max} 位，且同时包含字母与数字",
+            'password.max' => "新密码需 {$min}~{$max} 位，且同时包含字母与数字",
+            'password.different' => '新密码不能与当前密码相同',
         ]);
 
         $user = $request->user();
-        $user->password = $data['password'];
+        $user->password = Hash::make($data['password']);
         $user->save();
 
-        // 修改密码后吊销其他 Token
-        $user->tokens()->where('id', '!=', $user->currentAccessToken()->id)->delete();
+        // 撤销其他设备 Token，保留当前请求所用 Token（V1.1 E05-B / T-027）
+        $currentTokenId = $user->currentAccessToken()?->id;
+        $revoked = $user->tokens()
+            ->when($currentTokenId, fn ($q) => $q->where('id', '!=', $currentTokenId))
+            ->delete();
 
-        $this->operationLog->record($user->id, 'auth', 'change_password');
+        // 安全通知：站内信为兜底主通道，邮件视 notify.mail_types 配置（T-018）
+        $this->notifications->send(
+            $user->id,
+            \App\Services\Notification\NotificationService::TYPE_PASSWORD_CHANGED,
+            '密码已变更',
+            '您的账号密码已成功修改。如非本人操作，请立即联系客服并重新登录检查账号安全。',
+            '/account',
+        );
 
-        return $this->success(null, '密码修改成功');
+        $this->operationLog->record($user->id, 'auth', 'change_password', 'sys_user', $user->id, [
+            'revoked_tokens' => $revoked,
+        ]);
+
+        return $this->success(['revoked_tokens' => $revoked], '密码修改成功，其他设备已退出登录');
     }
 
     /**

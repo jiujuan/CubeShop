@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { MapPin, NotebookPen } from 'lucide-vue-next'
+import { MapPin, NotebookPen, Plus } from 'lucide-vue-next'
 import { getAddresses, getCart, type CartItemView, type Address } from '@/api/user'
 import { createOrder, type CreateOrderResult } from '@/api/order'
+import AddressForm from '@/components/AddressForm.vue'
 import LoadingSpinner from '@/components/LoadingSpinner.vue'
 import ShopFooter from '@/components/ShopFooter.vue'
 import ShopHeader from '@/components/ShopHeader.vue'
@@ -11,7 +12,7 @@ import { useAuthStore } from '@/stores/auth'
 
 /**
  * 结算页（Roadmap P4）：选地址、备注、金额明细、提交订单
- * 结算范围为购物车全部有效项（后端 cart_item_ids 不传 = 全部有效项）
+ * V1.1 E04 / T-029：地址选择弹层支持内联新增，保存后自动选中且不丢失备注
  */
 const router = useRouter()
 const auth = useAuthStore()
@@ -24,6 +25,17 @@ const addresses = ref<Address[]>([])
 const validItems = ref<CartItemView[]>([])
 const selectedAddressId = ref<number | null>(null)
 const remark = ref('')
+
+/** 内联新增地址弹层 */
+const addressDialogOpen = ref(false)
+
+async function onAddressSaved(addr: Address) {
+  // 不重载整页，仅追加并选中新地址，保留已填备注
+  addresses.value = [addr, ...addresses.value.filter((a) => a.id !== addr.id)]
+  selectedAddressId.value = addr.id
+  addressDialogOpen.value = false
+  tip.value = ''
+}
 
 const goodsAmount = computed(() =>
   validItems.value.reduce((sum, item) => sum + Number(item.subtotal), 0).toFixed(2),
@@ -103,23 +115,32 @@ async function submit() {
 
         <!-- 收货地址 -->
         <section class="mb-6 rounded-xl border border-slate-100 bg-white p-5">
-          <h2 class="mb-4 flex items-center gap-2 text-sm font-semibold text-slate-700">
-            <MapPin class="h-4 w-4 text-[#1677ff]" /> 收货地址
-          </h2>
+          <div class="mb-4 flex items-center justify-between">
+            <h2 class="flex items-center gap-2 text-sm font-semibold text-slate-700">
+              <MapPin class="h-4 w-4 text-[#1677ff]" /> 收货地址
+            </h2>
+            <button
+              class="flex items-center gap-1 rounded-full border border-[#1677ff] px-3 py-1 text-xs text-[#1677ff] hover:bg-[#e6f4ff]"
+              data-testid="checkout-add-address"
+              @click="addressDialogOpen = true"
+            ><Plus class="h-3.5 w-3.5" /> 新增地址</button>
+          </div>
 
-          <div v-if="!addresses.length" class="flex flex-col items-center gap-3 py-6 text-sm text-slate-400">
-            还没有收货地址
-            <button class="rounded-full bg-[#1677ff] px-5 py-1.5 text-xs text-white" @click="$router.push({ path: '/account/addresses', query: { redirect: '/checkout' } })">去新增地址</button>
+          <div v-if="!addresses.length" class="flex flex-col items-center gap-3 py-6 text-sm text-slate-400" data-testid="checkout-address-empty">
+            还没有收货地址，请先新增后再下单
+            <button class="rounded-full bg-[#1677ff] px-5 py-1.5 text-xs text-white" @click="addressDialogOpen = true">新增地址</button>
           </div>
 
           <div v-else class="grid gap-3 md:grid-cols-2">
             <label
               v-for="addr in addresses" :key="addr.id"
               class="flex cursor-pointer items-start gap-3 rounded-lg border p-3 transition-colors"
+              :data-testid="`checkout-address-${addr.id}`"
               :class="selectedAddressId === addr.id ? 'border-[#1677ff] bg-[#f0f7ff]' : 'border-slate-200 hover:border-[#91caff]'"
             >
               <input v-model="selectedAddressId" type="radio" :value="addr.id" class="mt-1 accent-[#1677ff]" />
               <span class="min-w-0 text-sm">
+                <span v-if="addr.label" class="mr-1 rounded bg-slate-100 px-1.5 py-0.5 text-[10px] text-slate-500">{{ addr.label }}</span>
                 <span class="font-medium text-slate-700">{{ addr.contact_name }}</span>
                 <span class="ml-2 text-slate-500">{{ addr.contact_phone }}</span>
                 <span v-if="addr.is_default" class="ml-2 rounded bg-[#1677ff] px-1 py-0.5 text-[10px] text-white">默认</span>
@@ -173,13 +194,24 @@ async function submit() {
             </div>
             <button
               class="mt-2 w-full rounded-full bg-[#1677ff] py-2.5 text-sm font-medium text-white transition-colors hover:bg-[#4096ff] disabled:cursor-not-allowed disabled:opacity-50"
-              :disabled="submitting || !validItems.length"
+              data-testid="checkout-submit"
+              :disabled="submitting || !validItems.length || !selectedAddressId"
               @click="submit"
             >{{ submitting ? '提交中…' : '提交订单' }}</button>
           </div>
         </section>
       </template>
     </main>
+
+    <!-- 内联新增地址弹层（V1.1 T-029） -->
+    <Teleport to="body">
+      <div v-if="addressDialogOpen" class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4" @click.self="addressDialogOpen = false">
+        <div class="max-h-[88vh] w-full max-w-md overflow-y-auto rounded-2xl bg-white p-6 shadow-xl" data-testid="checkout-address-dialog">
+          <h3 class="mb-4 text-base font-semibold text-slate-800">新增收货地址</h3>
+          <AddressForm @saved="onAddressSaved" @cancel="addressDialogOpen = false" />
+        </div>
+      </div>
+    </Teleport>
 
     <ShopFooter />
   </div>

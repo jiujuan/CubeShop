@@ -16,6 +16,8 @@ class OrderConfigSeeder extends Seeder
             ['config_key' => 'order.freight_default', 'config_value' => '10.00', 'description' => '默认运费（元）'],
             ['config_key' => 'order.free_shipping_threshold', 'config_value' => '99.00', 'description' => '满额免运费阈值（元），0 表示不启用'],
             ['config_key' => 'inventory.warning_threshold', 'config_value' => '10', 'description' => '库存预警阈值（件），可用库存低于等于该值时预警'],
+            // V1.1 T-003：发货后自动确认收货的天数
+            ['config_key' => 'order.auto_complete_days', 'config_value' => '7', 'description' => '发货后自动确认收货天数（V1.1）'],
         ];
 
         foreach ($configs as $config) {

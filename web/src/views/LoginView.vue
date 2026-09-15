@@ -88,15 +88,15 @@ async function submit() {
         <div class="flex gap-2">
           <input
             v-model="captchaCode" type="text" maxlength="4" placeholder="验证码"
-            class="h-11 w-28 rounded-lg border border-slate-200 px-3 text-center tracking-widest outline-none focus:border-[#1677ff]"
+            class="h-11 w-36 rounded-lg border border-slate-200 px-3 text-center tracking-widest outline-none focus:border-[#1677ff]"
             @keyup.enter="submit"
           />
           <button
-            class="flex h-11 flex-1 items-center justify-center overflow-hidden rounded-lg bg-slate-50 hover:opacity-80"
+            class="flex h-11 w-[120px] shrink-0 items-center justify-center overflow-hidden rounded-lg bg-slate-50 hover:opacity-80"
             title="点击刷新验证码"
             @click="refreshCaptcha"
           >
-            <span v-if="captcha" class="text-xl font-bold italic tracking-[0.4em] text-[#1677ff]" v-html="captcha.image" />
+            <img v-if="captcha" :src="captcha.image" alt="验证码" class="h-full w-auto" />
             <span v-else class="text-xs text-slate-400">加载中...</span>
           </button>
         </div>

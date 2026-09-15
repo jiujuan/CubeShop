@@ -18,6 +18,7 @@
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.1.13",
+    "@testing-library/vue": "^8.1.0",
     "@types/node": "^24.3.0",
     "@vitejs/plugin-vue": "^6.0.0",
     "@vue/test-utils": "^2.5.0",

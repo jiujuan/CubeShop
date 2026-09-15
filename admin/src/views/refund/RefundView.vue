@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
-import { RotateCcw } from 'lucide-vue-next'
+import { ChevronLeft, ChevronRight } from 'lucide-vue-next'
 import { getRefunds, processRefund, REFUND_STATUS_CLASS, REFUND_STATUS_LABELS, type Refund, type RefundStatus } from '@/api/refund'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import LoadingSpinner from '@/components/LoadingSpinner.vue'
@@ -74,82 +74,88 @@ async function doProcess() {
 </script>
 
 <template>
-  <div class="space-y-4">
-    <h1 class="text-lg font-semibold">退款处理</h1>
+  <div class="rounded-lg bg-white p-5 shadow-sm">
+    <!-- 标题 -->
+    <div class="mb-4 flex items-center justify-between">
+      <h2 class="text-lg font-semibold text-slate-800">退款处理</h2>
+    </div>
 
-    <p v-if="tip" class="rounded-md bg-red-50 px-3 py-2 text-xs text-red-500">{{ tip }}</p>
+    <p v-if="tip" class="mb-4 rounded-md bg-red-50 px-3 py-2 text-xs text-red-500">{{ tip }}</p>
 
-    <section class="rounded-lg border border-slate-200 bg-white">
-      <h2 class="flex items-center gap-2 border-b border-slate-100 px-4 py-3 text-sm font-medium">
-        <RotateCcw class="h-4 w-4 text-[#1677ff]" />
-        退款申请（共 {{ pagination.total }} 条）
-      </h2>
+    <!-- 状态快捷筛选（胶囊标签排） -->
+    <div class="mb-4 flex flex-wrap gap-2">
+      <button
+        v-for="tab in [['', '全部'], ['pending', '待审核'], ['success', '退款成功'], ['rejected', '已拒绝']] as const"
+        :key="tab[0]"
+        class="rounded-full px-3 py-1 text-xs transition-colors"
+        :class="statusFilter === tab[0] ? 'bg-[#1677ff] text-white' : 'border border-slate-200 text-slate-500 hover:text-[#1677ff]'"
+        @click="filterStatus(tab[0] as RefundStatus | '')"
+      >{{ tab[1] }}</button>
+    </div>
 
-      <!-- 状态筛选 -->
-      <div class="flex flex-wrap gap-2 border-b border-slate-50 px-4 py-2.5">
+    <!-- 表格 -->
+    <table class="w-full text-[13px]">
+      <thead>
+        <tr class="border-b border-slate-200 text-left text-slate-500">
+          <th class="px-3 py-1.5">退款单号</th>
+          <th class="px-3 py-1.5">订单号</th>
+          <th class="w-24 px-3 py-1.5">金额</th>
+          <th class="px-3 py-1.5">原因</th>
+          <th class="w-24 px-3 py-1.5">状态</th>
+          <th class="w-40 px-3 py-1.5">申请时间</th>
+          <th class="w-40 px-3 py-1.5">操作</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr v-for="refund in refunds" :key="refund.id" class="border-b border-slate-100 hover:bg-slate-50">
+          <td class="px-3 py-1.5 font-mono text-black">{{ refund.refund_no }}</td>
+          <td class="px-3 py-1.5 font-mono text-black">{{ refund.order_no }}</td>
+          <td class="px-3 py-1.5 font-medium text-[#ff4d4f]">¥{{ refund.amount }}</td>
+          <td class="max-w-40 truncate px-3 py-1.5 text-black" :title="refund.reason || ''">{{ refund.reason || '-' }}</td>
+          <td class="px-3 py-1.5">
+            <span class="rounded px-2 py-0.5 text-xs" :class="REFUND_STATUS_CLASS[refund.status]">{{ REFUND_STATUS_LABELS[refund.status] }}</span>
+          </td>
+          <td class="px-3 py-1.5 text-black">{{ refund.created_at }}</td>
+          <td class="px-3 py-1.5">
+            <div v-if="refund.status === 'pending'" class="flex items-center gap-1">
+              <button class="text-emerald-600 hover:underline" @click="askProcess(refund, 'approve')">同意</button>
+              <span class="text-slate-200">|</span>
+              <button class="text-red-500 hover:underline" @click="askProcess(refund, 'reject')">拒绝</button>
+            </div>
+            <span v-else-if="refund.admin_remark" class="text-xs text-slate-400">{{ refund.admin_remark }}</span>
+            <span v-else class="text-slate-300">-</span>
+          </td>
+        </tr>
+        <tr v-if="loading">
+          <td colspan="7"><LoadingSpinner /></td>
+        </tr>
+        <tr v-if="!refunds.length && !loading">
+          <td colspan="7" class="px-3 py-12 text-center text-slate-400">暂时无数据</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <!-- 分页 -->
+    <div class="mt-4 flex items-center justify-between text-[13px] text-slate-500">
+      <span>共 {{ pagination.total }} 条记录 / 每页 {{ pagination.page_size }} 条</span>
+      <div class="flex items-center gap-1">
         <button
-          v-for="tab in [['', '全部'], ['pending', '待审核'], ['success', '退款成功'], ['rejected', '已拒绝']] as const"
-          :key="tab[0]"
-          class="rounded-full px-3 py-1 text-xs transition-colors"
-          :class="statusFilter === tab[0] ? 'bg-[#1677ff] text-white' : 'border border-slate-200 text-slate-500 hover:text-[#1677ff]'"
-          @click="filterStatus(tab[0] as RefundStatus | '')"
-        >{{ tab[1] }}</button>
+          class="flex h-7 w-7 items-center justify-center rounded border border-slate-200 disabled:opacity-40"
+          :disabled="pagination.page <= 1" @click="goPage(pagination.page - 1)"
+        ><ChevronLeft class="h-4 w-4" /></button>
+        <button
+          v-for="p in pagination.total_pages"
+          :key="p"
+          class="h-7 min-w-7 rounded border px-1.5"
+          :class="p === pagination.page ? 'border-[#1677ff] bg-[#1677ff] text-white' : 'border-slate-200 hover:border-[#1677ff]'"
+          @click="goPage(p)"
+        >{{ p }}</button>
+        <button
+          class="flex h-7 w-7 items-center justify-center rounded border border-slate-200 disabled:opacity-40"
+          :disabled="pagination.page >= pagination.total_pages" @click="goPage(pagination.page + 1)"
+        ><ChevronRight class="h-4 w-4" /></button>
       </div>
-
-      <div v-if="loading" class="px-4 py-6"><LoadingSpinner /></div>
-
-      <table v-else class="w-full text-[13px]">
-        <thead>
-          <tr class="border-b border-slate-100 text-left text-slate-400">
-            <th class="px-4 py-2 font-normal">退款单号</th>
-            <th class="px-4 py-2 font-normal">订单号</th>
-            <th class="px-4 py-2 font-normal">金额</th>
-            <th class="px-4 py-2 font-normal">原因</th>
-            <th class="px-4 py-2 font-normal">状态</th>
-            <th class="px-4 py-2 font-normal">申请时间</th>
-            <th class="px-4 py-2 text-right font-normal">操作</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-for="refund in refunds" :key="refund.id" class="border-b border-slate-50 hover:bg-slate-50/50">
-            <td class="px-4 py-2 font-mono text-slate-600">{{ refund.refund_no }}</td>
-            <td class="px-4 py-2 font-mono text-slate-600">{{ refund.order_no }}</td>
-            <td class="px-4 py-2 font-medium text-[#ff4d4f]">¥{{ refund.amount }}</td>
-            <td class="max-w-40 truncate px-4 py-2 text-slate-500" :title="refund.reason || ''">{{ refund.reason || '-' }}</td>
-            <td class="px-4 py-2">
-              <span class="rounded px-1.5 py-0.5 text-xs" :class="REFUND_STATUS_CLASS[refund.status]">{{ REFUND_STATUS_LABELS[refund.status] }}</span>
-            </td>
-            <td class="px-4 py-2 text-slate-500">{{ refund.created_at }}</td>
-            <td class="px-4 py-2 text-right">
-              <template v-if="refund.status === 'pending'">
-                <button class="rounded border border-green-200 px-2 py-1 text-xs text-green-600 hover:bg-green-50" @click="askProcess(refund, 'approve')">同意</button>
-                <button class="ml-1.5 rounded border border-red-200 px-2 py-1 text-xs text-red-500 hover:bg-red-50" @click="askProcess(refund, 'reject')">拒绝</button>
-              </template>
-              <span v-else-if="refund.admin_remark" class="text-xs text-slate-400">{{ refund.admin_remark }}</span>
-              <span v-else class="text-slate-300">-</span>
-            </td>
-          </tr>
-          <tr v-if="!refunds.length">
-            <td colspan="7" class="px-4 py-8 text-center text-slate-400">暂时无数据</td>
-          </tr>
-        </tbody>
-      </table>
-
-      <div class="flex items-center justify-between border-t border-slate-100 px-4 py-2 text-[13px] text-slate-500">
-        <span>共 {{ pagination.total }} 条记录 / 每页 {{ pagination.page_size }} 条</span>
-        <div class="flex items-center gap-1.5">
-          <button class="rounded border border-slate-200 px-2 py-1 disabled:opacity-40" :disabled="pagination.page <= 1" @click="goPage(pagination.page - 1)">上一页</button>
-          <button
-            v-for="p in pagination.total_pages"
-            :key="p"
-            class="min-w-8 rounded border px-2 py-1"
-            :class="p === pagination.page ? 'border-[#1677ff] bg-[#1677ff] text-white' : 'border-slate-200 hover:border-[#1677ff]'"
-            @click="goPage(p)"
-          >{{ p }}</button>
-          <button class="rounded border border-slate-200 px-2 py-1 disabled:opacity-40" :disabled="pagination.page >= pagination.total_pages" @click="goPage(pagination.page + 1)">下一页</button>
-        </div>
-      </div>
-    </section>
+    </div>
 
     <ConfirmDialog
       :open="!!confirmState"

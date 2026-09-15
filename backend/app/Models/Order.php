@@ -44,12 +44,36 @@ class Order extends Model
         self::STATUS_REFUNDED => '已退款',
     ];
 
+    /**
+     * 订单列表分组 Tab → 状态集合（V1.1 E02-C / T-004）
+     *
+     * pending_review 在 T-015 评价表落地后由控制器精化（排除已全部评价的订单）。
+     */
+    public const TAB_STATUS_MAP = [
+        'all' => null,
+        'pending_payment' => [self::STATUS_PENDING_PAYMENT],
+        'pending_ship' => [self::STATUS_PAID],
+        'pending_receive' => [self::STATUS_SHIPPED],
+        'pending_review' => [self::STATUS_COMPLETED],
+        'after_sale' => [self::STATUS_REFUNDING, self::STATUS_REFUNDED],
+    ];
+
+    public const TAB_LABELS = [
+        'all' => '全部',
+        'pending_payment' => '待付款',
+        'pending_ship' => '待发货',
+        'pending_receive' => '待收货',
+        'pending_review' => '待评价',
+        'after_sale' => '退款售后',
+    ];
+
     protected $table = 'orders';
     protected $fillable = [
         'order_no', 'user_id', 'status',
         'total_amount', 'freight_amount', 'pay_amount',
         'address_snapshot', 'remark',
         'paid_at', 'shipped_at', 'completed_at', 'cancelled_at', 'cancel_reason',
+        'auto_completed',
     ];
 
     protected $casts = [
@@ -61,6 +85,7 @@ class Order extends Model
         'shipped_at' => 'datetime',
         'completed_at' => 'datetime',
         'cancelled_at' => 'datetime',
+        'auto_completed' => 'boolean',
     ];
 
     public function items(): HasMany
@@ -88,5 +113,32 @@ class Order extends Model
     public function isPendingPayment(): bool
     {
         return $this->status === self::STATUS_PENDING_PAYMENT;
+    }
+
+    /**
+     * 前端按钮可用性（V1.1 E02-C / T-004）
+     *
+     * 前端按此字段控制「去支付/取消/确认收货/申请退款/评价/再次购买」的显隐，
+     * 避免前端硬编码状态判断导致与后端状态机不一致。
+     *
+     * @return array<string, bool>
+     */
+    public function actions(): array
+    {
+        return [
+            'can_pay' => $this->status === self::STATUS_PENDING_PAYMENT,
+            'can_cancel' => $this->status === self::STATUS_PENDING_PAYMENT,
+            'can_confirm' => $this->status === self::STATUS_SHIPPED,
+            'can_refund' => in_array($this->status, [self::STATUS_PAID, self::STATUS_SHIPPED, self::STATUS_COMPLETED], true),
+            'can_review' => $this->status === self::STATUS_COMPLETED,
+            // 再次购买对任何历史订单都可用（失效行由后端逐行跳过并返回原因）
+            'can_rebuy' => true,
+        ];
+    }
+
+    /** 状态中文名 */
+    public function getStatusLabelAttribute(): string
+    {
+        return self::STATUS_LABELS[$this->status] ?? $this->status;
     }
 }

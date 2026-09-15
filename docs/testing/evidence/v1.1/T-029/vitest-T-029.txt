@@ -1,0 +1,25 @@
+
+[1m[30m[46m RUN [49m[39m[22m [36mv5.0.1 [39m[90mD:/codeproject/PHP/CubeShop/web[39m
+
+[90mstderr[2m | tests/address-enhance.test.ts[2m > [22m[2m地址列表（AddressView / T-029）[2m > [22m[2m常用地址按使用次数排序、默认地址置顶并展示标签
+[22m[39m[Vue Router warn]: No match found for location with path "/account"
+
+[90mstderr[2m | tests/address-enhance.test.ts[2m > [22m[2m地址列表（AddressView / T-029）[2m > [22m[2m删除默认地址时提示会重新设置默认
+[22m[39m[Vue Router warn]: No match found for location with path "/account"
+
+[90mstderr[2m | tests/address-enhance.test.ts[2m > [22m[2m结算页内联新增地址（CheckoutView / T-029）[2m > [22m[2m内联新增地址保存后自动选中且不丢失已填备注
+[22m[39m[Vue Router warn]: No match found for location with path "/account"
+
+[90mstderr[2m | tests/address-enhance.test.ts[2m > [22m[2m结算页内联新增地址（CheckoutView / T-029）[2m > [22m[2m内联新增地址保存后自动选中且不丢失已填备注
+[22m[39m[Vue Router warn]: No match found for location with path "/account"
+
+[90mstderr[2m | tests/address-enhance.test.ts[2m > [22m[2m结算页内联新增地址（CheckoutView / T-029）[2m > [22m[2m无地址时展示空态并阻断下单
+[22m[39m[Vue Router warn]: No match found for location with path "/account"
+
+ [32m✓[39m tests/address-enhance.test.ts [2m([22m[2m7 tests[22m[2m)[22m[32m 211[2mms[22m[39m
+
+[2m Test Files [22m [1m[32m1 passed[39m[22m[90m (1)[39m
+[2m      Tests [22m [1m[32m7 passed[39m[22m[90m (7)[39m
+[2m   Start at [22m 01:54:34
+[2m   Duration [22m 1.90s[2m (environment 43%, transform 26%, import 18%, tests 12%, worker 1%, setup 1%)[22m
+

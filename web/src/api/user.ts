@@ -48,7 +48,7 @@ export function getCartCount() {
   return request.get<ApiResult<{ count: number }>>('/cart/count')
 }
 
-// ---------- 收货地址（API 文档 3.3 ~ 3.7） ----------
+// ---------- 收货地址（API 文档 3.3 ~ 3.7 / V1.1 E04 T-028 增强） ----------
 
 export interface Address {
   id: number
@@ -59,16 +59,43 @@ export interface Address {
   city: string | null
   district: string | null
   detail_address: string
+  label: string | null
   is_default: boolean
+  used_count: number
+  last_used_at: string | null
 }
 
-export type AddressPayload = Omit<Address, 'id' | 'contact_phone_full'>
+export type AddressPayload = Omit<Address, 'id' | 'contact_phone_full' | 'used_count' | 'last_used_at'>
+
+export interface RegionCity {
+  name: string
+  districts: string[]
+}
+export interface RegionProvince {
+  name: string
+  cities: RegionCity[]
+}
+export interface RegionData {
+  version: string
+  note?: string
+  provinces: RegionProvince[]
+}
+
+export interface ParsedAddress {
+  contact_name: string
+  contact_phone: string
+  province: string
+  city: string
+  district: string
+  detail_address: string
+  confidence: number
+}
 
 export function getAddresses() {
   return request.get<ApiResult<Address[]>>('/user/addresses')
 }
 
-export function createAddress(data: AddressPayload) {
+export function createAddress(data: Partial<AddressPayload>) {
   return request.post<ApiResult<Address>>('/user/addresses', data)
 }
 
@@ -82,4 +109,54 @@ export function deleteAddress(id: number) {
 
 export function setDefaultAddress(id: number) {
   return request.post<ApiResult<null>>(`/user/addresses/${id}/default`)
+}
+
+/** 行政区划（V1.1 E04 / T-028） */
+export function getRegions() {
+  return request.get<ApiResult<RegionData>>('/regions')
+}
+
+/** 一行文本智能解析（V1.1 E04 / T-028） */
+export function parseAddress(text: string) {
+  return request.post<ApiResult<ParsedAddress>>('/user/addresses/parse', { text })
+}
+
+// ---------- 账号安全（V1.1 E05-B / T-027） ----------
+
+/** 修改密码：需旧密码，成功后其他设备 Token 失效 */
+export function changePassword(data: { old_password: string; password: string; password_confirmation: string }) {
+  return request.post<ApiResult<{ revoked_tokens: number }>>('/auth/password', data)
+}
+
+// ---------- 文件上传（V1.1 T-016 评价晒图复用） ----------
+
+/** 上传图片（≤2MB，返回可访问 URL） */
+export function uploadImage(file: File) {
+  const form = new FormData()
+  form.append('file', file)
+  return request.post<ApiResult<{ url: string }>>('/user/upload', form, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  })
+}
+
+// ---------- 个人资料（V1.1 E05-A / T-026） ----------
+
+export interface UserProfile {
+  id: number
+  username: string
+  nickname: string | null
+  avatar: string | null
+  phone: string | null
+  email: string | null
+  roles: string[]
+  created_at?: string
+  last_login_at?: string
+}
+
+export function getProfile() {
+  return request.get<ApiResult<UserProfile>>('/user/profile')
+}
+
+export function updateProfile(data: { nickname?: string; avatar?: string; email?: string; phone?: string }) {
+  return request.put<ApiResult<UserProfile>>('/user/profile', data)
 }

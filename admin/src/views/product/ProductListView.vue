@@ -228,7 +228,7 @@ function fmtTime(dt?: string) {
                 <span v-else class="text-lg text-slate-300">📦</span>
               </div>
               <div class="min-w-0">
-                <div class="truncate font-medium text-slate-700">{{ p.title }}</div>
+                <div class="truncate font-medium text-black">{{ p.title }}</div>
                 <div class="truncate text-xs text-slate-400">{{ p.subtitle || '-' }}</div>
               </div>
             </div>
@@ -236,16 +236,16 @@ function fmtTime(dt?: string) {
           <td class="px-3 py-1.5">
             <span class="rounded bg-[#e6f4ff] px-2 py-0.5 text-xs text-[#1677ff]">{{ p.category?.name || '-' }}</span>
           </td>
-          <td class="px-3 py-1.5 font-medium text-slate-700">¥{{ p.price }}</td>
-          <td class="px-3 py-1.5 text-slate-600">{{ p.total_stock ?? '-' }}</td>
-          <td class="px-3 py-1.5 text-slate-600">{{ p.sales_count }}</td>
+          <td class="px-3 py-1.5 font-medium text-black">¥{{ p.price }}</td>
+          <td class="px-3 py-1.5 text-black">{{ p.total_stock ?? '-' }}</td>
+          <td class="px-3 py-1.5 text-black">{{ p.sales_count }}</td>
           <td class="px-3 py-1.5">
             <span
               class="rounded px-2 py-0.5 text-xs"
               :class="p.status === 1 ? 'bg-[#e8f7ec] text-[#2e9e57]' : 'bg-slate-100 text-slate-400'"
             >{{ p.status === 1 ? '上架' : '下架' }}</span>
           </td>
-          <td class="px-3 py-1.5 text-slate-500">{{ fmtTime(p.created_at) }}</td>
+          <td class="px-3 py-1.5 text-black">{{ fmtTime(p.created_at) }}</td>
           <td class="px-3 py-1.5">
             <div class="flex items-center gap-1 text-[#1677ff]">
               <button class="hover:underline" @click="router.push(`/products/${p.id}`)">查看</button>

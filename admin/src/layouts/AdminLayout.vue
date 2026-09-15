@@ -2,7 +2,7 @@
 import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import {
-  Box, ClipboardList, FileClock, FolderTree, LayoutDashboard, LogOut, Package, RotateCcw, Settings, SquareUser, UserRound,
+  BarChart3, Box, ClipboardList, FileClock, FolderTree, LayoutDashboard, LayoutList, ListTree, LogOut, MessageSquare, Package, RotateCcw, Settings, ShieldCheck, SquareUser, Tags, UserCog, UserRound, Users,
 } from 'lucide-vue-next'
 import { useAuthStore } from '@/stores/auth'
 
@@ -19,9 +19,17 @@ const icons: Record<string, unknown> = {
   Package,
   FolderTree,
   ClipboardList,
+  RotateCcw,
+  Users,
   Settings,
   FileClock,
-  RotateCcw,
+  Tags,
+  ListTree,
+  LayoutList,
+  MessageSquare,
+  BarChart3,
+  UserCog,
+  ShieldCheck,
 }
 
 interface MenuItem {
@@ -38,10 +46,18 @@ const menus = computed<MenuItem[]>(() => {
     { path: '/dashboard', title: '工作台', icon: 'LayoutDashboard' },
     { path: '/products', title: '商品管理', icon: 'Package', permission: 'product.view' },
     { path: '/categories', title: '分类管理', icon: 'FolderTree', permission: 'category.manage' },
+    { path: '/brands', title: '品牌管理', icon: 'Tags', permission: 'product.view' },
+    { path: '/attributes', title: '属性库', icon: 'ListTree', permission: 'product.view' },
+    { path: '/category-attributes', title: '分类属性模板', icon: 'LayoutList', permission: 'product.view' },
     { path: '/orders', title: '订单管理', icon: 'ClipboardList', permission: 'order.view' },
     { path: '/refunds', title: '退款处理', icon: 'RotateCcw', permission: 'refund.view' },
+    { path: '/reviews', title: '评价管理', icon: 'MessageSquare', permission: 'review.manage' },
+    { path: '/reports', title: '报表中心', icon: 'BarChart3', permission: 'report.view' },
+    { path: '/users', title: '用户管理', icon: 'Users', permission: 'user.manage' },
     { path: '/configs', title: '系统配置', icon: 'Settings', permission: 'config.manage' },
     { path: '/operation-logs', title: '操作日志', icon: 'FileClock', permission: 'log.view' },
+    { path: '/accounts', title: '管理员账号', icon: 'UserCog', permission: 'account.manage' },
+    { path: '/roles', title: '角色权限', icon: 'ShieldCheck', permission: 'role.manage' },
   ]
   // 动态菜单：按权限过滤（超管直通）
   return items.filter((m) => auth.hasPermission(m.permission))

@@ -1,0 +1,16 @@
+
+[1m[30m[46m RUN [49m[39m[22m [36mv5.0.1 [39m[90mD:/codeproject/PHP/CubeShop/admin[39m
+
+[90mstderr[2m | tests/report-center.test.ts[2m > [22m[2mT-021 驾驶舱 Dashboard[2m > [22m[2m待办卡点击跳转对应列表（mock router.push）
+[22m[39m[Vue Router warn]: No match found for location with path "/orders?status=paid"
+
+[90mstderr[2m | tests/report-center.test.ts[2m > [22m[2mT-021 驾驶舱 Dashboard[2m > [22m[2m待办卡点击跳转对应列表（mock router.push）
+[22m[39m[Vue Router warn]: No match found for location with path "/reviews?status=pending"
+
+ [32m✓[39m tests/report-center.test.ts [2m([22m[2m9 tests[22m[2m)[22m[32m 198[2mms[22m[39m
+
+[2m Test Files [22m [1m[32m1 passed[39m[22m[90m (1)[39m
+[2m      Tests [22m [1m[32m9 passed[39m[22m[90m (9)[39m
+[2m   Start at [22m 01:14:01
+[2m   Duration [22m 1.48s[2m (environment 51%, transform 18%, import 15%, tests 15%, setup 1%)[22m
+

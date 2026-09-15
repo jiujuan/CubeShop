@@ -15,9 +15,9 @@ export interface Captcha {
   debug_code?: string
 }
 
-/** 图形验证码 */
+/** 图形验证码（scene=web：用户端专属风格，与管理端区分） */
 export function getCaptcha() {
-  return request.post<ApiResult<Captcha>>('/auth/captcha')
+  return request.post<ApiResult<Captcha>>('/auth/captcha', { scene: 'web' })
 }
 
 /** 登录（API 文档 2.2） */

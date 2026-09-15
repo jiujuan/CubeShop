@@ -19,7 +19,8 @@ class OperationLogController extends Controller
     {
         $query = SysOperationLog::query()->with('user:id,username,nickname');
 
-        if ($userId = $request->integer('user_id')) {
+        // V1.1 T-022：新增 operator_id 别名（兼容既有 user_id），并支持 start/end 简写
+        if ($userId = ($request->integer('operator_id') ?: $request->integer('user_id'))) {
             $query->where('user_id', $userId);
         }
         if ($module = $request->input('module')) {
@@ -28,11 +29,11 @@ class OperationLogController extends Controller
         if ($action = $request->input('action')) {
             $query->where('action', $action);
         }
-        if ($start = $request->input('start_time')) {
-            $query->where('created_at', '>=', $start);
+        if ($start = ($request->input('start') ?: $request->input('start_time'))) {
+            $query->where('created_at', '>=', $this->normalizeStart($start));
         }
-        if ($end = $request->input('end_time')) {
-            $query->where('created_at', '<=', $end);
+        if ($end = ($request->input('end') ?: $request->input('end_time'))) {
+            $query->where('created_at', '<=', $this->normalizeEnd($end));
         }
 
         $pageSize = min(max($request->integer('page_size', 20), 1), 100);
@@ -49,5 +50,21 @@ class OperationLogController extends Controller
             'ip' => $log->ip,
             'created_at' => $log->created_at?->format('Y-m-d H:i:s'),
         ]));
+    }
+
+    /**
+     * 纯日期（Y-m-d）起点补 00:00:00；含时间的原样返回
+     */
+    private function normalizeStart(string $value): string
+    {
+        return strlen($value) === 10 ? $value.' 00:00:00' : $value;
+    }
+
+    /**
+     * 纯日期（Y-m-d）终点补 23:59:59，避免漏掉当天记录
+     */
+    private function normalizeEnd(string $value): string
+    {
+        return strlen($value) === 10 ? $value.' 23:59:59' : $value;
     }
 }

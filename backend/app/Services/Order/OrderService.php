@@ -6,6 +6,8 @@ use App\Exceptions\BusinessException;
 use App\Models\CartItem;
 use App\Models\Order;
 use App\Models\OrderItem;
+use App\Models\OrderLog;
+use App\Models\ProductSku;
 use App\Models\UserAddress;
 use App\Services\Common\ConfigService;
 use App\Services\Common\NoGeneratorService;
@@ -30,6 +32,7 @@ class OrderService
         private NoGeneratorService $noGenerator,
         private ConfigService $config,
         private OperationLogService $operationLog,
+        private OrderLogService $orderLog,
     ) {
     }
 
@@ -143,6 +146,9 @@ class OrderService
             // 已结算的购物车项移除
             CartItem::where('user_id', $userId)->whereIn('id', $cartItems->pluck('id'))->delete();
 
+            // V1.1 E04 / T-028：地址使用频次累加（供地址列表按常用排序）
+            app(\App\Services\Address\AddressService::class)->recordUsage($address->id);
+
             return $order;
         });
 
@@ -151,6 +157,9 @@ class OrderService
             'pay_amount' => $order->pay_amount,
             'items' => $cartItems->count(),
         ]);
+
+        // V1.1 T-001：创建订单的初始流水
+        $this->orderLog->recordCreated($order, OrderLog::OPERATOR_USER, $userId);
 
         return $order->load('items');
     }
@@ -164,7 +173,7 @@ class OrderService
             throw BusinessException::notFound('订单不存在');
         }
 
-        return $this->transitionTo($order, Order::STATUS_CANCELLED, $reason ?? '用户主动取消', 'cancel');
+        return $this->transitionTo($order, Order::STATUS_CANCELLED, $reason ?? '用户主动取消', 'cancel', $userId, OrderLog::OPERATOR_USER);
     }
 
     /**
@@ -173,7 +182,7 @@ class OrderService
     public function cancelExpired(Order $order): bool
     {
         try {
-            $this->transitionTo($order, Order::STATUS_CANCELLED, '超时未支付，系统自动取消', 'cancel', operatorId: null);
+            $this->transitionTo($order, Order::STATUS_CANCELLED, '超时未支付，系统自动取消', 'cancel', operatorId: null, operatorType: OrderLog::OPERATOR_SYSTEM);
 
             return true;
         } catch (BusinessException) {
@@ -186,13 +195,175 @@ class OrderService
     }
 
     /**
-     * 状态机流转（Roadmap P4：禁止非法流转）
+     * 再次购买（V1.1 E02-D / T-004）
+     *
+     * 按历史订单行项目批量加入购物车：
+     * - 逐行校验商品上架状态、SKU 启用状态与可用库存；
+     * - 失效行跳过并返回原因；
+     * - 库存不足时按「最大可购数量」加入（不超卖）；
+     * - 同 SKU 已在购物车时合并数量。
+     *
+     * @return array{added:int, skipped:array<int, array<string,mixed>>, cart_count:int}
+     */
+    public function rebuy(Order $order, int $userId): array
+    {
+        if ((int) $order->user_id !== $userId) {
+            throw BusinessException::notFound('订单不存在');
+        }
+
+        $items = $order->items()->get();
+        if ($items->isEmpty()) {
+            throw BusinessException::badRequest('订单没有可再次购买的商品');
+        }
+
+        $stockMap = $this->inventory->getStockMap(
+            $items->pluck('sku_id')->filter()->unique()->all()
+        );
+
+        $added = 0;
+        $skipped = [];
+
+        DB::transaction(function () use ($items, $userId, $stockMap, &$added, &$skipped) {
+            foreach ($items as $item) {
+                // 行项目未关联 SKU（历史数据）或无 SKU
+                if (! $item->sku_id) {
+                    $skipped[] = ['product_id' => $item->product_id, 'title' => $item->product_title, 'reason' => '规格已删除'];
+
+                    continue;
+                }
+
+                /** @var ProductSku|null $sku */
+                $sku = ProductSku::with('product:id,title,status')->find($item->sku_id);
+
+                if (! $sku || ! $sku->product) {
+                    $skipped[] = ['product_id' => $item->product_id, 'title' => $item->product_title, 'reason' => '商品已删除'];
+
+                    continue;
+                }
+                if ((int) $sku->product->status !== 1) {
+                    $skipped[] = ['product_id' => $sku->product_id, 'title' => $sku->product->title, 'reason' => '商品已下架'];
+
+                    continue;
+                }
+                if ((int) $sku->status !== 1) {
+                    $skipped[] = ['product_id' => $sku->product_id, 'title' => $sku->product->title, 'reason' => '规格已失效'];
+
+                    continue;
+                }
+
+                $stock = (int) ($stockMap[$sku->id] ?? 0);
+                if ($stock <= 0) {
+                    $skipped[] = ['product_id' => $sku->product_id, 'title' => $sku->product->title, 'reason' => '已售罄'];
+
+                    continue;
+                }
+
+                $existing = CartItem::where('user_id', $userId)->where('sku_id', $sku->id)->first();
+                $currentQty = (int) ($existing?->quantity ?? 0);
+
+                // 按最大可购数量加入：已购 + 本次 不超过可用库存
+                $targetQty = min($currentQty + (int) $item->quantity, $stock);
+
+                if ($targetQty <= $currentQty) {
+                    $skipped[] = ['product_id' => $sku->product_id, 'title' => $sku->product->title, 'reason' => '库存不足'];
+
+                    continue;
+                }
+
+                if ($existing) {
+                    $existing->quantity = $targetQty;
+                    $existing->save();
+                } else {
+                    CartItem::create([
+                        'user_id' => $userId,
+                        'sku_id' => $sku->id,
+                        'quantity' => $targetQty,
+                    ]);
+                }
+
+                $added++;
+            }
+        });
+
+        $cartCount = (int) CartItem::where('user_id', $userId)->sum('quantity');
+
+        return ['added' => $added, 'skipped' => $skipped, 'cart_count' => $cartCount];
+    }
+
+    /**
+     * 用户确认收货（V1.1 E02-A / T-002）
+     *
+     * shipped → completed，写 completed_at 与流水（operator_type=user）。
+     * 幂等：已是 completed 时直接返回，不重复写时间与流水。
+     */
+    public function confirm(Order $order, int $userId): Order
+    {
+        if ((int) $order->user_id !== $userId) {
+            throw BusinessException::notFound('订单不存在');
+        }
+
+        // 幂等：已完成的订单直接返回成功
+        if ($order->status === Order::STATUS_COMPLETED) {
+            return $order->load('items');
+        }
+
+        return $this->transitionTo(
+            $order,
+            Order::STATUS_COMPLETED,
+            '用户确认收货',
+            'order',
+            $userId,
+            OrderLog::OPERATOR_USER,
+        )->load('items');
+    }
+
+    /**
+     * 系统自动确认收货（V1.1 E02-A / T-003）
+     *
+     * shipped → completed，operator_type=system，并置 auto_completed 标记。
+     * 幂等：状态已变（并发手动确认/已取消）时返回 false，不产生副作用。
+     */
+    public function autoComplete(Order $order): bool
+    {
+        try {
+            DB::transaction(function () use ($order) {
+                $done = $this->transitionTo(
+                    $order,
+                    Order::STATUS_COMPLETED,
+                    '系统自动确认收货',
+                    'order',
+                    null,
+                    OrderLog::OPERATOR_SYSTEM,
+                );
+                $done->auto_completed = true;
+                $done->save();
+            });
+
+            return true;
+        } catch (BusinessException) {
+            return false; // 状态已变，幂等跳过
+        } catch (Throwable $e) {
+            report($e);
+
+            return false;
+        }
+    }
+
+    /**
+     * 状态机流转（Roadmap P4：禁止非法流转；V1.1 T-001：唯一流水写入点）
      *
      * @param  string  $bizType  库存流水 biz_type
+     * @param  string  $operatorType  操作人类型（user/admin/system），写入 order_logs
      */
-    public function transitionTo(Order $order, string $target, ?string $reason = null, string $bizType = 'order', ?int $operatorId = null): Order
-    {
-        return DB::transaction(function () use ($order, $target, $reason, $bizType, $operatorId) {
+    public function transitionTo(
+        Order $order,
+        string $target,
+        ?string $reason = null,
+        string $bizType = 'order',
+        ?int $operatorId = null,
+        string $operatorType = OrderLog::OPERATOR_SYSTEM,
+    ): Order {
+        return DB::transaction(function () use ($order, $target, $reason, $bizType, $operatorId, $operatorType) {
             // 行锁 + 重读，防并发双取消
             /** @var Order $locked */
             $locked = Order::whereKey($order->id)->lockForUpdate()->first();
@@ -204,6 +375,8 @@ class OrderService
                     Order::STATUS_LABELS[$target] ?? $target,
                 ));
             }
+
+            $fromStatus = $locked->status;
 
             // 取消待支付订单 → 释放锁定库存 + 关闭未完成支付单
             if ($target === Order::STATUS_CANCELLED && $locked->isPendingPayment()) {
@@ -236,9 +409,19 @@ class OrderService
 
             $locked->save();
 
+            // V1.1 T-001：状态流水落库（唯一写入点）
+            $this->orderLog->record(
+                order: $locked,
+                toStatus: $target,
+                operatorType: $operatorType,
+                operatorId: $operatorId,
+                remark: $reason,
+                fromStatus: $fromStatus,
+            );
+
             $this->operationLog->record($operatorId, 'order', 'status_'.$target, 'order', $locked->id, [
                 'order_no' => $locked->order_no,
-                'from' => $order->status,
+                'from' => $fromStatus,
                 'to' => $target,
                 'reason' => $reason,
             ]);

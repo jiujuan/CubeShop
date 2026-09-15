@@ -4,6 +4,7 @@ namespace App\Providers;
 
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\ServiceProvider;
 
@@ -36,5 +37,12 @@ class AppServiceProvider extends ServiceProvider
         RateLimiter::for('order', function (Request $request) {
             return Limit::perMinute(10)->by('order|'.($request->user()?->id ?? $request->ip()));
         });
+
+        // V1.1 F02 / T-018：业务事件 → 通知监听器（站内信 + 邮件）
+        Event::listen(\App\Events\OrderPaid::class, \App\Listeners\SendOrderPaidNotification::class);
+        Event::listen(\App\Events\OrderShipped::class, \App\Listeners\SendOrderShippedNotification::class);
+        Event::listen(\App\Events\RefundResult::class, \App\Listeners\SendRefundResultNotification::class);
+        Event::listen(\App\Events\ReviewReplied::class, \App\Listeners\SendReviewRepliedNotification::class);
+        Event::listen(\App\Events\LowStockAlert::class, \App\Listeners\SendLowStockNotification::class);
     }
 }

@@ -83,7 +83,11 @@ class OrderController extends Controller
             $data['remark'] ?? '商家已发货',
             'ship',
             $request->user()->id,
+            \App\Models\OrderLog::OPERATOR_ADMIN,
         );
+
+        // V1.1 F02 / T-018：发货后通知买家（失败不影响发货结果）
+        event(new \App\Events\OrderShipped($order));
 
         return $this->success($this->detail($order->load('items')), '发货成功');
     }

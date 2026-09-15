@@ -8,7 +8,7 @@ const router = createRouter({
       path: '/',
       name: 'home',
       component: () => import('@/views/HomeView.vue'),
-      meta: { title: 'CubeShop - 品质好物 · 购物无' },
+      meta: { title: 'CubeShop - 品质好物 · 购物无忧' },
     },
     {
       path: '/category/:id',
@@ -71,10 +71,34 @@ const router = createRouter({
       meta: { title: '收银台 · CubeShop', requiresAuth: true },
     },
     {
+      path: '/account',
+      name: 'account',
+      component: () => import('@/views/AccountCenterView.vue'),
+      meta: { title: '个人中心 · CubeShop', requiresAuth: true },
+    },
+    {
+      path: '/account/favorites',
+      name: 'favorites',
+      component: () => import('@/views/FavoriteView.vue'),
+      meta: { title: '我的收藏 · CubeShop', requiresAuth: true },
+    },
+    {
+      path: '/account/histories',
+      name: 'histories',
+      component: () => import('@/views/HistoryView.vue'),
+      meta: { title: '浏览足迹 · CubeShop', requiresAuth: true },
+    },
+    {
       path: '/account/addresses',
       name: 'addresses',
       component: () => import('@/views/AddressView.vue'),
-      meta: { title: '收货地址 · CubeShop' },
+      meta: { title: '收货地址 · CubeShop', requiresAuth: true },
+    },
+    {
+      path: '/notifications',
+      name: 'notifications',
+      component: () => import('@/views/NotificationsView.vue'),
+      meta: { title: '消息通知 · CubeShop', requiresAuth: true },
     },
     {
       path: '/:pathMatch(.*)*',
@@ -86,11 +110,14 @@ const router = createRouter({
   },
 })
 
-/** 已登录访问登录/注册页 → 回首页 */
+/** 未登录访问受保护页 → 跳登录并带 redirect；已登录访问登录/注册页 → 回首页 */
 router.beforeEach((to) => {
   const auth = useAuthStore()
   if (auth.token && (to.name === 'login' || to.name === 'register')) {
     return { path: '/' }
+  }
+  if (to.meta.requiresAuth && !auth.token) {
+    return { path: '/login', query: { redirect: to.fullPath } }
   }
   return true
 })
