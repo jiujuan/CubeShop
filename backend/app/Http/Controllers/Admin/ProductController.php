@@ -110,7 +110,14 @@ class ProductController extends Controller
             });
         } catch (QueryException $e) {
             // SKU 编码唯一约束冲突 → 返回业务错误而非 500
-            if ((int) ($e->errorInfo[1] ?? 0) === 23505 || str_contains($e->getMessage(), 'product_skus_sku_code_unique')) {
+            // PostgreSQL：SQLSTATE 23505 / 索引名；SQLite：UNIQUE constraint failed: product_skus.sku_code
+            $msg = $e->getMessage();
+            $isPgUnique = (int) ($e->errorInfo[1] ?? 0) === 23505
+                || str_contains($msg, 'product_skus_sku_code_unique');
+            $isSqliteUnique = str_contains($msg, 'UNIQUE constraint failed')
+                && str_contains($msg, 'sku_code');
+
+            if ($isPgUnique || $isSqliteUnique) {
                 throw BusinessException::conflict('SKU 编码已存在，请更换后重试');
             }
 
