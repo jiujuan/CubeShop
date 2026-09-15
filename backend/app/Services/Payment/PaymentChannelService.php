@@ -170,6 +170,11 @@ class PaymentChannelService
             }
         }
 
+        // 回调/回跳地址与沙箱标志是独立列，合并进配置供网关直接取用
+        $config['notify_url'] = $record->notify_url ?: $this->buildNotifyUrl($channel);
+        $config['return_url'] = $record->return_url ?: '';
+        $config['sandbox'] = $record->sandbox;
+
         return $config;
     }
 
