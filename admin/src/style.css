@@ -1,0 +1,47 @@
+@import "tailwindcss";
+
+/*
+ * CubeShop 管理端主题（架构文档 9.1）
+ * - 主色 #1677ff
+ * - 侧栏背景 #e6f4ff
+ * - 高信息密度企业后台风格
+ */
+@theme inline {
+  --color-primary: #1677ff;
+  --color-primary-hover: #4096ff;
+  --color-primary-active: #0958d9;
+  --color-sidebar: #e6f4ff;
+  --font-sans: system-ui, -apple-system, "Segoe UI", "Microsoft YaHei", "PingFang SC", "Helvetica Neue", Arial, sans-serif;
+}
+
+:root {
+  --primary: #1677ff;
+  --sidebar-bg: #e6f4ff;
+}
+
+html,
+body,
+#app {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  font-family: var(--font-sans);
+  color: #1f2329;
+  background-color: #f5f6f8;
+  font-size: 13px; /* 高信息密度：紧凑基准字号 */
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+/* 可点击元素统一手型光标（Tailwind v4 preflight 将按钮光标改回了 default） */
+button:not(:disabled),
+[role="button"]:not(:disabled),
+a,
+label:has(input[type="checkbox"]),
+label:has(input[type="radio"]),
+summary {
+  cursor: pointer;
+}
