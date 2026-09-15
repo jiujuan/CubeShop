@@ -2,7 +2,7 @@
 import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import {
-  Box, FileClock, FolderTree, LayoutDashboard, LogOut, Package, RotateCcw, Settings, SquareUser, UserRound,
+  Box, ClipboardList, FileClock, FolderTree, LayoutDashboard, LogOut, Package, RotateCcw, Settings, SquareUser, UserRound,
 } from 'lucide-vue-next'
 import { useAuthStore } from '@/stores/auth'
 
@@ -18,6 +18,7 @@ const icons: Record<string, unknown> = {
   LayoutDashboard,
   Package,
   FolderTree,
+  ClipboardList,
   Settings,
   FileClock,
   RotateCcw,
@@ -37,6 +38,7 @@ const menus = computed<MenuItem[]>(() => {
     { path: '/dashboard', title: '工作台', icon: 'LayoutDashboard' },
     { path: '/products', title: '商品管理', icon: 'Package', permission: 'product.view' },
     { path: '/categories', title: '分类管理', icon: 'FolderTree', permission: 'category.manage' },
+    { path: '/orders', title: '订单管理', icon: 'ClipboardList', permission: 'order.view' },
     { path: '/refunds', title: '退款处理', icon: 'RotateCcw', permission: 'refund.view' },
     { path: '/configs', title: '系统配置', icon: 'Settings', permission: 'config.manage' },
     { path: '/operation-logs', title: '操作日志', icon: 'FileClock', permission: 'log.view' },

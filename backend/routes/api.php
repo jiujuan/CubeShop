@@ -3,7 +3,9 @@
 use App\Http\Controllers\AddressController;
 use App\Http\Controllers\Admin\CategoryController;
 use App\Http\Controllers\Admin\ConfigController;
+use App\Http\Controllers\Admin\DashboardController;
 use App\Http\Controllers\Admin\OperationLogController;
+use App\Http\Controllers\Admin\OrderController as AdminOrderController;
 use App\Http\Controllers\Admin\ProductController;
 use App\Http\Controllers\Admin\RefundController;
 use App\Http\Controllers\Admin\UploadController;
@@ -106,6 +108,15 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/products/{id}', [ProductController::class, 'show'])->middleware('permission:product.view');
         Route::put('/products/{id}', [ProductController::class, 'update'])->middleware('permission:product.update');
         Route::post('/products/{id}/status', [ProductController::class, 'updateStatus'])->middleware('permission:product.update');
+
+        // 数据概览 dashboard.view（API 文档 8.5 / Roadmap P6）
+        Route::get('/dashboard', [DashboardController::class, 'index'])->middleware('permission:dashboard.view');
+
+        // 订单管理 order.*（API 文档 8.3 / Roadmap P6）—— export 必须注册在 {id} 之前
+        Route::get('/orders', [AdminOrderController::class, 'index'])->middleware('permission:order.view');
+        Route::get('/orders/export', [AdminOrderController::class, 'export'])->middleware('permission:order.export');
+        Route::get('/orders/{id}', [AdminOrderController::class, 'show'])->middleware('permission:order.view');
+        Route::post('/orders/{id}/ship', [AdminOrderController::class, 'ship'])->middleware('permission:order.ship');
 
         // 退款处理 refund.*（API 文档 8.4 / Roadmap P5）
         Route::get('/refunds', [RefundController::class, 'index'])->middleware('permission:refund.view');
