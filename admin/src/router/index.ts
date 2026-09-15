@@ -59,6 +59,12 @@ const router = createRouter({
           meta: { title: '分类管理', menu: true, icon: 'FolderTree', permission: 'category.manage' },
         },
         {
+          path: 'orders',
+          name: 'orders',
+          component: () => import('@/views/order/OrderView.vue'),
+          meta: { title: '订单管理', menu: true, icon: 'ClipboardList', permission: 'order.view' },
+        },
+        {
           path: 'refunds',
           name: 'refunds',
           component: () => import('@/views/refund/RefundView.vue'),
