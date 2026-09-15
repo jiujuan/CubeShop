@@ -1,0 +1,23 @@
+@import "tailwindcss";
+
+/* 全站字体：系统默认无衬线（渲染清晰），按系统可用性降级 */
+@theme {
+  --font-sans: system-ui, -apple-system, "Segoe UI", "Microsoft YaHei", "PingFang SC", "Helvetica Neue", Arial, sans-serif;
+}
+
+body {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+
+/* 可点击元素统一手型光标（Tailwind v4 preflight 将按钮光标改回了 default） */
+button:not(:disabled),
+[role="button"]:not(:disabled),
+a,
+label:has(input[type="checkbox"]),
+label:has(input[type="radio"]),
+summary {
+  cursor: pointer;
+}
