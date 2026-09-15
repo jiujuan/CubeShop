@@ -1,4 +1,5 @@
 import { createRouter, createWebHistory } from 'vue-router'
+import { useAuthStore } from '@/stores/auth'
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -30,7 +31,26 @@ const router = createRouter({
     {
       path: '/login',
       name: 'login',
-      redirect: '/',
+      component: () => import('@/views/LoginView.vue'),
+      meta: { title: '登录 · CubeShop' },
+    },
+    {
+      path: '/register',
+      name: 'register',
+      component: () => import('@/views/RegisterView.vue'),
+      meta: { title: '注册 · CubeShop' },
+    },
+    {
+      path: '/cart',
+      name: 'cart',
+      component: () => import('@/views/CartView.vue'),
+      meta: { title: '购物车 · CubeShop' },
+    },
+    {
+      path: '/account/addresses',
+      name: 'addresses',
+      component: () => import('@/views/AddressView.vue'),
+      meta: { title: '收货地址 · CubeShop' },
     },
     {
       path: '/:pathMatch(.*)*',
@@ -40,6 +60,15 @@ const router = createRouter({
   scrollBehavior() {
     return { top: 0 }
   },
+})
+
+/** 已登录访问登录/注册页 → 回首页 */
+router.beforeEach((to) => {
+  const auth = useAuthStore()
+  if (auth.token && (to.name === 'login' || to.name === 'register')) {
+    return { path: '/' }
+  }
+  return true
 })
 
 router.afterEach((to) => {

@@ -1,15 +1,21 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { ChevronDown, Package, ShoppingCart, SquareUser } from 'lucide-vue-next'
+import { ChevronDown, Package, ShoppingCart, SquareUser, UserRound } from 'lucide-vue-next'
 import { getCategories, type CategoryNode } from '@/api/shop'
+import { getCartCount } from '@/api/user'
+import { useAuthStore } from '@/stores/auth'
 
 /**
  * 顶栏（按原型：公告条 + logo/搜索/购物车 + 分类导航）
+ * 登录态：显示购物车角标 / 用户菜单；未登录显示登录注册入口
  */
 const router = useRouter()
+const auth = useAuthStore()
 const keyword = ref('')
 const categories = ref<CategoryNode[]>([])
+const cartCount = ref(0)
+const userMenuOpen = ref(false)
 
 onMounted(async () => {
   try {
@@ -18,7 +24,21 @@ onMounted(async () => {
   } catch {
     categories.value = []
   }
+  refreshCartCount()
 })
+
+/** 登录态变化 / 加购后刷新角标 */
+function refreshCartCount() {
+  if (!auth.token) {
+    cartCount.value = 0
+    return
+  }
+  getCartCount()
+    .then(({ data }) => (cartCount.value = data.data.count))
+    .catch(() => (cartCount.value = 0))
+}
+
+defineExpose({ refreshCartCount })
 
 function search() {
   router.push({ path: '/search', query: keyword.value.trim() ? { keyword: keyword.value.trim() } : {} })
@@ -26,6 +46,16 @@ function search() {
 
 function goCategory(id: number) {
   router.push(`/category/${id}`)
+}
+
+function goCart() {
+  router.push(auth.token ? '/cart' : { path: '/login', query: { redirect: '/cart' } })
+}
+
+async function handleLogout() {
+  await auth.logout()
+  userMenuOpen.value = false
+  router.push('/')
 }
 </script>
 
@@ -37,10 +67,15 @@ function goCategory(id: number) {
         <span class="rounded-sm bg-[#1677ff] px-1 py-0.5 text-[10px] text-white">公告</span>
         全场满 99 元包邮 ｜ 会员专属积分翻倍，购物更优惠！
       </div>
-      <div class="flex items-center gap-3">
+      <div v-if="!auth.token" class="flex items-center gap-3">
         <RouterLink to="/login" class="hover:text-[#1677ff]">登录</RouterLink>
         <span class="text-slate-200">|</span>
-        <RouterLink to="/login" class="hover:text-[#1677ff]">注册</RouterLink>
+        <RouterLink to="/register" class="hover:text-[#1677ff]">注册</RouterLink>
+      </div>
+      <div v-else class="flex items-center gap-3">
+        <span>Hi，{{ auth.user?.nickname || auth.user?.username }}</span>
+        <span class="text-slate-200">|</span>
+        <RouterLink to="/account/addresses" class="hover:text-[#1677ff]">收货地址</RouterLink>
       </div>
     </div>
 
@@ -68,20 +103,38 @@ function goCategory(id: number) {
         </button>
       </div>
 
-      <!-- 购物车 / 订单 / 用户 -->
+      <!-- 购物车 / 用户 -->
       <div class="flex items-center gap-6 text-slate-600">
-        <button class="relative flex flex-col items-center text-xs hover:text-[#1677ff]">
+        <button class="relative flex flex-col items-center text-xs hover:text-[#1677ff]" @click="goCart">
           <span class="relative">
             <ShoppingCart class="h-5 w-5" />
-            <span class="absolute -right-2 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-[#ff4d4f] text-[10px] text-white">0</span>
+            <span
+              v-if="cartCount > 0"
+              class="absolute -right-2 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-[#ff4d4f] px-0.5 text-[10px] text-white"
+            >{{ cartCount > 99 ? '99+' : cartCount }}</span>
           </span>
           购物车
         </button>
-        <button class="flex flex-col items-center text-xs hover:text-[#1677ff]">
-          <Package class="h-5 w-5" />
-          我的订单
-        </button>
-        <button class="flex flex-col items-center text-xs hover:text-[#1677ff]">
+
+        <template v-if="auth.token">
+          <div class="relative">
+            <button class="flex flex-col items-center text-xs hover:text-[#1677ff]" @click="userMenuOpen = !userMenuOpen">
+              <SquareUser class="h-5 w-5" />
+              {{ auth.user?.nickname || auth.user?.username || '我的' }}
+            </button>
+            <div
+              v-if="userMenuOpen"
+              class="absolute right-0 top-10 z-10 w-32 rounded-lg border border-slate-100 bg-white py-1 text-xs shadow-lg"
+              @click="userMenuOpen = false"
+            >
+              <RouterLink to="/account/addresses" class="flex items-center gap-1.5 px-3 py-2 text-slate-600 hover:bg-slate-50">
+                <UserRound class="h-3.5 w-3.5" /> 收货地址
+              </RouterLink>
+              <button class="w-full px-3 py-2 text-left text-red-500 hover:bg-slate-50" @click="handleLogout">退出登录</button>
+            </div>
+          </div>
+        </template>
+        <button v-else class="flex flex-col items-center text-xs hover:text-[#1677ff]" @click="router.push('/login')">
           <SquareUser class="h-5 w-5" />
           登录
         </button>
