@@ -26,6 +26,18 @@ class BalanceRecharge extends Model
         self::STATUS_CLOSED => '已关闭',
     ];
 
+    public const CHANNEL_WECHAT = 'wechat';
+    public const CHANNEL_ALIPAY = 'alipay';
+    public const CHANNEL_BALANCE = 'balance';
+    public const CHANNEL_OFFLINE = 'offline';
+
+    public const CHANNEL_LABELS = [
+        self::CHANNEL_WECHAT => '微信支付',
+        self::CHANNEL_ALIPAY => '支付宝',
+        self::CHANNEL_BALANCE => '余额支付',
+        self::CHANNEL_OFFLINE => '线下转账',
+    ];
+
     protected $table = 'balance_recharges';
 
     protected $fillable = [
@@ -56,6 +68,11 @@ class BalanceRecharge extends Model
     public function getStatusLabelAttribute(): string
     {
         return self::STATUS_LABELS[$this->status] ?? $this->status;
+    }
+
+    public function getChannelLabelAttribute(): string
+    {
+        return self::CHANNEL_LABELS[$this->channel] ?? $this->channel;
     }
 
     /** 实收金额（本金 + 赠送） */

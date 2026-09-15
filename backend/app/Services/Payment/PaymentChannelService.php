@@ -33,6 +33,8 @@ class PaymentChannelService
 
     public function find(string $channel): ?PaymentChannel
     {
+        $this->ensurePresets();
+
         return PaymentChannel::query()->where('channel', $channel)->first();
     }
 
@@ -115,6 +117,28 @@ class PaymentChannelService
         $record = $this->find($channel);
 
         return $record ? $record->sandbox : (bool) config('payments.sandbox', true);
+    }
+
+    /**
+     * 商户参数是否配置齐全（后台列表「已配置」标记 / 工厂真实网关前置条件）
+     */
+    public function isConfigured(string $channel): bool
+    {
+        $config = $this->decryptedConfig($channel);
+
+        $required = $channel === PaymentChannel::CHANNEL_WECHAT
+            ? ['app_id', 'mch_id', 'api_v3_key', 'merchant_private_key', 'merchant_cert_serial_no']
+            : ($channel === PaymentChannel::CHANNEL_ALIPAY
+                ? ['app_id', 'private_key', 'alipay_public_key']
+                : []);
+
+        foreach ($required as $key) {
+            if (empty($config[$key])) {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     /**
