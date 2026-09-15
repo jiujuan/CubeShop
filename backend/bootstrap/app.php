@@ -44,78 +44,84 @@ return Application::configure(basePath: dirname(__DIR__))
                 return null; // 非 API 请求走默认渲染
             }
 
-            // 业务异常：业务码直接透出
+            // 业务异常：业务码直接透出，HTTP 状态按业务码映射
             if ($e instanceof BusinessException) {
                 return response()->json([
                     'code' => $e->businessCode,
                     'message' => $e->getMessage(),
                     'data' => null,
-                ]);
+                ], match ($e->businessCode) {
+                    40001 => 401,
+                    40003 => 403,
+                    40004 => 404,
+                    40009 => 409,
+                    default => 400,
+                });
             }
 
-            // 表单验证失败：40000
+            // 表单验证失败：40000 / HTTP 422
             if ($e instanceof ValidationException) {
                 return response()->json([
                     'code' => 40000,
                     'message' => '参数校验失败',
                     'data' => ['errors' => $e->errors()],
-                ]);
+                ], 422);
             }
 
-            // 未认证：40001
+            // 未认证：40001 / HTTP 401
             if ($e instanceof AuthenticationException) {
                 return response()->json([
                     'code' => 40001,
                     'message' => '未登录或登录已过期',
                     'data' => null,
-                ]);
+                ], 401);
             }
 
-            // spatie 无权限：40003
+            // spatie 无权限：40003 / HTTP 403
             if ($e instanceof UnauthorizedException) {
                 return response()->json([
                     'code' => 40003,
                     'message' => '无权限执行此操作',
                     'data' => null,
-                ]);
+                ], 403);
             }
 
-            // 资源不存在：40004
+            // 资源不存在：40004 / HTTP 404
             if ($e instanceof NotFoundHttpException || $e instanceof ModelNotFoundException) {
                 return response()->json([
                     'code' => 40004,
                     'message' => '资源不存在',
                     'data' => null,
-                ]);
+                ], 404);
             }
 
-            // 限流
+            // 限流：40009 / HTTP 429
             if ($e instanceof ThrottleRequestsException) {
                 return response()->json([
                     'code' => 40009,
                     'message' => '请求过于频繁，请稍后再试',
                     'data' => null,
-                ]);
+                ], 429);
             }
 
-            // 其他 HTTP 异常
+            // 其他 HTTP 异常：HTTP 状态与业务码对齐（429 限流映射业务码 40009）
             if ($e instanceof HttpExceptionInterface) {
                 $status = $e->getStatusCode();
 
                 return response()->json([
-                    'code' => $status * 100, // 保持与业务码分段不冲突
+                    'code' => $status === 429 ? 40009 : $status * 100,
                     'message' => $e->getMessage() !== '' ? $e->getMessage() : '请求失败',
                     'data' => null,
-                ]);
+                ], $status);
             }
 
-            // 系统异常：50000，不向前端暴露内部细节
+            // 系统异常：50000 / HTTP 500，不向前端暴露内部细节
             report($e);
 
             return response()->json([
                 'code' => 50000,
                 'message' => config('app.debug') ? $e->getMessage() : '服务器内部错误',
                 'data' => null,
-            ]);
+            ], 500);
         });
     })->create();
