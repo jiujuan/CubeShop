@@ -102,6 +102,55 @@ export async function exportOrders(params: OrderQuery, filename?: string) {
   URL.revokeObjectURL(url)
 }
 
+// ---------- 订单状态流水（API 文档 8.13，权限 order.log，只读） ----------
+
+export interface OrderLogRow {
+  id: number
+  order_id: number
+  order_no: string | null
+  from_status: string | null
+  from_status_label: string | null
+  to_status: string
+  to_status_label: string
+  operator_type: string
+  operator_type_label: string
+  operator_id: number | null
+  operator_name: string | null
+  remark: string | null
+  created_at: string | null
+}
+
+export interface OrderLogQuery {
+  order_no?: string
+  order_id?: number
+  to_status?: OrderStatus
+  operator_type?: string
+  start_time?: string
+  end_time?: string
+  page?: number
+  page_size?: number
+}
+
+export function getOrderLogs(params: OrderLogQuery) {
+  return request.get<ApiResult<{ list: OrderLogRow[]; pagination: { page: number; page_size: number; total: number; total_pages: number } }>>(
+    '/admin/order-logs',
+    { params },
+  )
+}
+
+/** 单笔订单的完整流水（时间正序） */
+export function getOrderTimeline(orderId: number) {
+  return request.get<ApiResult<{ order_id: number; order_no: string; list: OrderLogRow[] }>>(
+    `/admin/orders/${orderId}/logs`,
+  )
+}
+
+export const OPERATOR_TYPE_LABELS: Record<string, string> = {
+  user: '用户',
+  admin: '管理员',
+  system: '系统',
+}
+
 // ---------- 数据概览（API 文档 8.5 / Roadmap P6，权限 dashboard.view） ----------
 
 export interface StockWarning {

@@ -2,7 +2,7 @@
 import { computed, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import {
-  BarChart3, Box, ChevronDown, ChevronRight, ChevronsLeft, ChevronsRight, ClipboardList, FileClock, FolderTree, LayoutDashboard, LayoutList, ListTree, LogOut, MessageSquare, Package, RotateCcw, Settings, ShieldCheck, SquareUser, Tags, UserCog, UserRound, Users,
+  BarChart3, Box, ChevronDown, ChevronRight, ChevronsLeft, ChevronsRight, ClipboardList, CreditCard, FileClock, FolderTree, History, LayoutDashboard, LayoutList, ListTree, LogOut, MessageSquare, Package, RotateCcw, ScrollText, Settings, ShieldCheck, SquareUser, Tags, UserCog, UserRound, Users,
 } from 'lucide-vue-next'
 import { useAuthStore } from '@/stores/auth'
 
@@ -44,6 +44,9 @@ const icons: Record<string, unknown> = {
   BarChart3,
   UserCog,
   ShieldCheck,
+  CreditCard,
+  ScrollText,
+  History,
 }
 
 interface MenuItem {
@@ -84,6 +87,9 @@ const menuGroups = computed<MenuGroup[]>(() => {
       title: '交易',
       items: [
         { path: '/orders', title: '订单管理', icon: 'ClipboardList', permission: 'order.view' },
+        { path: '/payments', title: '支付管理', icon: 'CreditCard', permission: 'payment.view' },
+        { path: '/payment-logs', title: '支付日志', icon: 'ScrollText', permission: 'payment.view' },
+        { path: '/order-logs', title: '订单流水', icon: 'History', permission: 'order.log' },
         { path: '/refunds', title: '退款处理', icon: 'RotateCcw', permission: 'refund.view' },
         { path: '/reviews', title: '评价管理', icon: 'MessageSquare', permission: 'review.manage' },
       ],

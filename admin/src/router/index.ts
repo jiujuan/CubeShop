@@ -89,6 +89,24 @@ const router = createRouter({
           meta: { title: '退款处理', menu: true, icon: 'RotateCcw', permission: 'refund.view' },
         },
         {
+          path: 'payments',
+          name: 'payments',
+          component: () => import('@/views/order/PaymentView.vue'),
+          meta: { title: '支付管理', menu: true, icon: 'CreditCard', permission: 'payment.view' },
+        },
+        {
+          path: 'payment-logs',
+          name: 'payment-logs',
+          component: () => import('@/views/order/PaymentLogView.vue'),
+          meta: { title: '支付日志', menu: true, icon: 'ScrollText', permission: 'payment.view' },
+        },
+        {
+          path: 'order-logs',
+          name: 'order-logs',
+          component: () => import('@/views/order/OrderLogView.vue'),
+          meta: { title: '订单流水', menu: true, icon: 'History', permission: 'order.log' },
+        },
+        {
           path: 'reports',
           name: 'reports',
           component: () => import('@/views/operation/ReportCenterView.vue'),
