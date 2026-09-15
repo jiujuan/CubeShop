@@ -13,7 +13,9 @@ use App\Http\Controllers\Admin\OperationLogController;
 use App\Http\Controllers\Admin\OrderController as AdminOrderController;
 use App\Http\Controllers\Admin\OrderLogController as AdminOrderLogController;
 use App\Http\Controllers\Admin\PaymentController as AdminPaymentController;
+use App\Http\Controllers\Admin\PaymentChannelController as AdminPaymentChannelController;
 use App\Http\Controllers\Admin\PaymentLogController as AdminPaymentLogController;
+use App\Http\Controllers\Admin\BalanceRechargeController as AdminBalanceRechargeController;
 use App\Http\Controllers\Admin\ProductController;
 use App\Http\Controllers\Admin\RefundController;
 use App\Http\Controllers\Admin\ReportController as AdminReportController;
@@ -203,6 +205,21 @@ Route::middleware(['auth:sanctum', 'account.active'])->group(function () {
         Route::get('/payments/export', [AdminPaymentController::class, 'export'])->middleware('permission:payment.view');
         Route::get('/payments/{id}', [AdminPaymentController::class, 'show'])->middleware('permission:payment.view');
         Route::post('/payments/{id}/close', [AdminPaymentController::class, 'close'])->middleware('permission:payment.manage');
+        Route::post('/payments/{id}/review', [AdminPaymentController::class, 'review'])->middleware('permission:payment.offline.review');
+
+        // 支付渠道配置 payment.channel.manage（仅超管，§5）
+        Route::get('/payment-channels', [AdminPaymentChannelController::class, 'index'])->middleware('permission:payment.channel.manage');
+        Route::get('/payment-channels/{channel}', [AdminPaymentChannelController::class, 'show'])->middleware('permission:payment.channel.manage');
+        Route::put('/payment-channels/{channel}', [AdminPaymentChannelController::class, 'update'])->middleware('permission:payment.channel.manage');
+        Route::post('/payment-channels/{channel}/toggle', [AdminPaymentChannelController::class, 'toggle'])->middleware('permission:payment.channel.manage');
+        Route::post('/payment-channels/{channel}/test', [AdminPaymentChannelController::class, 'test'])->middleware('permission:payment.channel.manage');
+        Route::get('/payment-channels/{channel}/logs', [AdminPaymentChannelController::class, 'logs'])->middleware('permission:payment.channel.manage');
+
+        // 余额充值单管理 balance.recharge.view（核账需 payment.offline.review，§5.2 / §6.5）
+        Route::get('/balance-recharges', [AdminBalanceRechargeController::class, 'index'])->middleware('permission:balance.recharge.view');
+        Route::get('/balance-recharges/export', [AdminBalanceRechargeController::class, 'export'])->middleware('permission:balance.recharge.view');
+        Route::get('/balance-recharges/{id}', [AdminBalanceRechargeController::class, 'show'])->middleware('permission:balance.recharge.view');
+        Route::post('/balance-recharges/{id}/review', [AdminBalanceRechargeController::class, 'review'])->middleware('permission:payment.offline.review');
 
         // 支付日志 payment.view（API 文档 8.12，只读）
         Route::get('/payment-logs', [AdminPaymentLogController::class, 'index'])->middleware('permission:payment.view');

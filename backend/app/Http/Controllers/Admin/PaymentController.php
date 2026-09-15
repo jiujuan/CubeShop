@@ -135,6 +135,39 @@ class PaymentController extends Controller
     }
 
     /**
+     * 线下转账核账（通过 / 驳回，权限 payment.offline.review）
+     * POST /admin/payments/{id}/review  body: { pass:bool, remark? }
+     *
+     * 通过 → 支付单 success 并驱动订单 paid / 充值入账；驳回 → failed，用户可重新提交。
+     */
+    public function review(Request $request, int $id): JsonResponse
+    {
+        $data = $request->validate([
+            'pass' => ['required', 'boolean'],
+            'remark' => ['nullable', 'string', 'max:200'],
+        ]);
+
+        $payment = Payment::query()->find($id);
+        if (! $payment) {
+            throw BusinessException::notFound('支付单不存在');
+        }
+
+        $before = $payment->status;
+        $payment = $this->payments->review($payment, $request->user()->id, (bool) $data['pass'], $data['remark'] ?? null);
+
+        $this->opLog->record($request->user()->id, 'payment', $data['pass'] ? 'review_pass' : 'review_reject', 'payment', $payment->id, [
+            'payment_no' => $payment->payment_no,
+            'order_no' => $payment->order_no,
+            'biz_type' => $payment->biz_type,
+            'before' => $before,
+            'after' => $payment->status,
+            'remark' => $data['remark'] ?? null,
+        ]);
+
+        return $this->success($this->row($payment), $data['pass'] ? '核账通过' : '已驳回');
+    }
+
+    /**
      * 支付单导出（CSV，UTF-8 BOM，最多 5000 条）
      * GET /admin/payments/export（同列表筛选条件）
      */

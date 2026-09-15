@@ -101,6 +101,18 @@ const router = createRouter({
           meta: { title: '支付日志', menu: true, icon: 'ScrollText', permission: 'payment.view' },
         },
         {
+          path: 'balance-recharges',
+          name: 'balance-recharges',
+          component: () => import('@/views/order/BalanceRechargeView.vue'),
+          meta: { title: '余额充值单', menu: true, icon: 'Wallet', permission: 'balance.recharge.view' },
+        },
+        {
+          path: 'payment-channels',
+          name: 'payment-channels',
+          component: () => import('@/views/system/PaymentChannelView.vue'),
+          meta: { title: '支付渠道配置', menu: true, icon: 'CreditCard', permission: 'payment.channel.manage' },
+        },
+        {
           path: 'order-logs',
           name: 'order-logs',
           component: () => import('@/views/order/OrderLogView.vue'),

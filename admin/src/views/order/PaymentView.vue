@@ -6,6 +6,7 @@ import {
   exportPayments,
   getPayment,
   getPayments,
+  reviewPayment,
   PAYMENT_CHANNEL_LABELS,
   PAYMENT_STATUS_CLASS,
   PAYMENT_STATUS_LABELS,
@@ -41,6 +42,13 @@ const closeTarget = ref<PaymentRow | null>(null)
 const closeReason = ref('')
 const closing = ref(false)
 const error = ref('')
+
+// 线下转账核账
+const reviewTarget = ref<PaymentRow | null>(null)
+const reviewPass = ref(true)
+const reviewRemark = ref('')
+const reviewing = ref(false)
+const reviewError = ref('')
 
 const statusTabs: Array<{ value: '' | PaymentStatus; label: string }> = [
   { value: '', label: '全部' },
@@ -128,6 +136,27 @@ async function doClose() {
 
 async function doExport() {
   await exportPayments(queryParams.value, `支付单导出-${new Date().toISOString().slice(0, 10)}.csv`)
+}
+
+async function doReview() {
+  if (!reviewTarget.value) return
+  reviewing.value = true
+  reviewError.value = ''
+  const id = reviewTarget.value.id
+  try {
+    await reviewPayment(id, reviewPass.value, reviewPass.value ? undefined : reviewRemark.value.trim())
+    reviewTarget.value = null
+    reviewRemark.value = ''
+    if (detail.value?.id === id) {
+      const { data } = await getPayment(id)
+      detail.value = data.data
+    }
+    await load(pagination.value.page)
+  } catch (e) {
+    reviewError.value = e instanceof Error ? e.message : '核账失败'
+  } finally {
+    reviewing.value = false
+  }
 }
 
 function goPage(page: number) {
@@ -253,6 +282,15 @@ onMounted(() => load())
                   @click="closeTarget = row; closeReason = ''"
                 >关闭</button>
               </template>
+              <template v-if="row.status === 'reviewing'">
+                <span class="text-slate-200">|</span>
+                <button
+                  v-permission="'payment.offline.review'"
+                  class="text-orange-500 hover:underline"
+                  :data-testid="`review-${row.id}`"
+                  @click="reviewTarget = row; reviewPass = true; reviewRemark = ''"
+                >核账</button>
+              </template>
             </div>
           </td>
         </tr>
@@ -329,6 +367,10 @@ onMounted(() => load())
             </div>
           </div>
           <p v-else class="px-3 py-6 text-center text-slate-400">暂无支付日志</p>
+
+          <div v-if="detail.status === 'reviewing'" class="mt-4 flex justify-end">
+            <Button class="bg-orange-500 px-4 hover:bg-orange-600" v-permission="'payment.offline.review'" @click="reviewTarget = detail; reviewPass = true; reviewRemark = ''">去核账</Button>
+          </div>
         </template>
         <LoadingSpinner v-else />
       </div>
@@ -366,6 +408,44 @@ onMounted(() => load())
             data-testid="close-submit"
             @click="doClose"
           >{{ closing ? '关闭中…' : '确认关闭' }}</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 线下转账核账确认 -->
+    <div
+      v-if="reviewTarget"
+      class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-6"
+      data-testid="review-dialog"
+      @click.self="reviewTarget = null"
+    >
+      <div class="w-full max-w-md rounded-xl bg-white p-6">
+        <h3 class="text-sm font-semibold text-slate-800">线下转账核账</h3>
+        <p class="mt-2 text-[13px] text-slate-500">
+          支付单 <span class="font-mono text-slate-700">{{ reviewTarget.payment_no }}</span>
+          {{ reviewPass ? '通过后将驱动订单支付成功（或充值入账）。' : '驳回后支付单置为失败，用户可重新提交或换渠道。' }}
+        </p>
+        <div class="mt-3 flex gap-4">
+          <label class="flex items-center gap-1 text-[13px]"><input v-model="reviewPass" type="radio" :value="true" class="h-4 w-4" />通过</label>
+          <label class="flex items-center gap-1 text-[13px]"><input v-model="reviewPass" type="radio" :value="false" class="h-4 w-4" />驳回</label>
+        </div>
+        <input
+          v-if="!reviewPass"
+          v-model="reviewRemark"
+          placeholder="驳回原因（必填）"
+          class="mt-3 w-full rounded-lg border border-slate-200 px-3 py-1.5 text-[13px] outline-none focus:border-[#1677ff]"
+          data-testid="review-remark"
+        />
+        <p v-if="reviewError" class="mt-2 text-xs text-red-500" data-testid="review-error">{{ reviewError }}</p>
+        <div class="mt-5 flex justify-end gap-2">
+          <button class="rounded-md border border-slate-300 px-4 py-1.5 text-[13px] text-slate-600 hover:bg-slate-50" @click="reviewTarget = null">取消</button>
+          <button
+            class="rounded-md px-4 py-1.5 text-[13px] text-white hover:opacity-90 disabled:opacity-50"
+            :class="reviewPass ? 'bg-green-600' : 'bg-red-500'"
+            :disabled="reviewing || (!reviewPass && !reviewRemark.trim())"
+            data-testid="review-submit"
+            @click="doReview"
+          >{{ reviewing ? '处理中…' : (reviewPass ? '确认通过' : '确认驳回') }}</button>
         </div>
       </div>
     </div>
