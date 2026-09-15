@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Admin;
 
+use App\Exceptions\BusinessException;
 use App\Http\Controllers\Controller;
 use App\Models\Inventory;
 use App\Models\Category;
@@ -10,6 +11,7 @@ use App\Models\ProductImage;
 use App\Models\ProductSku;
 use App\Services\Common\OperationLogService;
 use App\Support\ApiResponse;
+use Illuminate\Database\QueryException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -94,17 +96,26 @@ class ProductController extends Controller
     {
         $payload = $this->validatePayload($request);
 
-        $product = DB::transaction(function () use ($payload) {
-            $product = Product::create([
-                ...collect($payload)->except(['skus', 'images'])->all(),
-                'price' => $this->minSkuPrice($payload['skus']),
-            ]);
+        try {
+            $product = DB::transaction(function () use ($payload) {
+                $product = Product::create([
+                    ...collect($payload)->except(['skus', 'images'])->all(),
+                    'price' => $this->minSkuPrice($payload['skus']),
+                ]);
 
-            $this->saveSkus($product, $payload['skus']);
-            $this->saveImages($product, $payload['images'] ?? []);
+                $this->saveSkus($product, $payload['skus']);
+                $this->saveImages($product, $payload['images'] ?? []);
 
-            return $product;
-        });
+                return $product;
+            });
+        } catch (QueryException $e) {
+            // SKU 编码唯一约束冲突 → 返回业务错误而非 500
+            if ((int) ($e->errorInfo[1] ?? 0) === 23505 || str_contains($e->getMessage(), 'product_skus_sku_code_unique')) {
+                throw BusinessException::conflict('SKU 编码已存在，请更换后重试');
+            }
+
+            throw $e;
+        }
 
         $this->opLog->record(request()->user()?->id, 'product', 'create', 'Product', $product->id);
 
@@ -122,17 +133,24 @@ class ProductController extends Controller
         $payload = $this->validatePayload($request, forUpdate: true);
 
         DB::transaction(function () use ($product, $payload) {
-            $product->fill([
-                ...collect($payload)->except(['skus', 'images'])->all(),
-                'price' => $this->minSkuPrice($payload['skus']),
-            ])->save();
+            $updates = collect($payload)->except(['skus', 'images'])->all();
 
-            // 全量替换 SKU：删除旧的（软删），重建库存
-            $oldSkuIds = $product->skus()->pluck('id');
-            Inventory::whereIn('sku_id', $oldSkuIds)->delete();
-            $product->skus()->delete();
+            // 未提交 skus 时保留原 SKU（部分更新），价格按现有有效 SKU 最低价
+            if (array_key_exists('skus', $payload)) {
+                $updates['price'] = $this->minSkuPrice($payload['skus']);
+            } else {
+                $updates['price'] = (float) $product->skus()->where('status', 1)->min('price');
+            }
+            $product->fill($updates)->save();
 
-            $this->saveSkus($product, $payload['skus']);
+            if (array_key_exists('skus', $payload)) {
+                // 全量替换 SKU：删除旧的（软删），重建库存
+                $oldSkuIds = $product->skus()->pluck('id');
+                Inventory::whereIn('sku_id', $oldSkuIds)->delete();
+                $product->skus()->delete();
+
+                $this->saveSkus($product, $payload['skus']);
+            }
 
             if (array_key_exists('images', $payload)) {
                 $product->images()->delete();
