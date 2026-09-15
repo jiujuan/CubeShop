@@ -68,7 +68,8 @@ class RoleController extends Controller
                 return [
                     'id' => $role->id,
                     'name' => $role->name,
-                    'label' => self::ROLE_LABELS[$role->name] ?? $role->name,
+                    'display_name' => $role->display_name,
+                    'label' => $role->display_name ?: (self::ROLE_LABELS[$role->name] ?? $role->name),
                     'builtin' => in_array($role->name, self::BUILTIN_ROLES, true),
                     'permissions' => $role->permissions->pluck('name')->all(),
                     'user_count' => $userCount,
@@ -92,12 +93,19 @@ class RoleController extends Controller
     {
         $data = $request->validate([
             'name' => ['required', 'string', 'min:2', 'max:32', 'alpha_dash', 'unique:roles,name'],
+            'display_name' => ['required', 'string', 'max:64'],
             'permissions' => ['nullable', 'array'],
             'permissions.*' => ['string', 'exists:permissions,name'],
         ]);
 
         $role = DB::transaction(function () use ($data) {
-            $role = Role::create(['name' => $data['name'], 'guard_name' => 'web']);
+            // 注意：不能用 Role::create()——spatie 的静态 create 会丢弃 display_name 等附加字段
+            $role = new Role([
+                'name' => $data['name'],
+                'display_name' => $data['display_name'],
+                'guard_name' => 'web',
+            ]);
+            $role->save();
             $role->syncPermissions($data['permissions'] ?? []);
 
             return $role;
@@ -107,6 +115,7 @@ class RoleController extends Controller
 
         $this->opLog->record($request->user()->id, 'role', 'create', 'roles', $role->id, [
             'name' => $role->name,
+            'display_name' => $role->display_name,
             'permissions' => $data['permissions'] ?? [],
         ]);
 
@@ -123,6 +132,8 @@ class RoleController extends Controller
 
         $data = $request->validate([
             'name' => ['sometimes', 'string', 'min:2', 'max:32', 'alpha_dash', 'unique:roles,name,'.$id],
+            // 中文名仅用于展示，内置角色也允许修改（不影响权限判断）
+            'display_name' => ['sometimes', 'string', 'max:64'],
             'permissions' => ['sometimes', 'array'],
             'permissions.*' => ['string', 'exists:permissions,name'],
         ]);
@@ -133,12 +144,18 @@ class RoleController extends Controller
 
         $before = [
             'name' => $role->name,
+            'display_name' => $role->display_name,
             'permissions' => $role->permissions->pluck('name')->all(),
         ];
 
         DB::transaction(function () use ($role, $data) {
             if (isset($data['name'])) {
                 $role->name = $data['name'];
+            }
+            if (array_key_exists('display_name', $data)) {
+                $role->display_name = $data['display_name'];
+            }
+            if (isset($data['name']) || array_key_exists('display_name', $data)) {
                 $role->save();
             }
             if (isset($data['permissions'])) {
@@ -153,6 +170,7 @@ class RoleController extends Controller
             'before' => $before,
             'after' => [
                 'name' => $role->name,
+                'display_name' => $role->display_name,
                 'permissions' => $role->permissions->pluck('name')->all(),
             ],
         ]);

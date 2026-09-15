@@ -52,10 +52,21 @@ class RolePermissionSeeder extends Seeder
             Permission::findOrCreate($permission, 'web');
         }
 
-        // 角色
+        // 角色：name 为英文标识（程序用），display_name 为中文名（展示用）
         $superAdmin = Role::findOrCreate('super_admin', 'web');
         $operator = Role::findOrCreate('operator', 'web');
-        Role::findOrCreate('customer', 'web'); // 买家，无后台权限
+        $customer = Role::findOrCreate('customer', 'web'); // 买家，无后台权限
+
+        foreach ([
+            [$superAdmin, '超级管理员'],
+            [$operator, '运营'],
+            [$customer, '买家'],
+        ] as [$role, $displayName]) {
+            if ($role->display_name !== $displayName) {
+                $role->display_name = $displayName;
+                $role->save();
+            }
+        }
 
         // 运营：除用户管理外的日常运营权限（地址仅可查看核对，代改需超管授权）
         // 账号/角色管理（account.manage / role.manage）为超管专属，运营默认不授予

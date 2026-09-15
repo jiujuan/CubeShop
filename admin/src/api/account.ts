@@ -35,7 +35,11 @@ export interface AccountPayload {
 
 export interface RoleRow {
   id: number
+  /** 英文标识（程序用，唯一） */
   name: string
+  /** 中文名（展示用） */
+  display_name: string | null
+  /** 展示标签：中文名 → 内置中文映射 → 英文标识 */
   label: string
   builtin: boolean
   permissions: string[]
@@ -96,13 +100,13 @@ export function getPermissions() {
   return request.get<ApiResult<{ groups: PermissionGroup[] }>>('/admin/permissions')
 }
 
-/** 新增角色 */
-export function createRole(payload: { name: string; permissions: string[] }) {
+/** 新增角色（一次提交标识 + 中文名 + 权限） */
+export function createRole(payload: { name: string; display_name: string; permissions: string[] }) {
   return request.post<ApiResult<{ id: number }>>('/admin/roles', payload)
 }
 
 /** 编辑角色 */
-export function updateRole(id: number, payload: { name?: string; permissions?: string[] }) {
+export function updateRole(id: number, payload: { name?: string; display_name?: string; permissions?: string[] }) {
   return request.put<ApiResult<null>>(`/admin/roles/${id}`, payload)
 }
 

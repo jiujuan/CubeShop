@@ -75,9 +75,9 @@ const permissionGroups = [
 ]
 
 const rolesFixture = [
-  { id: 1, name: 'super_admin', label: '超级管理员', builtin: true, permissions: ['order.view', 'order.ship', 'product.view', 'product.create'], user_count: 1 },
-  { id: 2, name: 'operator', label: '运营', builtin: true, permissions: ['order.view'], user_count: 1 },
-  { id: 3, name: 'svc', label: 'svc', builtin: false, permissions: [], user_count: 0 },
+  { id: 1, name: 'super_admin', display_name: '超级管理员', label: '超级管理员', builtin: true, permissions: ['order.view', 'order.ship', 'product.view', 'product.create'], user_count: 1 },
+  { id: 2, name: 'operator', display_name: '运营', label: '运营', builtin: true, permissions: ['order.view'], user_count: 1 },
+  { id: 3, name: 'svc', display_name: '客服', label: '客服', builtin: false, permissions: [], user_count: 0 },
 ]
 
 describe('T-023 账号管理 AccountView', () => {
@@ -199,7 +199,43 @@ describe('T-023 角色权限 RoleView', () => {
     await wrapper.find('[data-testid="role-save-btn"]').trigger('click')
     await flushPromises()
 
-    expect(wrapper.find('[data-testid="role-error"]').text()).toContain('权限未发生变化')
+    expect(wrapper.find('[data-testid="role-error"]').text()).toContain('未发生变化')
     expect(updateRoleMock).not.toHaveBeenCalled()
+  })
+
+  it('新增角色：标识 + 中文名 + 权限一页提交', async () => {
+    createRoleMock.mockResolvedValue({ data: { data: { id: 10 } } })
+    const wrapper = mount(RoleView, { global: globalCfg(freshPinia()) })
+    await flushPromises()
+
+    await wrapper.find('[data-testid="role-create-btn"]').trigger('click')
+    await flushPromises()
+
+    await wrapper.find('[data-testid="role-name-input"]').setValue('cs_agent')
+    await wrapper.find('[data-testid="role-display-name-create-input"]').setValue('客服专员')
+    await wrapper.find('[data-testid="create-perm-order.view"]').setValue(true)
+    await wrapper.find('[data-testid="role-create-submit"]').trigger('click')
+    await flushPromises()
+
+    expect(createRoleMock).toHaveBeenCalledWith({
+      name: 'cs_agent',
+      display_name: '客服专员',
+      permissions: ['order.view'],
+    })
+  })
+
+  it('新增角色：缺少中文名时拦截且不发请求', async () => {
+    const wrapper = mount(RoleView, { global: globalCfg(freshPinia()) })
+    await flushPromises()
+
+    await wrapper.find('[data-testid="role-create-btn"]').trigger('click')
+    await flushPromises()
+
+    await wrapper.find('[data-testid="role-name-input"]').setValue('cs_agent')
+    await wrapper.find('[data-testid="role-create-submit"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="role-create-error"]').text()).toContain('中文名')
+    expect(createRoleMock).not.toHaveBeenCalled()
   })
 })
