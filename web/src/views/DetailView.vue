@@ -1,13 +1,15 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { Minus, Plus, ShoppingCart, Truck } from 'lucide-vue-next'
+import { Heart, Minus, Plus, ShoppingCart, Truck } from 'lucide-vue-next'
 import { getProduct, type ProductDetail } from '@/api/shop'
 import { addToCart } from '@/api/user'
+import { favoriteProduct, trackProduct, unfavoriteProduct } from '@/api/favorite'
 import { useAuthStore } from '@/stores/auth'
 import ShopFooter from '@/components/ShopFooter.vue'
 import ShopHeader from '@/components/ShopHeader.vue'
 import LoadingSpinner from '@/components/LoadingSpinner.vue'
+import ReviewSection from '@/components/ReviewSection.vue'
 
 /**
  * 商品详情页（图集 + 规格/SKU 选择 + 价格库存 + 加购）
@@ -43,11 +45,43 @@ const matchedSku = computed(() => {
   ) ?? null
 })
 
+/**
+ * 某维度值是否可选（V1.1 T-013）
+ *
+ * 在「其他维度已选值固定」的前提下，若不存在库存 > 0 的 SKU 组合，则该值置灰。
+ */
+function isValueAvailable(dim: string, value: string): boolean {
+  const others = Object.entries(selectedSpecs.value).filter(([k]) => k !== dim)
+  return (product.value?.skus ?? []).some(
+    (sku) =>
+      (sku.stock ?? 0) > 0 &&
+      sku.specs?.[dim] === value &&
+      others.every(([k, v]) => sku.specs?.[k] === v),
+  )
+}
+
+/** 当前组合已选中但无库存 */
+const comboOutOfStock = computed(() => {
+  if (!matchedSku.value) return false
+  return (matchedSku.value.stock ?? 0) <= 0
+})
+
 const activePrice = computed(() => matchedSku.value?.price ?? product.value?.price ?? '0.00')
 const activeStock = computed(() => matchedSku.value?.stock ?? product.value?.total_stock ?? 0)
 const gallery = computed(() => {
   const imgs = product.value?.images?.length ? product.value.images : []
   return product.value?.main_image ? [product.value.main_image, ...imgs] : imgs
+})
+
+/** 商品参数表（V1.1 T-013）：品牌 + 参数类属性 */
+const paramRows = computed(() => {
+  const rows: Array<{ label: string; value: string }> = []
+  if (product.value?.brand?.name) rows.push({ label: '品牌', value: product.value.brand.name })
+  for (const item of product.value?.attributes ?? []) {
+    rows.push({ label: item.name, value: item.value })
+  }
+  if (product.value?.weight) rows.push({ label: '重量', value: `${product.value.weight} g` })
+  return rows
 })
 
 onMounted(load)
@@ -59,9 +93,15 @@ async function load() {
     const { data } = await getProduct(route.params.id as string)
     product.value = data.data
     currentImage.value = data.data.main_image ?? data.data.images[0] ?? ''
-    // 默认选中每个维度第一个值（若存在）
-    const firstSku = data.data.skus[0]
-    if (firstSku?.specs) selectedSpecs.value = { ...firstSku.specs }
+    isFavorited.value = !!data.data.is_favorited
+    // 默认选中第一个有库存的组合，避免用户看到「未选规格」或一进来就是缺货
+    const skus = data.data.skus ?? []
+    const preferred = skus.find((s) => (s.stock ?? 0) > 0) ?? skus[0]
+    if (preferred?.specs) selectedSpecs.value = { ...preferred.specs }
+    // 浏览足迹上报（V1.1 F05 / T-024）：登录用户才记录，失败静默
+    if (auth.token) {
+      trackProduct(data.data.id).catch(() => {})
+    }
   } catch (e) {
     errorMsg.value = e instanceof Error ? e.message : '商品不存在或已下架'
   } finally {
@@ -69,8 +109,39 @@ async function load() {
   }
 }
 
+/** 收藏状态（V1.1 F05 / T-024） */
+const isFavorited = ref(false)
+const favBusy = ref(false)
+
+async function toggleFavorite() {
+  if (!auth.token) {
+    router.push({ path: '/login', query: { redirect: route.fullPath } })
+    return
+  }
+  if (favBusy.value || !product.value) return
+  favBusy.value = true
+  const next = !isFavorited.value
+  try {
+    if (next) await favoriteProduct(product.value.id)
+    else await unfavoriteProduct(product.value.id)
+    isFavorited.value = next
+    // 同步卡片/足迹列表
+    ;(headerRef.value as { refreshFavCount?: () => void } | null)?.refreshFavCount?.()
+  } catch (e) {
+    cartTipType.value = 'err'
+    cartTip.value = e instanceof Error ? e.message : '操作失败'
+  } finally {
+    favBusy.value = false
+  }
+}
+
+/** 切换规格：同步数量上限，避免残留超量 */
 function pickSpec(dim: string, value: string) {
+  if (!isValueAvailable(dim, value)) return
   selectedSpecs.value = { ...selectedSpecs.value, [dim]: value }
+  if (quantity.value > activeStock.value && activeStock.value > 0) {
+    quantity.value = activeStock.value
+  }
 }
 
 const auth = useAuthStore()
@@ -170,20 +241,33 @@ const emojiByIndex = ['👕', '🎧', '🥤', '⌨️', '👟', '🧴', '💻', 
               </div>
             </div>
 
-            <!-- 规格选择 -->
-            <div v-for="dim in specDims" :key="dim.name" class="mt-5 flex items-center gap-3 text-sm">
+            <!-- 规格选择（V1.1 T-013：不可选值置灰） -->
+            <div v-for="dim in specDims" :key="dim.name" class="mt-5 flex items-center gap-3 text-sm" :data-testid="`spec-dim-${dim.name}`">
               <span class="w-16 text-slate-500">{{ dim.name }}</span>
               <div class="flex flex-wrap gap-2">
                 <button
                   v-for="value in dim.values" :key="value"
                   class="rounded-lg border px-4 py-1.5 transition-colors"
-                  :class="selectedSpecs[dim.name] === value
-                    ? 'border-[#1677ff] bg-[#e6f4ff] text-[#1677ff]'
-                    : 'border-slate-200 text-slate-600 hover:border-[#1677ff]'"
+                  :class="[
+                    selectedSpecs[dim.name] === value
+                      ? 'border-[#1677ff] bg-[#e6f4ff] text-[#1677ff]'
+                      : 'border-slate-200 text-slate-600 hover:border-[#1677ff]',
+                    !isValueAvailable(dim.name, value) ? 'cursor-not-allowed opacity-40 line-through hover:border-slate-200' : '',
+                  ]"
+                  :disabled="!isValueAvailable(dim.name, value)"
+                  :data-testid="`spec-value-${dim.name}-${value}`"
+                  :data-available="isValueAvailable(dim.name, value) ? '1' : '0'"
                   @click="pickSpec(dim.name, value)"
                 >{{ value }}</button>
               </div>
             </div>
+
+            <!-- 缺货提示 -->
+            <p
+              v-if="comboOutOfStock"
+              class="mt-3 text-xs text-[#ff4d4f]"
+              data-testid="spec-out-of-stock"
+            >该规格暂时缺货，请选择其他规格</p>
 
             <!-- 库存 + 数量 -->
             <div class="mt-5 flex items-center gap-6 text-sm">
@@ -226,6 +310,18 @@ const emojiByIndex = ['👕', '🎧', '🥤', '⌨️', '👟', '🧴', '💻', 
                 :disabled="activeStock <= 0 || adding"
                 @click="buyNow"
               >立即购买</button>
+              <button
+                class="flex items-center gap-2 rounded-full border px-6 py-3 text-sm transition-colors disabled:opacity-50"
+                :class="isFavorited
+                  ? 'border-[#ff4d4f] bg-[#fff1f0] text-[#ff4d4f]'
+                  : 'border-slate-200 text-slate-500 hover:border-[#ff4d4f] hover:text-[#ff4d4f]'"
+                :disabled="favBusy"
+                data-testid="favorite-btn"
+                @click="toggleFavorite"
+              >
+                <Heart class="h-5 w-5" :fill="isFavorited ? 'currentColor' : 'none'" />
+                {{ isFavorited ? '已收藏' : '收藏' }}
+              </button>
             </div>
 
             <div class="mt-6 flex items-center gap-2 text-xs text-slate-400">
@@ -233,6 +329,23 @@ const emojiByIndex = ['👕', '🎧', '🥤', '⌨️', '👟', '🧴', '💻', 
             </div>
           </div>
         </div>
+
+        <!-- 用户评价（V1.1 F01 / T-016） -->
+        <ReviewSection :product-id="product.id" />
+
+        <!-- 商品参数（V1.1 T-013） -->
+        <section v-if="paramRows.length" class="mt-12" data-testid="product-params">
+          <h3 class="mb-4 text-lg font-bold text-slate-800">商品参数</h3>
+          <div class="overflow-hidden rounded-xl border border-slate-100">
+            <div
+              v-for="row in paramRows" :key="row.label"
+              class="flex border-b border-slate-50 text-sm last:border-0"
+            >
+              <span class="w-40 shrink-0 bg-slate-50/70 px-4 py-3 text-slate-500">{{ row.label }}</span>
+              <span class="px-4 py-3 text-slate-700">{{ row.value }}</span>
+            </div>
+          </div>
+        </section>
 
         <!-- 详情 -->
         <section class="mt-12 border-t border-slate-100 pt-8">

@@ -1,36 +1,39 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
-import { MapPin, Pencil, Plus, Star, Trash2 } from 'lucide-vue-next'
+import { computed, onMounted, ref } from 'vue'
+import { Home, MapPin, Pencil, Plus, School, Star, Trash2 } from 'lucide-vue-next'
 import {
-  createAddress, deleteAddress, getAddresses, setDefaultAddress, updateAddress,
-  type Address, type AddressPayload,
+  deleteAddress, getAddresses, setDefaultAddress,
+  type Address,
 } from '@/api/user'
+import AddressForm from '@/components/AddressForm.vue'
+import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import LoadingSpinner from '@/components/LoadingSpinner.vue'
 import ShopFooter from '@/components/ShopFooter.vue'
 import ShopHeader from '@/components/ShopHeader.vue'
 import { useAuthStore } from '@/stores/auth'
 
 /**
- * 收货地址管理（增删改查 + 默认地址）
+ * 收货地址管理（V1.1 E04 / T-029）
+ * 标签、级联选择、粘贴识别、常用度排序、删除默认提示
  */
 const auth = useAuthStore()
 const addresses = ref<Address[]>([])
 const loading = ref(true)
 const dialogOpen = ref(false)
 const editing = ref<Address | null>(null)
-const saving = ref(false)
-const errorMsg = ref('')
 
-const emptyForm: AddressPayload = {
-  contact_name: '',
-  contact_phone: '',
-  province: '',
-  city: '',
-  district: '',
-  detail_address: '',
-  is_default: false,
-}
-const form = ref<AddressPayload>({ ...emptyForm })
+const confirmOpen = ref(false)
+const pendingDelete = ref<Address | null>(null)
+const deleteHint = ref('')
+
+/** 常用度排序：默认地址置顶，其次按使用次数、最近使用 */
+const sorted = computed(() =>
+  [...addresses.value].sort((a, b) => {
+    if (a.is_default !== b.is_default) return a.is_default ? -1 : 1
+    if ((b.used_count ?? 0) !== (a.used_count ?? 0)) return (b.used_count ?? 0) - (a.used_count ?? 0)
+    return b.id - a.id
+  }),
+)
 
 async function load() {
   loading.value = true
@@ -49,52 +52,30 @@ onMounted(() => {
 
 function openCreate() {
   editing.value = null
-  form.value = { ...emptyForm }
-  errorMsg.value = ''
   dialogOpen.value = true
 }
 
 function openEdit(addr: Address) {
   editing.value = addr
-  form.value = {
-    contact_name: addr.contact_name,
-    contact_phone: addr.contact_phone_full ?? addr.contact_phone,
-    province: addr.province ?? '',
-    city: addr.city ?? '',
-    district: addr.district ?? '',
-    detail_address: addr.detail_address,
-    is_default: addr.is_default,
-  }
-  errorMsg.value = ''
   dialogOpen.value = true
 }
 
-function validate(): string {
-  if (!form.value.contact_name.trim()) return '请填写收货人姓名'
-  if (!/^1[3-9]\d{9}$/.test(form.value.contact_phone)) return '请填写正确的手机号'
-  if (!form.value.detail_address.trim()) return '请填写详细地址'
-  return ''
+async function onSaved() {
+  dialogOpen.value = false
+  await load()
 }
 
-async function submit() {
-  errorMsg.value = validate()
-  if (errorMsg.value) return
-  saving.value = true
-  try {
-    if (editing.value) await updateAddress(editing.value.id, form.value)
-    else await createAddress(form.value)
-    dialogOpen.value = false
-    await load()
-  } catch (e) {
-    errorMsg.value = e instanceof Error ? e.message : '保存失败'
-  } finally {
-    saving.value = false
-  }
+function askRemove(addr: Address) {
+  pendingDelete.value = addr
+  deleteHint.value = addr.is_default ? '删除的是默认地址，删除后请重新设置一个默认地址。' : ''
+  confirmOpen.value = true
 }
 
-async function remove(addr: Address) {
-  if (!confirm(`确定删除「${addr.contact_name}」的地址？`)) return
-  await deleteAddress(addr.id)
+async function doRemove() {
+  if (!pendingDelete.value) return
+  await deleteAddress(pendingDelete.value.id)
+  confirmOpen.value = false
+  pendingDelete.value = null
   await load()
 }
 
@@ -106,6 +87,8 @@ async function makeDefault(addr: Address) {
 function fullAddress(addr: Address) {
   return [addr.province, addr.city, addr.district, addr.detail_address].filter(Boolean).join(' ')
 }
+
+const labelIcon: Record<string, typeof Home> = { 家: Home, 公司: MapPin, 学校: School }
 </script>
 
 <template>
@@ -118,6 +101,7 @@ function fullAddress(addr: Address) {
         <button
           v-if="auth.token"
           class="flex items-center gap-1 rounded-full bg-[#1677ff] px-4 py-2 text-sm text-white hover:bg-[#4096ff]"
+          data-testid="address-create-btn"
           @click="openCreate"
         ><Plus class="h-4 w-4" /> 新增地址</button>
       </div>
@@ -138,27 +122,36 @@ function fullAddress(addr: Address) {
         </div>
 
         <!-- 地址卡片 -->
-        <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+        <div class="grid grid-cols-1 gap-4 md:grid-cols-2" data-testid="address-list">
           <div
-            v-for="addr in addresses" :key="addr.id"
+            v-for="addr in sorted" :key="addr.id"
             class="relative rounded-xl border p-5 transition-all"
+            :data-testid="`address-card-${addr.id}`"
             :class="addr.is_default ? 'border-[#1677ff] bg-[#f5faff]' : 'border-slate-200 bg-white hover:border-[#91caff]'"
           >
             <div class="flex items-center gap-2">
+              <span
+                v-if="addr.label"
+                class="flex items-center gap-0.5 rounded bg-slate-100 px-1.5 py-0.5 text-[11px] text-slate-500"
+                data-testid="address-label-badge"
+              >
+                <component :is="labelIcon[addr.label] ?? MapPin" class="h-3 w-3" /> {{ addr.label }}
+              </span>
               <span class="font-medium text-slate-800">{{ addr.contact_name }}</span>
               <span class="text-sm text-slate-400">{{ addr.contact_phone }}</span>
-              <span v-if="addr.is_default" class="flex items-center gap-0.5 rounded bg-[#e6f4ff] px-1.5 py-0.5 text-[11px] text-[#1677ff]">
+              <span v-if="addr.is_default" class="flex items-center gap-0.5 rounded bg-[#e6f4ff] px-1.5 py-0.5 text-[11px] text-[#1677ff]" data-testid="address-default-badge">
                 <Star class="h-3 w-3" /> 默认
               </span>
             </div>
             <p class="mt-2 text-sm leading-6 text-slate-600">{{ fullAddress(addr) }}</p>
+            <p v-if="addr.used_count" class="mt-1 text-xs text-slate-400">已使用 {{ addr.used_count }} 次</p>
 
             <div class="mt-4 flex items-center gap-4 text-xs">
               <button v-if="!addr.is_default" class="text-[#1677ff] hover:underline" @click="makeDefault(addr)">设为默认</button>
               <button class="flex items-center gap-0.5 text-slate-500 hover:text-[#1677ff]" @click="openEdit(addr)">
                 <Pencil class="h-3.5 w-3.5" /> 编辑
               </button>
-              <button class="flex items-center gap-0.5 text-slate-500 hover:text-red-500" @click="remove(addr)">
+              <button class="flex items-center gap-0.5 text-slate-500 hover:text-red-500" @click="askRemove(addr)">
                 <Trash2 class="h-3.5 w-3.5" /> 删除
               </button>
             </div>
@@ -169,46 +162,21 @@ function fullAddress(addr: Address) {
       <!-- 新增/编辑弹窗 -->
       <Teleport to="body">
         <div v-if="dialogOpen" class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4" @click.self="dialogOpen = false">
-          <div class="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
+          <div class="max-h-[88vh] w-full max-w-md overflow-y-auto rounded-2xl bg-white p-6 shadow-xl">
             <h3 class="mb-4 text-base font-semibold text-slate-800">{{ editing ? '编辑地址' : '新增地址' }}</h3>
-
-            <div class="space-y-3 text-sm">
-              <div class="flex gap-3">
-                <input v-model="form.contact_name" type="text" placeholder="收货人姓名" maxlength="20"
-                  class="h-10 flex-1 rounded-lg border border-slate-200 px-3 outline-none focus:border-[#1677ff]" />
-                <input v-model="form.contact_phone" type="tel" placeholder="手机号" maxlength="11"
-                  class="h-10 flex-1 rounded-lg border border-slate-200 px-3 outline-none focus:border-[#1677ff]" />
-              </div>
-              <div class="flex gap-3">
-                <input v-model="form.province" type="text" placeholder="省" maxlength="20"
-                  class="h-10 flex-1 rounded-lg border border-slate-200 px-3 outline-none focus:border-[#1677ff]" />
-                <input v-model="form.city" type="text" placeholder="市" maxlength="20"
-                  class="h-10 flex-1 rounded-lg border border-slate-200 px-3 outline-none focus:border-[#1677ff]" />
-                <input v-model="form.district" type="text" placeholder="区" maxlength="20"
-                  class="h-10 flex-1 rounded-lg border border-slate-200 px-3 outline-none focus:border-[#1677ff]" />
-              </div>
-              <input v-model="form.detail_address" type="text" placeholder="详细地址（街道、门牌号）" maxlength="100"
-                class="h-10 w-full rounded-lg border border-slate-200 px-3 outline-none focus:border-[#1677ff]" />
-
-              <label class="flex cursor-pointer items-center gap-2 text-slate-600">
-                <input v-model="form.is_default" type="checkbox" class="accent-[#1677ff]" />
-                设为默认地址
-              </label>
-
-              <p v-if="errorMsg" class="rounded-md bg-red-50 px-3 py-2 text-xs text-red-500">{{ errorMsg }}</p>
-            </div>
-
-            <div class="mt-5 flex justify-end gap-2">
-              <button class="rounded-lg border border-slate-200 px-4 py-2 text-sm text-slate-600 hover:bg-slate-50" @click="dialogOpen = false">取消</button>
-              <button
-                class="rounded-lg bg-[#1677ff] px-5 py-2 text-sm text-white hover:bg-[#4096ff] disabled:opacity-60"
-                :disabled="saving"
-                @click="submit"
-              >{{ saving ? '保存中...' : '保存' }}</button>
-            </div>
+            <AddressForm :address="editing" @saved="onSaved" @cancel="dialogOpen = false" />
           </div>
         </div>
       </Teleport>
+
+      <ConfirmDialog
+        v-model="confirmOpen"
+        title="确认删除地址？"
+        :content="deleteHint || '删除后不可恢复。'"
+        confirm-text="确认删除"
+        @confirm="doRemove"
+        @cancel="confirmOpen = false"
+      />
     </main>
 
     <ShopFooter />

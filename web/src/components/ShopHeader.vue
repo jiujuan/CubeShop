@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
-import { useRouter } from 'vue-router'
-import { ChevronDown, Package, ShoppingCart, SquareUser, UserRound } from 'lucide-vue-next'
+import { computed, onMounted, ref } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+import { Bell, ChevronDown, ClipboardList, Clock, Heart, MapPin, Package, ShoppingCart, SquareUser, UserRound } from 'lucide-vue-next'
 import { getCategories, type CategoryNode } from '@/api/shop'
 import { getCartCount } from '@/api/user'
+import NotificationBell from '@/components/NotificationBell.vue'
 import { useAuthStore } from '@/stores/auth'
 
 /**
@@ -11,6 +12,7 @@ import { useAuthStore } from '@/stores/auth'
  * 登录态：显示购物车角标 / 用户菜单；未登录显示登录注册入口
  */
 const router = useRouter()
+const route = useRoute()
 const auth = useAuthStore()
 const keyword = ref('')
 const categories = ref<CategoryNode[]>([])
@@ -48,6 +50,14 @@ function goCategory(id: number) {
   router.push(`/category/${id}`)
 }
 
+/** 当前所在一级分类（分类页导航高亮） */
+const activeRootId = computed(() => {
+  if (route.name !== 'category' || !route.params.id) return undefined
+  const id = Number(route.params.id)
+  const root = categories.value.find((r) => r.id === id || r.children.some((c) => c.id === id))
+  return root?.id
+})
+
 function goCart() {
   router.push(auth.token ? '/cart' : { path: '/login', query: { redirect: '/cart' } })
 }
@@ -75,7 +85,7 @@ async function handleLogout() {
       <div v-else class="flex items-center gap-3">
         <span>Hi，{{ auth.user?.nickname || auth.user?.username }}</span>
         <span class="text-slate-200">|</span>
-        <RouterLink to="/account/addresses" class="hover:text-[#1677ff]">收货地址</RouterLink>
+        <RouterLink to="/account" class="hover:text-[#1677ff]">个人中心</RouterLink>
       </div>
     </div>
 
@@ -87,7 +97,7 @@ async function handleLogout() {
         </span>
         <span>
           <span class="block text-xl font-bold leading-5 text-slate-800">CubeShop</span>
-          <span class="block text-[11px] text-slate-400">品质好物 · 购物无</span>
+          <span class="block text-[11px] text-slate-400">品质好物 · 购物无忧</span>
         </span>
       </RouterLink>
 
@@ -116,22 +126,38 @@ async function handleLogout() {
           购物车
         </button>
 
+        <!-- 通知铃铛（V1.1 F02 / T-019，登录态可见） -->
+        <NotificationBell />
+
         <template v-if="auth.token">
           <div class="relative">
-            <button class="flex flex-col items-center text-xs hover:text-[#1677ff]" @click="userMenuOpen = !userMenuOpen">
+            <button class="flex flex-col items-center text-xs hover:text-[#1677ff]" data-testid="user-menu-trigger" @click="userMenuOpen = !userMenuOpen">
               <SquareUser class="h-5 w-5" />
               {{ auth.user?.nickname || auth.user?.username || '我的' }}
             </button>
             <div
               v-if="userMenuOpen"
-              class="absolute right-0 top-10 z-10 w-32 rounded-lg border border-slate-100 bg-white py-1 text-xs shadow-lg"
+              class="absolute right-0 top-10 z-10 w-36 rounded-lg border border-slate-100 bg-white py-1 text-xs shadow-lg"
+              data-testid="user-menu"
               @click="userMenuOpen = false"
             >
+              <RouterLink to="/account" class="flex items-center gap-1.5 px-3 py-2 text-slate-600 hover:bg-slate-50">
+                <UserRound class="h-3.5 w-3.5" /> 个人中心
+              </RouterLink>
               <RouterLink to="/orders" class="flex items-center gap-1.5 px-3 py-2 text-slate-600 hover:bg-slate-50">
                 <ClipboardList class="h-3.5 w-3.5" /> 我的订单
               </RouterLink>
+              <RouterLink to="/account/favorites" class="flex items-center gap-1.5 px-3 py-2 text-slate-600 hover:bg-slate-50">
+                <Heart class="h-3.5 w-3.5" /> 我的收藏
+              </RouterLink>
+              <RouterLink to="/account/histories" class="flex items-center gap-1.5 px-3 py-2 text-slate-600 hover:bg-slate-50">
+                <Clock class="h-3.5 w-3.5" /> 浏览足迹
+              </RouterLink>
+              <RouterLink to="/notifications" class="flex items-center gap-1.5 px-3 py-2 text-slate-600 hover:bg-slate-50">
+                <Bell class="h-3.5 w-3.5" /> 消息通知
+              </RouterLink>
               <RouterLink to="/account/addresses" class="flex items-center gap-1.5 px-3 py-2 text-slate-600 hover:bg-slate-50">
-                <UserRound class="h-3.5 w-3.5" /> 收货地址
+                <MapPin class="h-3.5 w-3.5" /> 收货地址
               </RouterLink>
               <button class="w-full px-3 py-2 text-left text-red-500 hover:bg-slate-50" @click="handleLogout">退出登录</button>
             </div>
@@ -162,10 +188,11 @@ async function handleLogout() {
           </div>
         </div>
 
-        <button class="border-b-2 border-[#1677ff] font-medium text-[#1677ff]" @click="router.push('/')">热销推荐</button>
+        <button class="border-b-2 font-medium" :class="route.path === '/' ? 'border-[#1677ff] text-[#1677ff]' : 'border-transparent hover:text-[#1677ff]'" @click="router.push('/')">热销推荐</button>
         <button
           v-for="root in categories" :key="root.id"
-          class="hover:text-[#1677ff]"
+          class="border-b-2 transition-colors"
+          :class="activeRootId === root.id ? 'border-[#1677ff] font-medium text-[#1677ff]' : 'border-transparent hover:text-[#1677ff]'"
           @click="goCategory(root.id)"
         >{{ root.name }}</button>
       </div>

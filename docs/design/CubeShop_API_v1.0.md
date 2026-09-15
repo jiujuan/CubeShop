@@ -78,6 +78,35 @@
 
 ## 2. 认证模块 `/auth`
 
+### 2.0 获取图形验证码
+`POST /auth/captcha`
+
+**无需认证**
+
+**请求体**（可选）
+
+| 字段 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| scene | string | 否 | 场景：`admin`（默认，后台管理端，浅蓝底直线风格）/ `web`（用户端登录/注册，暖色渐变曲线风格）。两者视觉风格明显区分 |
+
+**成功响应**
+```json
+{
+  "code": 0,
+  "message": "success",
+  "data": {
+    "captcha_id": "uuid",
+    "image": "data:image/svg+xml;base64,...",
+    "expires_in": 300
+  }
+}
+```
+
+**说明**
+- 验证码 4 位大写（已剔除 0/O/1/I 易混淆字符），5 分钟有效，校验一次即销毁。
+- `captcha_id` 全局唯一，校验时不区分场景，同一验证码仅能消费一次。
+- 非法 `scene` 值回落 `admin` 样式。
+
 ### 2.1 用户注册
 `POST /auth/register`
 
@@ -874,6 +903,39 @@
 
 ---
 
+### 8.8 用户管理
+`GET /admin/users`  
+`GET /admin/users/{id}`  
+`PUT /admin/users/{id}`  
+`PUT /admin/users/{id}/status`
+
+**权限**：`user.manage`
+
+管理前台注册买家（sys_user，角色 customer）。查询参数：`keyword`（用户名/昵称/手机号/邮箱模糊）、`status`（1 正常 / 0 禁用）、`role`（customer 默认 / admin 后台账号 / all）、`start_time` / `end_time`（注册时间范围）、分页。
+
+- 列表与详情含订单统计：`order_count`（有效订单数）、`total_paid`（累计实付）；详情另含 `recent_orders`（最近 10 笔）。
+- 编辑仅支持昵称 / 手机号 / 邮箱（唯一性校验）。
+- 禁用立即吊销全部 Token 强制下线；禁止禁用当前登录账号；超级管理员账号不允许在此禁用/编辑。
+- 关键写操作（编辑 / 启用 / 禁用）记录操作日志（module=user）。
+
+---
+
+### 8.9 收货地址管理（设计文档 CubeShop_Address_Design_v1.0 §5）
+`GET  /admin/users/{userId}/addresses`  
+`PUT  /admin/addresses/{id}`
+
+**权限**：查看 `address.view`；代改 `address.manage`
+
+后台无独立地址菜单、无全局地址列表；按用户逐个查看（用户管理详情内嵌）。
+
+- 查看：某用户地址列表（默认地址置顶），手机号脱敏 + `contact_phone_full` 供编辑回显，附 `updated_at`。
+- 代改：仅 `contact_name / contact_phone / province / city / district / detail_address`（全部 sometimes）；传 `is_default` / `user_id` 显式拒绝 40000；不提供代新增 / 删除 / 设默认。
+- 代改写操作日志（module=address，含 before/after 快照）。
+- **订单收货信息以下单时刻 `orders.address_snapshot` 快照为准，代改不影响历史订单。**
+- 前台新增地址上限每用户 20 条（超出 40000）。
+
+---
+
 ## 9. 权限码参考（与 spatie 对齐）
 
 | 权限码 | 说明 |
@@ -890,7 +952,9 @@
 | dashboard.view | 数据概览 |
 | config.manage | 系统配置 |
 | log.view | 操作日志 |
-| user.manage | 用户管理（预留） |
+| user.manage | 用户管理（买家账号查看/搜索/禁用） |
+| address.view | 查看用户收货地址 |
+| address.manage | 代用户修改收货地址 |
 
 超级管理员拥有全部权限。
 

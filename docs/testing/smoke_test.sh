@@ -100,6 +100,49 @@ echo "--- 5. 管理端发货"
 SHIP=$(req POST "/admin/orders/$ORDER_ID/ship" "$ATOK" '{"company":"顺丰","tracking_no":"SMOKE001"}')
 [ "$(echo "$SHIP" | jpath code)" = "0" ] && ok "发货成功" || bad "发货: $(echo "$SHIP" | head -c 120)"
 
+# ---------- V1.1 增量用例（T-030 扩展） ----------
+echo "--- 5b. 用户确认收货（V1.1 E02-A）"
+CONFIRM=$(req POST "/orders/$ORDER_ID/confirm" "$TOKEN" '{}')
+[ "$(echo "$CONFIRM" | jpath code)" = "0" ] && ok "确认收货" || bad "确认收货: $(echo "$CONFIRM" | head -c 120)"
+STATUS2=$(req GET "/orders/$ORDER_ID" "$TOKEN" '' | jpath data.status)
+[ "$STATUS2" = "completed" ] && ok "订单状态 completed" || bad "订单状态: $STATUS2"
+
+echo "--- 5c. 商品评价（V1.1 F01）"
+ITEM_ID=$(req GET "/orders/$ORDER_ID" "$TOKEN" '' | jpath data.items.0.id)
+if [ -n "$ITEM_ID" ]; then
+  REV=$(req POST "/orders/$ORDER_ID/items/$ITEM_ID/review" "$TOKEN" '{"rating":5,"content":"冒烟测试好评"}')
+  [ "$(echo "$REV" | jpath code)" = "0" ] && ok "提交评价" || bad "评价: $(echo "$REV" | head -c 120)"
+else
+  echo "  (无订单明细，跳过评价)"
+fi
+
+echo "--- 5d. 收藏与足迹（V1.1 F05）"
+FAV=$(req POST "/products/$FIRST/favorite" "$TOKEN" '')
+[ "$(echo "$FAV" | jpath code)" = "0" ] && ok "收藏商品" || bad "收藏: $(echo "$FAV" | head -c 120)"
+FAVLIST=$(req GET "/me/favorites" "$TOKEN" '' | jpath code)
+[ "$FAVLIST" = "0" ] && ok "收藏列表" || bad "收藏列表"
+TRACK=$(req POST "/products/$FIRST/track" "$TOKEN" '')
+[ "$(echo "$TRACK" | jpath code)" = "0" ] && ok "足迹上报" || bad "足迹: $(echo "$TRACK" | head -c 120)"
+
+echo "--- 5e. 站内通知未读数（V1.1 F02）"
+UNREAD=$(req GET /me/notifications/unread-count "$TOKEN" '' | jpath data.count)
+[ -n "$UNREAD" ] && ok "通知未读数($UNREAD)" || bad "通知未读数"
+
+echo "--- 5f. 修改密码（V1.1 E05-B）"
+PWDCHG=$(req POST /auth/password "$TOKEN" '{"old_password":"Test@1234","password":"Test@5678","password_confirmation":"Test@5678"}')
+[ "$(echo "$PWDCHG" | jpath code)" = "0" ] && ok "修改密码" || bad "改密: $(echo "$PWDCHG" | head -c 120)"
+# 其他设备 Token 已失效 → 新登录可用
+captcha_pair "$U" login
+NEWTOK=$(req POST /auth/login '' "{\"username\":\"$U\",\"password\":\"Test@5678\",\"captcha_id\":\"$CAP_ID\",\"captcha_code\":\"$CAP_CODE\"}" | jpath data.token)
+[ -n "$NEWTOK" ] && ok "新密码可登录" || bad "新密码登录失败"
+TOKEN="$NEWTOK"
+
+echo "--- 5g. 头像上传（V1.1 E05-A）"
+TMPIMG="./docs/testing/.smoke-avatar.png"
+printf '%s' 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==' | base64 -d > "$TMPIMG" 2>/dev/null
+UP=$(curl -s --noproxy '*' -X POST "$BASE/user/upload" -H "Authorization: Bearer $TOKEN" -F "file=@$TMPIMG;type=image/png")
+[ "$(echo "$UP" | jpath code)" = "0" ] && ok "头像上传" || bad "上传: $(echo "$UP" | head -c 120)"
+
 echo "--- 6. 退出登录"
 OUT=$(req POST /auth/logout "$TOKEN" '')
 [ "$(echo "$OUT" | jpath code)" = "0" ] && ok "退出登录" || bad "退出: $(echo "$OUT" | head -c 80)"

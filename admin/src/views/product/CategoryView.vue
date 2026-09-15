@@ -133,10 +133,10 @@ async function onConfirm() {
               <ChevronRight v-else class="h-4 w-4" />
             </button>
           </td>
-          <td class="px-3 py-2.5 text-slate-700" :class="row.depth === 1 ? 'pl-10 text-slate-500' : 'font-medium'">
+          <td class="px-3 py-2.5 text-black" :class="row.depth === 1 ? 'pl-10' : 'font-medium'">
             {{ row.name }}
           </td>
-          <td class="px-3 py-2.5 text-slate-500">{{ row.sort }}</td>
+          <td class="px-3 py-2.5 text-black">{{ row.sort }}</td>
           <td class="px-3 py-2.5">
             <span
               class="rounded px-2 py-0.5 text-xs"

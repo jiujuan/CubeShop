@@ -144,8 +144,9 @@ class PaymentService
         }
 
         // 4. 事务：更新支付单 + 订单 + 确认扣减库存
+        $paidOrder = null;
         try {
-            DB::transaction(function () use ($payment, $status, $tradeNo) {
+            DB::transaction(function () use ($payment, $status, $tradeNo, &$paidOrder) {
                 // 条件更新防并发回调
                 $affected = Payment::whereKey($payment->id)
                     ->where('status', Payment::STATUS_PENDING)
@@ -172,6 +173,7 @@ class PaymentService
                         }
                     }
                     $this->orders->transitionTo($order, Order::STATUS_PAID, null, 'order');
+                    $paidOrder = $order;
                 } elseif ($status === Payment::STATUS_CLOSED) {
                     $this->orders->transitionTo($order, Order::STATUS_CANCELLED, '支付关闭', 'order');
                 }
@@ -185,6 +187,11 @@ class PaymentService
             report($e);
 
             return ['ok' => false, 'message' => '支付处理失败'];
+        }
+
+        // V1.1 F02 / T-018：事务提交后派发支付成功事件（通知买家，失败不影响支付结果）
+        if ($paidOrder !== null) {
+            event(new \App\Events\OrderPaid($paidOrder));
         }
 
         $this->log($payment, 'callback', $payload, ['ok' => true, 'status' => $status]);

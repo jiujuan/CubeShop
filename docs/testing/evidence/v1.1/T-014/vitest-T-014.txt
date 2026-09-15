@@ -1,0 +1,192 @@
+
+[1m[30m[46m RUN [49m[39m[22m [36mv5.0.1 [39m[90mD:/codeproject/PHP/CubeShop/web[39m
+
+[90mstderr[2m | tests/browse-view.test.ts[2m > [22m[2m分类商品列表页（BrowseView）[2m > [22m[2m渲染分类侧栏与商品卡片，点击子分类跳转 /category/:id
+[22m[39m[Vue warn]: Failed to resolve component: ClipboardList
+If this is a native custom element, make sure to exclude it from component resolution via compilerOptions.isCustomElement. 
+  at <ShopHeader> 
+  at <BrowseView ref="VTU_COMPONENT" > 
+  at <VTUROOT>
+
+[90mstderr[2m | tests/browse-view.test.ts[2m > [22m[2m分类商品列表页（BrowseView）[2m > [22m[2m渲染分类侧栏与商品卡片，点击子分类跳转 /category/:id
+[22m[39m[Vue warn]: Failed to resolve component: ClipboardList
+If this is a native custom element, make sure to exclude it from component resolution via compilerOptions.isCustomElement. 
+  at <ShopHeader> 
+  at <BrowseView ref="VTU_COMPONENT" > 
+  at <VTUROOT>
+
+[90mstderr[2m | tests/browse-view.test.ts[2m > [22m[2m分类商品列表页（BrowseView）[2m > [22m[2m渲染分类侧栏与商品卡片，点击子分类跳转 /category/:id
+[22m[39m[Vue warn]: Failed to resolve component: ClipboardList
+If this is a native custom element, make sure to exclude it from component resolution via compilerOptions.isCustomElement. 
+  at <ShopHeader> 
+  at <BrowseView ref="VTU_COMPONENT" > 
+  at <VTUROOT>
+
+[90mstderr[2m | tests/browse-view.test.ts[2m > [22m[2m分类商品列表页（BrowseView）[2m > [22m[2m渲染分类侧栏与商品卡片，点击子分类跳转 /category/:id
+[22m[39m[Vue warn]: Failed to resolve component: ClipboardList
+If this is a native custom element, make sure to exclude it from component resolution via compilerOptions.isCustomElement. 
+  at <ShopHeader> 
+  at <BrowseView ref="VTU_COMPONENT" > 
+  at <VTUROOT>
+
+[90mstderr[2m | tests/browse-view.test.ts[2m > [22m[2m分类商品列表页（BrowseView）[2m > [22m[2m渲染分类侧栏与商品卡片，点击子分类跳转 /category/:id
+[22m[39m[Vue warn]: Failed to resolve component: ClipboardList
+If this is a native custom element, make sure to exclude it from component resolution via compilerOptions.isCustomElement. 
+  at <ShopHeader> 
+  at <BrowseView ref="VTU_COMPONENT" > 
+  at <VTUROOT>
+
+[90mstderr[2m | tests/browse-view.test.ts[2m > [22m[2m分类商品列表页（BrowseView）[2m > [22m[2m无数据时显示「暂无分类商品」
+[22m[39m[Vue warn]: Failed to resolve component: ClipboardList
+If this is a native custom element, make sure to exclude it from component resolution via compilerOptions.isCustomElement. 
+  at <ShopHeader> 
+  at <BrowseView ref="VTU_COMPONENT" > 
+  at <VTUROOT>
+
+[90mstderr[2m | tests/browse-view.test.ts[2m > [22m[2m分类商品列表页（BrowseView）[2m > [22m[2m无数据时显示「暂无分类商品」
+[22m[39m[Vue warn]: Failed to resolve component: ClipboardList
+If this is a native custom element, make sure to exclude it from component resolution via compilerOptions.isCustomElement. 
+  at <ShopHeader> 
+  at <BrowseView ref="VTU_COMPONENT" > 
+  at <VTUROOT>
+
+[90mstderr[2m | tests/browse-view.test.ts[2m > [22m[2m列表页按属性筛选（T-014）[2m > [22m[2m筛选面板按当前分类渲染品牌与可筛属性
+[22m[39m[Vue warn]: Failed to resolve component: ClipboardList
+If this is a native custom element, make sure to exclude it from component resolution via compilerOptions.isCustomElement. 
+  at <ShopHeader> 
+  at <BrowseView ref="VTU_COMPONENT" > 
+  at <VTUROOT>
+
+[90mstderr[2m | tests/browse-view.test.ts[2m > [22m[2m列表页按属性筛选（T-014）[2m > [22m[2m筛选面板按当前分类渲染品牌与可筛属性
+[22m[39m[Vue warn]: Failed to resolve component: ClipboardList
+If this is a native custom element, make sure to exclude it from component resolution via compilerOptions.isCustomElement. 
+  at <ShopHeader> 
+  at <BrowseView ref="VTU_COMPONENT" > 
+  at <VTUROOT>
+
+[90mstderr[2m | tests/browse-view.test.ts[2m > [22m[2m列表页按属性筛选（T-014）[2m > [22m[2m筛选面板按当前分类渲染品牌与可筛属性
+[22m[39m[Vue warn]: Failed to resolve component: ClipboardList
+If this is a native custom element, make sure to exclude it from component resolution via compilerOptions.isCustomElement. 
+  at <ShopHeader> 
+  at <BrowseView ref="VTU_COMPONENT" > 
+  at <VTUROOT>
+
+[90mstderr[2m | tests/browse-view.test.ts[2m > [22m[2m列表页按属性筛选（T-014）[2m > [22m[2m筛选面板按当前分类渲染品牌与可筛属性
+[22m[39m[Vue warn]: Failed to resolve component: ClipboardList
+If this is a native custom element, make sure to exclude it from component resolution via compilerOptions.isCustomElement. 
+  at <ShopHeader> 
+  at <BrowseView ref="VTU_COMPONENT" > 
+  at <VTUROOT>
+
+[90mstderr[2m | tests/browse-view.test.ts[2m > [22m[2m列表页按属性筛选（T-014）[2m > [22m[2m多选品牌与属性后请求参数组装正确，并同步 URL
+[22m[39m[Vue warn]: Failed to resolve component: ClipboardList
+If this is a native custom element, make sure to exclude it from component resolution via compilerOptions.isCustomElement. 
+  at <ShopHeader> 
+  at <BrowseView ref="VTU_COMPONENT" > 
+  at <VTUROOT>
+
+[90mstderr[2m | tests/browse-view.test.ts[2m > [22m[2m列表页按属性筛选（T-014）[2m > [22m[2m多选品牌与属性后请求参数组装正确，并同步 URL
+[22m[39m[Vue warn]: Failed to resolve component: ClipboardList
+If this is a native custom element, make sure to exclude it from component resolution via compilerOptions.isCustomElement. 
+  at <ShopHeader> 
+  at <BrowseView ref="VTU_COMPONENT" > 
+  at <VTUROOT>
+
+[90mstderr[2m | tests/browse-view.test.ts[2m > [22m[2m列表页按属性筛选（T-014）[2m > [22m[2m多选品牌与属性后请求参数组装正确，并同步 URL
+[22m[39m[Vue warn]: Failed to resolve component: ClipboardList
+If this is a native custom element, make sure to exclude it from component resolution via compilerOptions.isCustomElement. 
+  at <ShopHeader> 
+  at <BrowseView ref="VTU_COMPONENT" > 
+  at <VTUROOT>
+
+[90mstderr[2m | tests/browse-view.test.ts[2m > [22m[2m列表页按属性筛选（T-014）[2m > [22m[2m多选品牌与属性后请求参数组装正确，并同步 URL
+[22m[39m[Vue warn]: Failed to resolve component: ClipboardList
+If this is a native custom element, make sure to exclude it from component resolution via compilerOptions.isCustomElement. 
+  at <ShopHeader> 
+  at <BrowseView ref="VTU_COMPONENT" > 
+  at <VTUROOT>
+
+[90mstderr[2m | tests/browse-view.test.ts[2m > [22m[2m列表页按属性筛选（T-014）[2m > [22m[2m多选品牌与属性后请求参数组装正确，并同步 URL
+[22m[39m[Vue warn]: Failed to resolve component: ClipboardList
+If this is a native custom element, make sure to exclude it from component resolution via compilerOptions.isCustomElement. 
+  at <ShopHeader> 
+  at <BrowseView ref="VTU_COMPONENT" > 
+  at <VTUROOT>
+
+[90mstderr[2m | tests/browse-view.test.ts[2m > [22m[2m列表页按属性筛选（T-014）[2m > [22m[2m已选条件以 chips 展示，支持单个移除与一键清空
+[22m[39m[Vue warn]: Failed to resolve component: ClipboardList
+If this is a native custom element, make sure to exclude it from component resolution via compilerOptions.isCustomElement. 
+  at <ShopHeader> 
+  at <BrowseView ref="VTU_COMPONENT" > 
+  at <VTUROOT>
+
+[90mstderr[2m | tests/browse-view.test.ts[2m > [22m[2m列表页按属性筛选（T-014）[2m > [22m[2m已选条件以 chips 展示，支持单个移除与一键清空
+[22m[39m[Vue warn]: Failed to resolve component: ClipboardList
+If this is a native custom element, make sure to exclude it from component resolution via compilerOptions.isCustomElement. 
+  at <ShopHeader> 
+  at <BrowseView ref="VTU_COMPONENT" > 
+  at <VTUROOT>
+
+[90mstderr[2m | tests/browse-view.test.ts[2m > [22m[2m列表页按属性筛选（T-014）[2m > [22m[2m已选条件以 chips 展示，支持单个移除与一键清空
+[22m[39m[Vue warn]: Failed to resolve component: ClipboardList
+If this is a native custom element, make sure to exclude it from component resolution via compilerOptions.isCustomElement. 
+  at <ShopHeader> 
+  at <BrowseView ref="VTU_COMPONENT" > 
+  at <VTUROOT>
+
+[90mstderr[2m | tests/browse-view.test.ts[2m > [22m[2m列表页按属性筛选（T-014）[2m > [22m[2m已选条件以 chips 展示，支持单个移除与一键清空
+[22m[39m[Vue warn]: Failed to resolve component: ClipboardList
+If this is a native custom element, make sure to exclude it from component resolution via compilerOptions.isCustomElement. 
+  at <ShopHeader> 
+  at <BrowseView ref="VTU_COMPONENT" > 
+  at <VTUROOT>
+
+[90mstderr[2m | tests/browse-view.test.ts[2m > [22m[2m列表页按属性筛选（T-014）[2m > [22m[2m已选条件以 chips 展示，支持单个移除与一键清空
+[22m[39m[Vue warn]: Failed to resolve component: ClipboardList
+If this is a native custom element, make sure to exclude it from component resolution via compilerOptions.isCustomElement. 
+  at <ShopHeader> 
+  at <BrowseView ref="VTU_COMPONENT" > 
+  at <VTUROOT>
+
+[90mstderr[2m | tests/browse-view.test.ts[2m > [22m[2m列表页按属性筛选（T-014）[2m > [22m[2m筛选后无结果时展示空态与「清空筛选条件」入口
+[22m[39m[Vue warn]: Failed to resolve component: ClipboardList
+If this is a native custom element, make sure to exclude it from component resolution via compilerOptions.isCustomElement. 
+  at <ShopHeader> 
+  at <BrowseView ref="VTU_COMPONENT" > 
+  at <VTUROOT>
+
+[90mstderr[2m | tests/browse-view.test.ts[2m > [22m[2m列表页按属性筛选（T-014）[2m > [22m[2m筛选后无结果时展示空态与「清空筛选条件」入口
+[22m[39m[Vue warn]: Failed to resolve component: ClipboardList
+If this is a native custom element, make sure to exclude it from component resolution via compilerOptions.isCustomElement. 
+  at <ShopHeader> 
+  at <BrowseView ref="VTU_COMPONENT" > 
+  at <VTUROOT>
+
+[90mstderr[2m | tests/browse-view.test.ts[2m > [22m[2m列表页按属性筛选（T-014）[2m > [22m[2m筛选后无结果时展示空态与「清空筛选条件」入口
+[22m[39m[Vue warn]: Failed to resolve component: ClipboardList
+If this is a native custom element, make sure to exclude it from component resolution via compilerOptions.isCustomElement. 
+  at <ShopHeader> 
+  at <BrowseView ref="VTU_COMPONENT" > 
+  at <VTUROOT>
+
+[90mstderr[2m | tests/browse-view.test.ts[2m > [22m[2m列表页按属性筛选（T-014）[2m > [22m[2m筛选后无结果时展示空态与「清空筛选条件」入口
+[22m[39m[Vue warn]: Failed to resolve component: ClipboardList
+If this is a native custom element, make sure to exclude it from component resolution via compilerOptions.isCustomElement. 
+  at <ShopHeader> 
+  at <BrowseView ref="VTU_COMPONENT" > 
+  at <VTUROOT>
+
+[90mstderr[2m | tests/browse-view.test.ts[2m > [22m[2m列表页按属性筛选（T-014）[2m > [22m[2m筛选后无结果时展示空态与「清空筛选条件」入口
+[22m[39m[Vue warn]: Failed to resolve component: ClipboardList
+If this is a native custom element, make sure to exclude it from component resolution via compilerOptions.isCustomElement. 
+  at <ShopHeader> 
+  at <BrowseView ref="VTU_COMPONENT" > 
+  at <VTUROOT>
+
+ [32m✓[39m tests/browse-view.test.ts [2m([22m[2m8 tests[22m[2m)[22m[33m 320[2mms[22m[39m
+
+[2m Test Files [22m [1m[32m1 passed[39m[22m[90m (1)[39m
+[2m      Tests [22m [1m[32m8 passed[39m[22m[90m (8)[39m
+[2m   Start at [22m 00:16:29
+[2m   Duration [22m 1.95s[2m (environment 40%, transform 24%, tests 18%, import 17%, worker 1%)[22m
+

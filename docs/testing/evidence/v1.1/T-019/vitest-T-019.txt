@@ -1,0 +1,25 @@
+
+[1m[30m[46m RUN [49m[39m[22m [36mv5.0.1 [39m[90mD:/codeproject/PHP/CubeShop/web[39m
+
+[90mstderr[2m | tests/notification.test.ts[2m > [22m[2m通知中心 NotificationsView[2m > [22m[2m渲染通知列表
+[22m[39m[Vue Router warn]: No match found for location with path "/account/addresses"
+
+[90mstderr[2m | tests/notification.test.ts[2m > [22m[2m通知中心 NotificationsView[2m > [22m[2m无消息时展示空态
+[22m[39m[Vue Router warn]: No match found for location with path "/account/addresses"
+
+[90mstderr[2m | tests/notification.test.ts[2m > [22m[2m通知中心 NotificationsView[2m > [22m[2m切换「未读」Tab 携带 is_read=0 参数
+[22m[39m[Vue Router warn]: No match found for location with path "/account/addresses"
+
+[90mstderr[2m | tests/notification.test.ts[2m > [22m[2m通知中心 NotificationsView[2m > [22m[2m点击条目标记已读并跳转
+[22m[39m[Vue Router warn]: No match found for location with path "/account/addresses"
+
+[90mstderr[2m | tests/notification.test.ts[2m > [22m[2m通知中心 NotificationsView[2m > [22m[2m一键全部已读
+[22m[39m[Vue Router warn]: No match found for location with path "/account/addresses"
+
+ [32m✓[39m tests/notification.test.ts [2m([22m[2m11 tests[22m[2m)[22m[32m 154[2mms[22m[39m
+
+[2m Test Files [22m [1m[32m1 passed[39m[22m[90m (1)[39m
+[2m      Tests [22m [1m[32m11 passed[39m[22m[90m (11)[39m
+[2m   Start at [22m 00:48:21
+[2m   Duration [22m 1.53s[2m (environment 50%, import 22%, transform 15%, tests 11%, setup 1%, worker 1%)[22m
+

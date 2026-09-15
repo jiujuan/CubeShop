@@ -16,6 +16,7 @@ export interface Sku {
   id?: number
   sku_code: string | null
   specs: Record<string, string>
+  signature?: string
   price: string | number
   stock: number
   status: number
@@ -37,6 +38,15 @@ export interface AdminProduct {
   skus?: Sku[]
   created_at?: string
   in_stock_count?: number
+  // V1.1 E01
+  brand_id?: number | null
+  brand?: { id: number; name: string } | null
+  weight?: number
+  video_url?: string | null
+  keywords?: string | null
+  sort?: number
+  attribute_values?: Array<{ attribute_id: number; attribute_name?: string | null; value: string }>
+  specs_selection?: Array<{ attribute_id: number | null; name: string; value_names: string[] }>
 }
 
 export interface ProductPayload {
@@ -47,12 +57,20 @@ export interface ProductPayload {
   description?: string
   status: number
   sort?: number
+  /** V1.1 E01 新增 */
+  brand_id?: number | null
+  weight?: number
+  video_url?: string | null
+  keywords?: string | null
+  attribute_values?: Array<{ attribute_id: number; value: string }>
+  specs_selection?: Array<{ attribute_id: number; values: number[] }>
   skus: Array<{
-    sku_code: string | null
-    specs: Record<string, string>
-    price: number | string
-    stock: number
-    status: number
+    sku_code?: string | null
+    signature?: string
+    specs?: Record<string, string>
+    price?: number | string
+    stock?: number
+    status?: number
   }>
   images: string[]
 }

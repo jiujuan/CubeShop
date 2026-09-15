@@ -59,6 +59,24 @@ const router = createRouter({
           meta: { title: '分类管理', menu: true, icon: 'FolderTree', permission: 'category.manage' },
         },
         {
+          path: 'brands',
+          name: 'brands',
+          component: () => import('@/views/product/BrandView.vue'),
+          meta: { title: '商品管理 / 品牌管理', menu: true, icon: 'Tags', permission: 'product.view' },
+        },
+        {
+          path: 'attributes',
+          name: 'attributes',
+          component: () => import('@/views/product/AttributeView.vue'),
+          meta: { title: '商品管理 / 属性库', menu: true, icon: 'ListTree', permission: 'product.view' },
+        },
+        {
+          path: 'category-attributes',
+          name: 'category-attributes',
+          component: () => import('@/views/product/CategoryAttributeView.vue'),
+          meta: { title: '商品管理 / 分类属性模板', menu: true, icon: 'LayoutList', permission: 'product.view' },
+        },
+        {
           path: 'orders',
           name: 'orders',
           component: () => import('@/views/order/OrderView.vue'),
@@ -71,6 +89,24 @@ const router = createRouter({
           meta: { title: '退款处理', menu: true, icon: 'RotateCcw', permission: 'refund.view' },
         },
         {
+          path: 'reports',
+          name: 'reports',
+          component: () => import('@/views/operation/ReportCenterView.vue'),
+          meta: { title: '报表中心', menu: true, icon: 'BarChart3', permission: 'report.view' },
+        },
+        {
+          path: 'reviews',
+          name: 'reviews',
+          component: () => import('@/views/operation/ReviewView.vue'),
+          meta: { title: '评价管理', menu: true, icon: 'MessageSquare', permission: 'review.manage' },
+        },
+        {
+          path: 'users',
+          name: 'users',
+          component: () => import('@/views/user/UserListView.vue'),
+          meta: { title: '用户管理', menu: true, icon: 'Users', permission: 'user.manage' },
+        },
+        {
           path: 'configs',
           name: 'configs',
           component: () => import('@/views/system/ConfigView.vue'),
@@ -81,6 +117,18 @@ const router = createRouter({
           name: 'operation-logs',
           component: () => import('@/views/system/OperationLogView.vue'),
           meta: { title: '操作日志', menu: true, icon: 'FileClock', permission: 'log.view' },
+        },
+        {
+          path: 'accounts',
+          name: 'accounts',
+          component: () => import('@/views/system/AccountView.vue'),
+          meta: { title: '管理员账号', menu: true, icon: 'UserCog', permission: 'account.manage' },
+        },
+        {
+          path: 'roles',
+          name: 'roles',
+          component: () => import('@/views/system/RoleView.vue'),
+          meta: { title: '角色权限', menu: true, icon: 'ShieldCheck', permission: 'role.manage' },
         },
         {
           path: 'profile',

@@ -53,8 +53,16 @@ export interface OperationLog {
   created_at: string
 }
 
-/** 操作日志（API 文档 8.7，权限 log.view） */
-export function getOperationLogs(params: { page?: number; page_size?: number; module?: string }) {
+/** 操作日志（API 文档 8.7 / V1.1 T-023，权限 log.view） */
+export function getOperationLogs(params: {
+  page?: number
+  page_size?: number
+  module?: string
+  action?: string
+  operator_id?: number
+  start?: string
+  end?: string
+}) {
   return request.get<ApiResult<{ list: OperationLog[]; pagination: { page: number; page_size: number; total: number; total_pages: number } }>>(
     '/admin/operation-logs',
     { params },

@@ -50,7 +50,7 @@ class InventoryService
             throw BusinessException::badRequest('锁定数量必须大于 0');
         }
 
-        DB::transaction(function () use ($skuId, $qty, $bizType, $bizId, $remark) {
+        $beforeStock = DB::transaction(function () use ($skuId, $qty, $bizType, $bizId, $remark) {
             $inventory = Inventory::where('sku_id', $skuId)->lockForUpdate()->first();
             $before = $inventory?->stock ?? 0;
 
@@ -72,7 +72,12 @@ class InventoryService
             $this->log($skuId, 'lock', -$qty, $before, $before - $qty,
                 ($inventory?->locked_stock ?? 0), ($inventory?->locked_stock ?? 0) + $qty,
                 $bizType, $bizId, $remark);
+
+            return $before;
         });
+
+        // V1.1 F02 / T-018：可售库存「跌破」阈值 → 通知运营（事务提交后，仅穿越时触发一次）
+        $this->maybeAlertLowStock($skuId, $beforeStock, $beforeStock - $qty);
     }
 
     /** 释放锁定库存（锁定 → 可售），用于取消/超时 */
@@ -171,6 +176,30 @@ class InventoryService
     {
         return Inventory::whereIn('sku_id', $skuIds)->pluck('stock', 'sku_id')
             ->map(fn ($v) => (int) $v)->all();
+    }
+
+    /** V1.1 F02 / T-018：可售库存跌破阈值时派发预警事件（仅穿越阈值时触发） */
+    private function maybeAlertLowStock(int $skuId, int $beforeStock, int $afterStock): void
+    {
+        if ($afterStock < 0 || $afterStock >= $beforeStock) {
+            return;
+        }
+
+        $threshold = (int) app(\App\Services\Common\ConfigService::class)->getInt('inventory.warning_threshold', 10);
+        if ($beforeStock <= $threshold || $afterStock > $threshold) {
+            return; // 未发生「穿越」（之前已在阈值内，或仍未跌破）
+        }
+
+        $sku = \App\Models\ProductSku::find($skuId);
+        if (! $sku) {
+            return;
+        }
+
+        try {
+            event(new \App\Events\LowStockAlert($sku, $afterStock));
+        } catch (\Throwable $e) {
+            report($e);
+        }
     }
 
     /** 写流水 */

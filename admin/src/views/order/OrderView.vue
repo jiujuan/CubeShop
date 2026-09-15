@@ -9,7 +9,8 @@ import {
   type AdminOrder,
   type OrderStatus,
 } from '@/api/order'
-import { Download, Send } from 'lucide-vue-next'
+import { ChevronLeft, ChevronRight, Download, Search, Send } from 'lucide-vue-next'
+import { Button } from '@/components/ui/button'
 import LoadingSpinner from '@/components/LoadingSpinner.vue'
 
 /**
@@ -60,6 +61,7 @@ function search() {
   load(1)
 }
 
+/** 顶部胶囊快捷筛选：点击立即按状态加载第一页 */
 function filterStatus(status: '' | OrderStatus) {
   statusFilter.value = status
   load(1)
@@ -92,107 +94,117 @@ async function doExport() {
   }
 }
 
+function goPage(page: number) {
+  if (page < 1 || page > pagination.value.total_pages) return
+  load(page)
+}
+
 onMounted(() => load())
 </script>
 
 <template>
-  <div class="space-y-4">
-    <div class="flex items-center justify-between">
-      <h1 class="text-lg font-semibold">订单管理</h1>
+  <div class="rounded-lg bg-white p-5 shadow-sm">
+    <!-- 标题 + 操作 -->
+    <div class="mb-4 flex items-center justify-between">
+      <h2 class="text-lg font-semibold text-slate-800">订单管理</h2>
+      <Button variant="outline" :disabled="exporting" @click="doExport">
+        <Download class="mr-1 h-4 w-4" /> {{ exporting ? '导出中…' : '导出 CSV' }}
+      </Button>
+    </div>
+
+    <!-- 筛选区 -->
+    <div class="mb-4 flex flex-wrap items-center gap-2 text-[13px]">
+      <input
+        v-model="orderNo" type="text" placeholder="订单号"
+        class="w-48 rounded-md border border-slate-300 px-3 py-1.5 outline-none focus:border-[#1677ff]"
+        @keyup.enter="search"
+      />
+      <select v-model="statusFilter" class="rounded-md border border-slate-300 px-2 py-1.5 outline-none focus:border-[#1677ff]">
+        <option value="">状态</option>
+        <option v-for="tab in statusTabs.slice(1)" :key="tab.value" :value="tab.value">{{ tab.label }}</option>
+      </select>
+      <div class="flex items-center gap-1 rounded-md border border-slate-300 px-2 py-1.5">
+        <input v-model="startDate" type="date" class="outline-none" />
+        <span class="text-slate-300">–</span>
+        <input v-model="endDate" type="date" class="outline-none" />
+      </div>
+      <Button class="bg-[#1677ff] px-5 hover:bg-[#4096ff]" @click="search"><Search class="mr-1 h-4 w-4" /> 搜索</Button>
+    </div>
+
+    <!-- 状态快捷筛选（胶囊标签排） -->
+    <div class="mb-4 flex flex-wrap gap-2">
       <button
-        class="flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-[13px] text-slate-600 transition-colors hover:border-[#1677ff] hover:text-[#1677ff] disabled:opacity-50"
-        :disabled="exporting"
-        @click="doExport"
-      >
-        <Download class="h-3.5 w-3.5" /> {{ exporting ? '导出中…' : '导出 CSV' }}
-      </button>
+        v-for="tab in statusTabs"
+        :key="tab.value"
+        class="rounded-full px-3 py-1 text-xs transition-colors"
+        :class="statusFilter === tab.value ? 'bg-[#1677ff] text-white' : 'border border-slate-200 text-slate-500 hover:text-[#1677ff]'"
+        @click="filterStatus(tab.value)"
+      >{{ tab.label }}</button>
     </div>
 
-    <!-- 筛选 -->
-    <div class="rounded-lg border border-slate-200 bg-white p-4">
-      <div class="flex flex-wrap items-center gap-3">
-        <input
-          v-model="orderNo"
-          placeholder="订单号"
-          class="w-52 rounded-lg border border-slate-200 px-3 py-1.5 text-[13px] outline-none focus:border-[#1677ff]"
-          @keyup.enter="search"
-        />
-        <input v-model="startDate" type="date" class="rounded-lg border border-slate-200 px-3 py-1.5 text-[13px] outline-none focus:border-[#1677ff]" />
-        <span class="text-slate-300">~</span>
-        <input v-model="endDate" type="date" class="rounded-lg border border-slate-200 px-3 py-1.5 text-[13px] outline-none focus:border-[#1677ff]" />
-        <button class="rounded-lg bg-[#1677ff] px-4 py-1.5 text-[13px] text-white hover:bg-[#4096ff]" @click="search">查询</button>
-      </div>
-      <div class="mt-3 flex flex-wrap gap-2">
+    <!-- 表格 -->
+    <table class="w-full text-[13px]">
+      <thead>
+        <tr class="border-b border-slate-200 text-left text-slate-500">
+          <th class="px-3 py-1.5">订单号</th>
+          <th class="w-20 px-3 py-1.5">用户</th>
+          <th class="px-3 py-1.5">商品</th>
+          <th class="w-24 px-3 py-1.5">实付金额</th>
+          <th class="w-20 px-3 py-1.5">状态</th>
+          <th class="w-40 px-3 py-1.5">下单时间</th>
+          <th class="w-32 px-3 py-1.5">操作</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr v-for="order in list" :key="order.id" class="border-b border-slate-100 hover:bg-slate-50">
+          <td class="px-3 py-1.5 font-mono text-black">{{ order.order_no }}</td>
+          <td class="px-3 py-1.5 text-black">#{{ order.user_id }}</td>
+          <td class="max-w-64 truncate px-3 py-1.5 text-black" :title="specsText(order)">{{ specsText(order) }}</td>
+          <td class="px-3 py-1.5 font-medium text-black">¥{{ order.pay_amount }}</td>
+          <td class="px-3 py-1.5">
+            <span class="rounded px-2 py-0.5 text-xs" :class="ORDER_STATUS_CLASS[order.status]">{{ order.status_label }}</span>
+          </td>
+          <td class="px-3 py-1.5 text-black">{{ order.created_at }}</td>
+          <td class="px-3 py-1.5">
+            <div class="flex items-center gap-1 text-[#1677ff]">
+              <button class="hover:underline" @click="detailOrder = order">详情</button>
+              <template v-if="order.status === 'paid'">
+                <span class="text-slate-200">|</span>
+                <button class="flex items-center gap-0.5 text-orange-500 hover:underline" @click="shipTarget = order; shipRemark = ''">
+                  <Send class="h-3 w-3" /> 发货
+                </button>
+              </template>
+            </div>
+          </td>
+        </tr>
+        <tr v-if="loading">
+          <td colspan="7"><LoadingSpinner /></td>
+        </tr>
+        <tr v-if="!list.length && !loading">
+          <td colspan="7" class="px-3 py-12 text-center text-slate-400">暂时无数据</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <!-- 分页 -->
+    <div class="mt-4 flex items-center justify-between text-[13px] text-slate-500">
+      <span>共 {{ pagination.total }} 条记录 / 每页 {{ pagination.page_size }} 条</span>
+      <div class="flex items-center gap-1">
         <button
-          v-for="tab in statusTabs"
-          :key="tab.value"
-          class="rounded-full px-3 py-1 text-xs transition-colors"
-          :class="statusFilter === tab.value ? 'bg-[#1677ff] text-white' : 'border border-slate-200 text-slate-500 hover:text-[#1677ff]'"
-          @click="filterStatus(tab.value)"
-        >{{ tab.label }}</button>
-      </div>
-    </div>
-
-    <!-- 列表 -->
-    <div class="rounded-lg border border-slate-200 bg-white">
-      <div v-if="loading" class="p-10"><LoadingSpinner /></div>
-      <div v-else-if="!list.length" class="p-10 text-center text-[13px] text-slate-400">暂无订单</div>
-      <div v-else class="overflow-x-auto">
-        <table class="w-full text-[13px]">
-          <thead>
-            <tr class="bg-slate-50 text-left text-slate-400">
-              <th class="px-4 py-2 font-normal">订单号</th>
-              <th class="px-4 py-2 font-normal">用户</th>
-              <th class="px-4 py-2 font-normal">商品</th>
-              <th class="px-4 py-2 font-normal">实付金额</th>
-              <th class="px-4 py-2 font-normal">状态</th>
-              <th class="px-4 py-2 font-normal">下单时间</th>
-              <th class="px-4 py-2 font-normal">操作</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="order in list" :key="order.id" class="border-t border-slate-50 hover:bg-slate-50/50">
-              <td class="px-4 py-2 font-mono text-slate-600">{{ order.order_no }}</td>
-              <td class="px-4 py-2 text-slate-500">#{{ order.user_id }}</td>
-              <td class="max-w-64 truncate px-4 py-2 text-slate-700" :title="specsText(order)">{{ specsText(order) }}</td>
-              <td class="px-4 py-2 font-medium text-slate-700">¥{{ order.pay_amount }}</td>
-              <td class="px-4 py-2">
-                <span class="rounded px-1.5 py-0.5 text-xs" :class="ORDER_STATUS_CLASS[order.status]">{{ order.status_label }}</span>
-              </td>
-              <td class="px-4 py-2 text-slate-500">{{ order.created_at }}</td>
-              <td class="px-4 py-2">
-                <div class="flex items-center gap-2">
-                  <button class="text-[#1677ff] hover:underline" @click="detailOrder = order">详情</button>
-                  <button
-                    v-if="order.status === 'paid'"
-                    class="flex items-center gap-1 text-orange-500 hover:underline"
-                    @click="shipTarget = order; shipRemark = ''"
-                  >
-                    <Send class="h-3 w-3" /> 发货
-                  </button>
-                </div>
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-
-      <!-- 分页 -->
-      <div v-if="!loading && pagination.total > 0" class="flex items-center justify-between border-t border-slate-100 px-4 py-3 text-[13px] text-slate-500">
-        <span>共 {{ pagination.total }} 条</span>
-        <div class="flex items-center gap-2">
-          <button
-            class="rounded border border-slate-200 px-2.5 py-1 disabled:opacity-40"
-            :disabled="pagination.page <= 1"
-            @click="load(pagination.page - 1)"
-          >上一页</button>
-          <span>{{ pagination.page }} / {{ pagination.total_pages }}</span>
-          <button
-            class="rounded border border-slate-200 px-2.5 py-1 disabled:opacity-40"
-            :disabled="pagination.page >= pagination.total_pages"
-            @click="load(pagination.page + 1)"
-          >下一页</button>
-        </div>
+          class="flex h-7 w-7 items-center justify-center rounded border border-slate-200 disabled:opacity-40"
+          :disabled="pagination.page <= 1" @click="goPage(pagination.page - 1)"
+        ><ChevronLeft class="h-4 w-4" /></button>
+        <button
+          v-for="page in pagination.total_pages"
+          :key="page"
+          class="h-7 min-w-7 rounded border px-1.5"
+          :class="page === pagination.page ? 'border-[#1677ff] bg-[#1677ff] text-white' : 'border-slate-200 hover:border-[#1677ff]'"
+          @click="goPage(page)"
+        >{{ page }}</button>
+        <button
+          class="flex h-7 w-7 items-center justify-center rounded border border-slate-200 disabled:opacity-40"
+          :disabled="pagination.page >= pagination.total_pages" @click="goPage(pagination.page + 1)"
+        ><ChevronRight class="h-4 w-4" /></button>
       </div>
     </div>
 

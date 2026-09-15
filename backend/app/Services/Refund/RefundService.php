@@ -123,6 +123,9 @@ class RefundService
             'admin_remark' => $adminRemark,
         ]);
 
+        // V1.1 F02 / T-018：退款结果通知买家（失败不影响审核结果）
+        event(new \App\Events\RefundResult($refund));
+
         return $refund;
     }
 }

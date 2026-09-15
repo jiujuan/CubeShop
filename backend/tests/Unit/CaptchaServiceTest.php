@@ -55,3 +55,43 @@ test('verify 错误码返回 false 且销毁原验证码', function () {
 test('不存在的 captcha_id 校验失败', function () {
     expect(app(CaptchaService::class)->verify('not-exist-uuid', 'ABCD'))->toBeFalse();
 });
+
+// CAP-U-06 web 场景风格与管理端不同
+test('web 场景生成的图片风格与管理端不同', function () {
+    $service = app(CaptchaService::class);
+
+    $admin = $service->generate('admin');
+    $web = $service->generate('web');
+
+    $adminSvg = base64_decode(substr($admin['image'], strlen('data:image/svg+xml;base64,')));
+    $webSvg = base64_decode(substr($web['image'], strlen('data:image/svg+xml;base64,')));
+
+    // 管理端：浅蓝纯色底、直线干扰
+    expect($adminSvg)->toContain('#f5f8ff')->toContain('<line');
+    // 用户端：暖色渐变底、曲线干扰、斜体字符
+    expect($webSvg)->toContain('linearGradient')->toContain('<path')->toContain('font-style="italic"')
+        ->not->toContain('#f5f8ff');
+});
+
+// CAP-U-07 非法 scene 回落 admin
+test('非法 scene 回落管理端样式', function () {
+    $service = app(CaptchaService::class);
+    $result = $service->generate('hacker');
+
+    $svg = base64_decode(substr($result['image'], strlen('data:image/svg+xml;base64,')));
+    expect($svg)->toContain('#f5f8ff');
+});
+
+// CAP-U-08 接口层 scene 透传
+test('POST /auth/captcha 按 scene 返回不同风格', function () {
+    $admin = $this->postJson('/api/auth/captcha');
+    $web = $this->postJson('/api/auth/captcha', ['scene' => 'web']);
+
+    $adminSvg = base64_decode(substr($admin->json('data.image'), strlen('data:image/svg+xml;base64,')));
+    $webSvg = base64_decode(substr($web->json('data.image'), strlen('data:image/svg+xml;base64,')));
+
+    expect($admin->json('code'))->toBe(0)
+        ->and($web->json('code'))->toBe(0)
+        ->and($adminSvg)->toContain('#f5f8ff')
+        ->and($webSvg)->toContain('linearGradient');
+});

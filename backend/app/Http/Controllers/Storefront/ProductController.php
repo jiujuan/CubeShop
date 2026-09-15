@@ -52,6 +52,33 @@ class ProductController extends Controller
             $q->where('price', '<=', (float) $maxPrice);
         }
 
+        // V1.1 E01 / T-014：品牌筛选
+        if ($brandId = (int) $request->query('brand_id')) {
+            $q->where('brand_id', $brandId);
+        }
+
+        // V1.1 E01 / T-014：属性筛选
+        // 语义：同一属性内多值为 OR，跨属性为 AND
+        // 参数格式：attribute_values[]=<attribute_id>:<value>
+        $pairs = (array) $request->query('attribute_values', []);
+        $byAttribute = [];
+        foreach ($pairs as $pair) {
+            if (! is_string($pair) || ! str_contains($pair, ':')) {
+                continue;
+            }
+            [$attributeId, $value] = explode(':', $pair, 2);
+            $attributeId = (int) $attributeId;
+            if ($attributeId <= 0 || $value === '') {
+                continue;
+            }
+            $byAttribute[$attributeId][] = $value;
+        }
+        foreach ($byAttribute as $attributeId => $values) {
+            $q->whereHas('attributeValues', function ($sub) use ($attributeId, $values) {
+                $sub->where('attribute_id', $attributeId)->whereIn('value', array_unique($values));
+            });
+        }
+
         $sort = $request->query('sort', 'newest');
         match ($sort) {
             'price_asc' => $q->orderBy('price'),
@@ -68,11 +95,11 @@ class ProductController extends Controller
     }
 
     /** 商品详情（含 SKU 库存） GET /products/{id} */
-    public function show(int $id): JsonResponse
+    public function show(Request $request, int $id): JsonResponse
     {
         $product = Product::query()
             ->where('status', 1)
-            ->with(['skus.inventory', 'images', 'category:id,name'])
+            ->with(['skus.inventory', 'images', 'category:id,name', 'brand:id,name', 'attributeValues.attribute:id,name,type'])
             ->find($id);
 
         if (! $product) {
@@ -92,6 +119,23 @@ class ProductController extends Controller
             'sales_count' => $product->sales_count,
             'status' => (int) $product->status,
             'category' => $product->category?->only(['id', 'name']),
+            // V1.1 F05 / T-024：登录用户是否已收藏
+            'is_favorited' => $request->user()
+                ? app(\App\Services\Favorite\FavoriteService::class)->isFavorited($request->user()->id, $product->id)
+                : false,
+            // V1.1 E01：品牌 / 视频 / 重量 / 商品参数
+            'brand' => $product->brand?->only(['id', 'name']),
+            'brand_id' => $product->brand_id,
+            'video_url' => $product->video_url,
+            'weight' => (int) $product->weight,
+            'attributes' => $product->attributeValues
+                ->filter(fn ($v) => $v->attribute !== null)
+                ->map(fn ($v) => [
+                    'attribute_id' => $v->attribute_id,
+                    'name' => $v->attribute->name,
+                    'type' => $v->attribute->type,
+                    'value' => $v->value,
+                ])->values(),
             'total_stock' => (int) $product->skus
                 ->filter(fn ($s) => $s->status == 1)
                 ->sum(fn ($s) => $s->inventory?->stock ?? 0),

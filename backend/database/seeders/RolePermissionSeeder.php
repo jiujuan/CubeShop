@@ -33,6 +33,14 @@ class RolePermissionSeeder extends Seeder
         'config.manage',
         'log.view',
         'user.manage',
+        'address.view',
+        'address.manage',
+        // V1.1 新增权限码（T-017 / T-020 / T-022）
+        'review.manage',
+        'report.view',
+        'account.manage',
+        'role.manage',
+        'inventory.manage',
     ];
 
     public function run(): void
@@ -49,12 +57,15 @@ class RolePermissionSeeder extends Seeder
         $operator = Role::findOrCreate('operator', 'web');
         Role::findOrCreate('customer', 'web'); // 买家，无后台权限
 
-        // 运营：除用户管理外的日常运营权限
+        // 运营：除用户管理外的日常运营权限（地址仅可查看核对，代改需超管授权）
+        // 账号/角色管理（account.manage / role.manage）为超管专属，运营默认不授予
         $operator->syncPermissions([
             'product.view', 'product.create', 'product.update', 'category.manage',
             'order.view', 'order.ship', 'order.export',
             'refund.view', 'refund.process',
             'dashboard.view',
+            'address.view',
+            'review.manage', 'report.view', 'inventory.manage',
         ]);
 
         // 超级管理员：全部权限

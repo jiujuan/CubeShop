@@ -37,6 +37,14 @@ export interface ProductSku {
   status: number
 }
 
+/** 商品参数（V1.1 E01） */
+export interface ProductAttributeItem {
+  attribute_id: number
+  name: string
+  type: 'spec' | 'param'
+  value: string
+}
+
 export interface ProductDetail {
   id: number
   title: string
@@ -50,4 +58,12 @@ export interface ProductDetail {
   category: { id: number; name: string } | null
   total_stock: number
   skus: ProductSku[]
+  // V1.1 E01
+  brand_id?: number | null
+  brand?: { id: number; name: string } | null
+  video_url?: string | null
+  weight?: number
+  attributes?: ProductAttributeItem[]
+  // V1.1 F05
+  is_favorited?: boolean
 }

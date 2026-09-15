@@ -1,20 +1,33 @@
 <?php
 
 use App\Http\Controllers\AddressController;
+use App\Http\Controllers\Admin\AttributeController as AdminAttributeController;
+use App\Http\Controllers\Admin\BrandController;
+use App\Http\Controllers\Admin\CategoryAttributeController;
 use App\Http\Controllers\Admin\CategoryController;
+use App\Http\Controllers\Admin\AddressController as AdminAddressController;
+use App\Http\Controllers\Admin\AccountController as AdminAccountController;
 use App\Http\Controllers\Admin\ConfigController;
 use App\Http\Controllers\Admin\DashboardController;
 use App\Http\Controllers\Admin\OperationLogController;
 use App\Http\Controllers\Admin\OrderController as AdminOrderController;
 use App\Http\Controllers\Admin\ProductController;
 use App\Http\Controllers\Admin\RefundController;
+use App\Http\Controllers\Admin\ReportController as AdminReportController;
+use App\Http\Controllers\Admin\ReviewController as AdminReviewController;
+use App\Http\Controllers\Admin\RoleController as AdminRoleController;
 use App\Http\Controllers\Admin\UploadController;
+use App\Http\Controllers\Admin\UserController;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\CartController;
+use App\Http\Controllers\FavoriteController;
 use App\Http\Controllers\HealthController;
+use App\Http\Controllers\NotificationController;
 use App\Http\Controllers\OrderController;
 use App\Http\Controllers\PaymentController;
 use App\Http\Controllers\ProfileController;
+use App\Http\Controllers\ReviewController;
+use App\Http\Controllers\Storefront\AttributeController as StorefrontAttributeController;
 use App\Http\Controllers\Storefront\ProductController as StorefrontProductController;
 use Illuminate\Support\Facades\Route;
 
@@ -30,8 +43,17 @@ Route::prefix('products')->group(function () {
     Route::get('/', [StorefrontProductController::class, 'index']);
     Route::get('/categories', [StorefrontProductController::class, 'categories']);
     Route::get('/hot', [StorefrontProductController::class, 'hot']);
+    // V1.1 F01（T-015）：商品评价列表与汇总（匿名可访问）
+    Route::get('/{id}/reviews', [ReviewController::class, 'productReviews']);
     Route::get('/{id}', [StorefrontProductController::class, 'show']);
 });
+
+// 前台品牌与属性（V1.1 E01 / T-008，无需登录）
+Route::get('/attributes', [StorefrontAttributeController::class, 'index']);
+Route::get('/brands', [StorefrontAttributeController::class, 'brands']);
+
+// 行政区划（V1.1 E04 / T-028，无需登录，可缓存）
+Route::get('/regions', [AddressController::class, 'regions']);
 
 // 认证：注册 / 登录 / 验证码 / 重置密码（带限流）
 Route::middleware('throttle:auth')->group(function () {
@@ -46,7 +68,7 @@ Route::middleware('throttle:auth')->group(function () {
 | 认证后接口
 |--------------------------------------------------------------------------
 */
-Route::middleware('auth:sanctum')->group(function () {
+Route::middleware(['auth:sanctum', 'account.active'])->group(function () {
     Route::post('/auth/logout', [AuthController::class, 'logout']);
     Route::get('/auth/me', [AuthController::class, 'me']);
     Route::post('/auth/password', [AuthController::class, 'changePassword']);
@@ -70,15 +92,37 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/orders', [OrderController::class, 'store'])->middleware('throttle:order');
     Route::get('/orders/{id}', [OrderController::class, 'show']);
     Route::post('/orders/{id}/cancel', [OrderController::class, 'cancel']);
+    Route::post('/orders/{id}/confirm', [OrderController::class, 'confirm']);
+    Route::post('/orders/{id}/rebuy', [OrderController::class, 'rebuy']);
     Route::post('/orders/{id}/refund', [OrderController::class, 'refund']);
+
+    // 评价（V1.1 F01 / T-015）
+    Route::post('/orders/{orderId}/items/{itemId}/review', [OrderController::class, 'review']);
+    Route::put('/reviews/{id}', [ReviewController::class, 'update']);
+    Route::get('/me/reviews', [ReviewController::class, 'myReviews']);
+
+    // 站内通知（V1.1 F02 / T-018 / T-019）
+    Route::get('/me/notifications/unread-count', [NotificationController::class, 'unreadCount']);
+    Route::get('/me/notifications', [NotificationController::class, 'index']);
+    Route::post('/me/notifications/read', [NotificationController::class, 'markRead']);
+
+    // 收藏与浏览足迹（V1.1 F05 / T-024）
+    Route::post('/products/{id}/favorite', [FavoriteController::class, 'store']);
+    Route::delete('/products/{id}/favorite', [FavoriteController::class, 'destroy']);
+    Route::post('/products/{id}/track', [FavoriteController::class, 'track']);
+    Route::get('/me/favorites', [FavoriteController::class, 'index']);
+    Route::post('/me/favorites/batch-remove', [FavoriteController::class, 'batchRemove']);
+    Route::get('/me/histories', [FavoriteController::class, 'histories']);
+    Route::delete('/me/histories', [FavoriteController::class, 'clearHistories']);
 
     // 支付（API 文档 7 / Roadmap P5）
     Route::post('/payments', [PaymentController::class, 'store']);
     Route::get('/payments/{paymentNo}', [PaymentController::class, 'show']);
 
-    // 收货地址（API 文档 3.3 ~ 3.7）
+    // 收货地址（API 文档 3.3 ~ 3.7 / V1.1 E04 T-028 解析）
     Route::get('/user/addresses', [AddressController::class, 'index']);
     Route::post('/user/addresses', [AddressController::class, 'store']);
+    Route::post('/user/addresses/parse', [AddressController::class, 'parse']);
     Route::put('/user/addresses/{id}', [AddressController::class, 'update']);
     Route::post('/user/addresses/{id}/default', [AddressController::class, 'setDefault']);
     Route::delete('/user/addresses/{id}', [AddressController::class, 'destroy']);
@@ -108,9 +152,42 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/products/{id}', [ProductController::class, 'show'])->middleware('permission:product.view');
         Route::put('/products/{id}', [ProductController::class, 'update'])->middleware('permission:product.update');
         Route::post('/products/{id}/status', [ProductController::class, 'updateStatus'])->middleware('permission:product.update');
+        // V1.1 E01（T-009）：SKU 矩阵预览、批量设置
+        Route::post('/products/sku-matrix', [ProductController::class, 'previewSkuMatrix'])->middleware('permission:product.update');
+        Route::post('/products/{id}/skus/batch-set', [ProductController::class, 'batchSetSkus'])->middleware('permission:product.update');
+
+        // 品牌管理（V1.1 E01 / T-008）权限 product.update
+        Route::get('/brands', [BrandController::class, 'index'])->middleware('permission:product.view');
+        Route::post('/brands', [BrandController::class, 'store'])->middleware('permission:product.update');
+        Route::put('/brands/{id}', [BrandController::class, 'update'])->middleware('permission:product.update');
+        Route::delete('/brands/{id}', [BrandController::class, 'destroy'])->middleware('permission:product.update');
+
+        // 属性库（V1.1 E01 / T-008）权限 product.update
+        Route::get('/attributes', [AdminAttributeController::class, 'index'])->middleware('permission:product.view');
+        Route::post('/attributes', [AdminAttributeController::class, 'store'])->middleware('permission:product.update');
+        Route::get('/attributes/{id}', [AdminAttributeController::class, 'show'])->middleware('permission:product.view');
+        Route::put('/attributes/{id}', [AdminAttributeController::class, 'update'])->middleware('permission:product.update');
+        Route::delete('/attributes/{id}', [AdminAttributeController::class, 'destroy'])->middleware('permission:product.update');
+        Route::get('/attributes/{id}/values', [AdminAttributeController::class, 'values'])->middleware('permission:product.view');
+        Route::post('/attributes/{id}/values', [AdminAttributeController::class, 'storeValue'])->middleware('permission:product.update');
+        Route::post('/attributes/{id}/values/batch', [AdminAttributeController::class, 'batchValues'])->middleware('permission:product.update');
+        Route::put('/attributes/{id}/values/{valueId}', [AdminAttributeController::class, 'updateValue'])->middleware('permission:product.update');
+        Route::delete('/attributes/{id}/values/{valueId}', [AdminAttributeController::class, 'destroyValue'])->middleware('permission:product.update');
+
+        // 分类属性模板（V1.1 E01 / T-008）权限 product.update
+        Route::get('/categories/{categoryId}/attributes', [CategoryAttributeController::class, 'show'])->middleware('permission:product.view');
+        Route::put('/categories/{categoryId}/attributes', [CategoryAttributeController::class, 'update'])->middleware('permission:product.update');
 
         // 数据概览 dashboard.view（API 文档 8.5 / Roadmap P6）
         Route::get('/dashboard', [DashboardController::class, 'index'])->middleware('permission:dashboard.view');
+
+        // 经营报表 report.view（V1.1 F03 / T-020）
+        Route::get('/reports/overview', [AdminReportController::class, 'overview'])->middleware('permission:report.view');
+        Route::get('/reports/trend', [AdminReportController::class, 'trend'])->middleware('permission:report.view');
+        Route::get('/reports/top-products', [AdminReportController::class, 'topProducts'])->middleware('permission:report.view');
+        Route::get('/reports/category-share', [AdminReportController::class, 'categoryShare'])->middleware('permission:report.view');
+        Route::get('/reports/users', [AdminReportController::class, 'users'])->middleware('permission:report.view');
+        Route::get('/reports/export', [AdminReportController::class, 'export'])->middleware('permission:report.view');
 
         // 订单管理 order.*（API 文档 8.3 / Roadmap P6）—— export 必须注册在 {id} 之前
         Route::get('/orders', [AdminOrderController::class, 'index'])->middleware('permission:order.view');
@@ -121,6 +198,40 @@ Route::middleware('auth:sanctum')->group(function () {
         // 退款处理 refund.*（API 文档 8.4 / Roadmap P5）
         Route::get('/refunds', [RefundController::class, 'index'])->middleware('permission:refund.view');
         Route::post('/refunds/{id}/process', [RefundController::class, 'process'])->middleware('permission:refund.process');
+
+        // 评价管理 review.manage（V1.1 F01 / T-017）
+        Route::post('/reviews/audit-mode', [AdminReviewController::class, 'updateAuditMode'])->middleware('permission:config.manage');
+        Route::get('/reviews', [AdminReviewController::class, 'index'])->middleware('permission:review.manage');
+        Route::get('/reviews/{id}', [AdminReviewController::class, 'show'])->middleware('permission:review.manage');
+        Route::post('/reviews/{id}/approve', [AdminReviewController::class, 'approve'])->middleware('permission:review.manage');
+        Route::post('/reviews/{id}/reject', [AdminReviewController::class, 'reject'])->middleware('permission:review.manage');
+        Route::post('/reviews/{id}/reply', [AdminReviewController::class, 'reply'])->middleware('permission:review.manage');
+        Route::delete('/reviews/{id}', [AdminReviewController::class, 'destroy'])->middleware('permission:review.manage');
+
+        // 管理员账号 account.manage（V1.1 F04 / T-022）
+        Route::get('/accounts', [AdminAccountController::class, 'index'])->middleware('permission:account.manage');
+        Route::post('/accounts', [AdminAccountController::class, 'store'])->middleware('permission:account.manage');
+        Route::put('/accounts/{id}', [AdminAccountController::class, 'update'])->middleware('permission:account.manage');
+        Route::post('/accounts/{id}/status', [AdminAccountController::class, 'updateStatus'])->middleware('permission:account.manage');
+        Route::post('/accounts/{id}/reset-password', [AdminAccountController::class, 'resetPassword'])->middleware('permission:account.manage');
+
+        // 角色与权限 role.manage（V1.1 F04 / T-022）
+        Route::get('/roles', [AdminRoleController::class, 'index'])->middleware('permission:role.manage');
+        Route::post('/roles', [AdminRoleController::class, 'store'])->middleware('permission:role.manage');
+        Route::put('/roles/{id}', [AdminRoleController::class, 'update'])->middleware('permission:role.manage');
+        Route::delete('/roles/{id}', [AdminRoleController::class, 'destroy'])->middleware('permission:role.manage');
+        Route::get('/permissions', [AdminRoleController::class, 'permissions'])->middleware('permission:role.manage');
+
+        // 用户管理 user.*（API 文档 8.8 / 权限 user.manage）
+        Route::get('/users', [UserController::class, 'index'])->middleware('permission:user.manage');
+        Route::get('/users/{id}', [UserController::class, 'show'])->middleware('permission:user.manage');
+        Route::put('/users/{id}', [UserController::class, 'update'])->middleware('permission:user.manage');
+        Route::put('/users/{id}/status', [UserController::class, 'updateStatus'])->middleware('permission:user.manage');
+
+        // 收货地址管理（设计文档 CubeShop_Address_Design_v1.0 §5）
+        // 查看：address.view（运营可核对）；代改：address.manage（仅超管，禁改默认/归属）
+        Route::get('/users/{userId}/addresses', [AdminAddressController::class, 'userIndex'])->middleware('permission:address.view');
+        Route::put('/addresses/{id}', [AdminAddressController::class, 'update'])->middleware('permission:address.manage');
     });
 });
 
