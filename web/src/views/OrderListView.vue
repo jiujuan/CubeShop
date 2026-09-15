@@ -18,6 +18,8 @@ const statusTabs: Array<{ value: '' | OrderStatus; label: string }> = [
   { value: 'paid', label: '已支付' },
   { value: 'shipped', label: '已发货' },
   { value: 'completed', label: '已完成' },
+  { value: 'refunding', label: '退款中' },
+  { value: 'refunded', label: '已退款' },
   { value: 'cancelled', label: '已取消' },
 ]
 

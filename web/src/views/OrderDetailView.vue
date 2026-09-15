@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { MapPin, NotebookPen } from 'lucide-vue-next'
-import { cancelOrder, getOrder, type OrderDetail } from '@/api/order'
+import { MapPin, NotebookPen, RotateCcw } from 'lucide-vue-next'
+import { applyRefund, cancelOrder, getOrder, type OrderDetail } from '@/api/order'
 import LoadingSpinner from '@/components/LoadingSpinner.vue'
 import ShopFooter from '@/components/ShopFooter.vue'
 import ShopHeader from '@/components/ShopHeader.vue'
@@ -45,6 +45,20 @@ async function doCancel() {
   } catch (e) {
     tip.value = e instanceof Error ? e.message : '取消失败'
     await load()
+  }
+}
+
+async function doRefund() {
+  if (!order.value) return
+  const reason = prompt('请输入退款原因（可留空）：')
+  if (reason === null) return
+  tip.value = ''
+  try {
+    await applyRefund(order.value.id, reason.trim() || undefined)
+    alert('退款申请已提交，等待商家审核')
+    await load()
+  } catch (e) {
+    tip.value = e instanceof Error ? e.message : '申请退款失败'
   }
 }
 </script>
@@ -132,6 +146,25 @@ async function doCancel() {
           </div>
         </section>
 
+        <!-- 退款记录 -->
+        <section v-if="order.refunds.length" class="mb-6 rounded-xl border border-slate-100 bg-white p-5">
+          <h2 class="mb-3 flex items-center gap-2 text-sm font-semibold text-slate-700">
+            <RotateCcw class="h-4 w-4 text-[#1677ff]" /> 退款记录
+          </h2>
+          <div v-for="r in order.refunds" :key="r.refund_no" class="border-b border-slate-50 py-3 text-sm last:border-0">
+            <div class="flex items-center justify-between">
+              <span class="text-slate-600">{{ r.refund_no }}</span>
+              <span class="font-medium text-[#ff4d4f]">¥{{ r.amount }}</span>
+            </div>
+            <p class="mt-1 text-xs text-slate-400">
+              状态：{{ { pending: '待审核', approved: '已同意', rejected: '已拒绝', success: '退款成功', failed: '退款失败' }[r.status] }}
+              <template v-if="r.reason">｜原因：{{ r.reason }}</template>
+              <template v-if="r.admin_remark">｜商家备注：{{ r.admin_remark }}</template>
+              ｜申请时间：{{ r.created_at }}
+            </p>
+          </div>
+        </section>
+
         <!-- 操作 -->
         <div class="flex justify-end gap-3">
           <button
@@ -144,6 +177,11 @@ async function doCancel() {
             class="rounded-full border border-slate-200 px-6 py-2 text-sm text-slate-500 hover:border-red-300 hover:text-red-500"
             @click="doCancel"
           >取消订单</button>
+          <button
+            v-if="['paid', 'shipped', 'completed'].includes(order.status)"
+            class="rounded-full border border-orange-200 px-6 py-2 text-sm text-orange-500 hover:bg-orange-50"
+            @click="doRefund"
+          >申请退款</button>
         </div>
       </template>
     </main>

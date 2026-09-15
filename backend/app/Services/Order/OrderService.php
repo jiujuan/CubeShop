@@ -205,7 +205,7 @@ class OrderService
                 ));
             }
 
-            // 取消待支付订单 → 释放锁定库存
+            // 取消待支付订单 → 释放锁定库存 + 关闭未完成支付单
             if ($target === Order::STATUS_CANCELLED && $locked->isPendingPayment()) {
                 $items = $locked->items()->get();
                 foreach ($items as $item) {
@@ -213,6 +213,7 @@ class OrderService
                         $this->inventory->release($item->sku_id, $item->quantity, $bizType, $locked->id, $reason);
                     }
                 }
+                \App\Services\Payment\PaymentService::closePendingForOrder($locked->id);
             }
 
             $locked->status = $target;

@@ -68,6 +68,11 @@ class Order extends Model
         return $this->hasMany(OrderItem::class, 'order_id');
     }
 
+    public function refunds(): HasMany
+    {
+        return $this->hasMany(Refund::class, 'order_id');
+    }
+
     public function user(): BelongsTo
     {
         return $this->belongsTo(SysUser::class, 'user_id');
