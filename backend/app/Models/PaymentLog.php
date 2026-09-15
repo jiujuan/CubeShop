@@ -16,6 +16,12 @@ class PaymentLog extends Model
     public const EVENT_CALLBACK = 'callback';
     public const EVENT_NOTIFY = 'notify';
     public const EVENT_CLOSE = 'close';
+    /** 线下转账核账（通过/驳回） */
+    public const EVENT_REVIEW = 'review';
+    /** 主动查单补偿 */
+    public const EVENT_QUERY = 'query';
+    /** 退款 */
+    public const EVENT_REFUND = 'refund';
 
     /** 事件中文名（后台展示） */
     public const EVENT_LABELS = [
@@ -23,6 +29,9 @@ class PaymentLog extends Model
         self::EVENT_CALLBACK => '渠道回调',
         self::EVENT_NOTIFY => '异步通知',
         self::EVENT_CLOSE => '后台关闭',
+        self::EVENT_REVIEW => '线下核账',
+        self::EVENT_QUERY => '主动查单',
+        self::EVENT_REFUND => '退款',
     ];
 
     protected $table = 'payment_logs';
