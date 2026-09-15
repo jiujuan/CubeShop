@@ -1,17 +1,31 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import {
-  BarChart3, Box, ClipboardList, FileClock, FolderTree, LayoutDashboard, LayoutList, ListTree, LogOut, MessageSquare, Package, RotateCcw, Settings, ShieldCheck, SquareUser, Tags, UserCog, UserRound, Users,
+  BarChart3, Box, ChevronDown, ChevronRight, ChevronsLeft, ChevronsRight, ClipboardList, FileClock, FolderTree, LayoutDashboard, LayoutList, ListTree, LogOut, MessageSquare, Package, RotateCcw, Settings, ShieldCheck, SquareUser, Tags, UserCog, UserRound, Users,
 } from 'lucide-vue-next'
 import { useAuthStore } from '@/stores/auth'
 
 /**
- * 管理端布局：侧栏（动态菜单，按权限过滤）+ 顶栏（用户菜单）
+ * 管理端布局：侧栏（动态菜单，分组 + 按权限过滤）+ 顶栏（用户菜单）
  */
 const router = useRouter()
 const auth = useAuthStore()
 const userMenuOpen = ref(false)
+
+/** 菜单分类折叠状态（默认全部展开） */
+const collapsed = ref<Record<string, boolean>>({})
+function toggleGroup(title: string) {
+  collapsed.value[title] = !collapsed.value[title]
+}
+
+/** 整个侧栏折叠（图标栏模式），状态持久化到 localStorage */
+const SIDEBAR_STATE_KEY = 'cubeshop:sidebar-collapsed'
+const sidebarCollapsed = ref(localStorage.getItem(SIDEBAR_STATE_KEY) === '1')
+watch(sidebarCollapsed, (val) => localStorage.setItem(SIDEBAR_STATE_KEY, val ? '1' : '0'))
+
+/** 折叠态下平铺展示的全部菜单项（按分组顺序展开） */
+const flatMenus = computed<MenuItem[]>(() => menuGroups.value.flatMap((g) => g.items))
 
 /** 图标映射（路由 meta.icon → 组件） */
 const icons: Record<string, unknown> = {
@@ -39,28 +53,62 @@ interface MenuItem {
   permission?: string
 }
 
+interface MenuGroup {
+  title: string
+  items: MenuItem[]
+}
+
 const appTitle = 'CubeShop'
 
-const menus = computed<MenuItem[]>(() => {
-  const items: MenuItem[] = [
-    { path: '/dashboard', title: '工作台', icon: 'LayoutDashboard' },
-    { path: '/products', title: '商品管理', icon: 'Package', permission: 'product.view' },
-    { path: '/categories', title: '分类管理', icon: 'FolderTree', permission: 'category.manage' },
-    { path: '/brands', title: '品牌管理', icon: 'Tags', permission: 'product.view' },
-    { path: '/attributes', title: '属性库', icon: 'ListTree', permission: 'product.view' },
-    { path: '/category-attributes', title: '分类属性模板', icon: 'LayoutList', permission: 'product.view' },
-    { path: '/orders', title: '订单管理', icon: 'ClipboardList', permission: 'order.view' },
-    { path: '/refunds', title: '退款处理', icon: 'RotateCcw', permission: 'refund.view' },
-    { path: '/reviews', title: '评价管理', icon: 'MessageSquare', permission: 'review.manage' },
-    { path: '/reports', title: '报表中心', icon: 'BarChart3', permission: 'report.view' },
-    { path: '/users', title: '用户管理', icon: 'Users', permission: 'user.manage' },
-    { path: '/configs', title: '系统配置', icon: 'Settings', permission: 'config.manage' },
-    { path: '/operation-logs', title: '操作日志', icon: 'FileClock', permission: 'log.view' },
-    { path: '/accounts', title: '管理员账号', icon: 'UserCog', permission: 'account.manage' },
-    { path: '/roles', title: '角色权限', icon: 'ShieldCheck', permission: 'role.manage' },
+/** 菜单分组定义：概览 / 商品 / 交易 / 用户 / 系统 */
+const menuGroups = computed<MenuGroup[]>(() => {
+  const groups: MenuGroup[] = [
+    {
+      title: '概览',
+      items: [
+        { path: '/dashboard', title: '工作台', icon: 'LayoutDashboard' },
+        { path: '/reports', title: '报表中心', icon: 'BarChart3', permission: 'report.view' },
+      ],
+    },
+    {
+      title: '商品',
+      items: [
+        { path: '/products', title: '商品管理', icon: 'Package', permission: 'product.view' },
+        { path: '/categories', title: '分类管理', icon: 'FolderTree', permission: 'category.manage' },
+        { path: '/brands', title: '品牌管理', icon: 'Tags', permission: 'product.view' },
+        { path: '/attributes', title: '属性库', icon: 'ListTree', permission: 'product.view' },
+        { path: '/category-attributes', title: '分类属性模板', icon: 'LayoutList', permission: 'product.view' },
+      ],
+    },
+    {
+      title: '交易',
+      items: [
+        { path: '/orders', title: '订单管理', icon: 'ClipboardList', permission: 'order.view' },
+        { path: '/refunds', title: '退款处理', icon: 'RotateCcw', permission: 'refund.view' },
+        { path: '/reviews', title: '评价管理', icon: 'MessageSquare', permission: 'review.manage' },
+      ],
+    },
+    {
+      title: '用户',
+      items: [
+        { path: '/users', title: '用户管理', icon: 'Users', permission: 'user.manage' },
+      ],
+    },
+    {
+      title: '系统',
+      items: [
+        { path: '/configs', title: '系统配置', icon: 'Settings', permission: 'config.manage' },
+        { path: '/operation-logs', title: '操作日志', icon: 'FileClock', permission: 'log.view' },
+        { path: '/accounts', title: '管理员账号', icon: 'UserCog', permission: 'account.manage' },
+        { path: '/roles', title: '角色权限', icon: 'ShieldCheck', permission: 'role.manage' },
+      ],
+    },
   ]
-  // 动态菜单：按权限过滤（超管直通）
-  return items.filter((m) => auth.hasPermission(m.permission))
+
+  // 动态菜单：按权限过滤子项（超管直通），并隐藏无任何可见项的分类
+  return groups
+    .map((g) => ({ ...g, items: g.items.filter((m) => auth.hasPermission(m.permission)) }))
+    .filter((g) => g.items.length > 0)
 })
 
 const pageTitle = computed(() => (router.currentRoute.value.meta.title as string) || '')
@@ -74,24 +122,68 @@ async function handleLogout() {
 <template>
   <div class="flex h-screen min-h-0 overflow-hidden">
     <!-- 侧栏 -->
-    <aside class="flex w-56 shrink-0 flex-col border-r border-[#d6e9ff] bg-[#e6f4ff]">
-      <div class="flex h-16 items-center gap-2.5 px-5">
-        <Box class="h-7 w-7 text-[#1677ff]" />
-        <span class="text-lg font-bold text-slate-900">{{ appTitle }}</span>
+    <aside
+      class="flex shrink-0 flex-col border-r border-[#d6e9ff] bg-[#e6f4ff] transition-[width] duration-200"
+      :class="sidebarCollapsed ? 'w-14' : 'w-56'"
+    >
+      <div class="flex h-16 items-center gap-2.5 px-5" :class="sidebarCollapsed && 'justify-center px-0'">
+        <Box class="h-7 w-7 shrink-0 text-[#1677ff]" />
+        <span v-if="!sidebarCollapsed" class="text-lg font-bold text-slate-900">{{ appTitle }}</span>
       </div>
 
       <nav class="flex-1 space-y-1 overflow-y-auto px-3 py-3">
-        <RouterLink
-          v-for="menu in menus"
-          :key="menu.path"
-          :to="menu.path"
-          class="flex items-center gap-3 rounded-lg px-3.5 py-2.5 text-sm font-medium text-[#1f2329] transition-colors hover:bg-[#d6e9ff] data-[active=true]:bg-[#1677ff] data-[active=true]:text-white"
-          :data-active="$route.path.startsWith(menu.path)"
-        >
-          <component :is="icons[menu.icon ?? '']" class="h-5 w-5" />
-          {{ menu.title }}
-        </RouterLink>
+        <!-- 折叠态：只显示图标，鼠标悬停显示名称 -->
+        <template v-if="sidebarCollapsed">
+          <RouterLink
+            v-for="menu in flatMenus"
+            :key="menu.path"
+            :to="menu.path"
+            :title="menu.title"
+            class="flex items-center justify-center rounded-lg py-1.5 text-[#1f2329] transition-colors hover:bg-[#d6e9ff] data-[active=true]:bg-[#1677ff] data-[active=true]:text-white"
+            :data-active="$route.path.startsWith(menu.path)"
+          >
+            <component :is="icons[menu.icon ?? '']" class="h-4 w-4" />
+          </RouterLink>
+        </template>
+
+        <div v-for="group in menuGroups" v-else :key="group.title" class="mb-0.5">
+          <button
+            class="flex w-full items-center justify-between rounded px-3.5 py-1 text-[11px] font-semibold tracking-wider text-[#4e5969] hover:bg-[#d6e9ff]/70"
+            :data-test="`menu-group-${group.title}`"
+            @click="toggleGroup(group.title)"
+          >
+            <span>{{ group.title }}</span>
+            <component :is="collapsed[group.title] ? ChevronRight : ChevronDown" class="h-3.5 w-3.5" />
+          </button>
+
+          <div v-show="!collapsed[group.title]" class="mt-0.5 space-y-0.5">
+            <RouterLink
+              v-for="menu in group.items"
+              :key="menu.path"
+              :to="menu.path"
+              class="flex items-center gap-3 rounded-lg px-3.5 py-1.5 text-sm font-medium text-[#1f2329] transition-colors hover:bg-[#d6e9ff] data-[active=true]:bg-[#1677ff] data-[active=true]:text-white"
+              :data-active="$route.path.startsWith(menu.path)"
+            >
+              <component :is="icons[menu.icon ?? '']" class="h-4 w-4" />
+              {{ menu.title }}
+            </RouterLink>
+          </div>
+        </div>
       </nav>
+
+      <!-- 底部：侧栏折叠开关 -->
+      <div class="border-t border-[#d6e9ff] p-2">
+        <button
+          class="flex w-full items-center rounded-lg px-3.5 py-1.5 text-[13px] text-[#4e5969] transition-colors hover:bg-[#d6e9ff]"
+          :class="sidebarCollapsed ? 'justify-center px-0' : 'gap-2'"
+          :title="sidebarCollapsed ? '展开菜单' : '折叠菜单'"
+          data-test="sidebar-toggle"
+          @click="sidebarCollapsed = !sidebarCollapsed"
+        >
+          <component :is="sidebarCollapsed ? ChevronsRight : ChevronsLeft" class="h-4 w-4 shrink-0" />
+          <span v-if="!sidebarCollapsed">折叠菜单</span>
+        </button>
+      </div>
     </aside>
 
     <!-- 主区域 -->
