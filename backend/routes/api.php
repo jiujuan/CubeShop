@@ -11,6 +11,9 @@ use App\Http\Controllers\Admin\ConfigController;
 use App\Http\Controllers\Admin\DashboardController;
 use App\Http\Controllers\Admin\OperationLogController;
 use App\Http\Controllers\Admin\OrderController as AdminOrderController;
+use App\Http\Controllers\Admin\OrderLogController as AdminOrderLogController;
+use App\Http\Controllers\Admin\PaymentController as AdminPaymentController;
+use App\Http\Controllers\Admin\PaymentLogController as AdminPaymentLogController;
 use App\Http\Controllers\Admin\ProductController;
 use App\Http\Controllers\Admin\RefundController;
 use App\Http\Controllers\Admin\ReportController as AdminReportController;
@@ -194,6 +197,20 @@ Route::middleware(['auth:sanctum', 'account.active'])->group(function () {
         Route::get('/orders/export', [AdminOrderController::class, 'export'])->middleware('permission:order.export');
         Route::get('/orders/{id}', [AdminOrderController::class, 'show'])->middleware('permission:order.view');
         Route::post('/orders/{id}/ship', [AdminOrderController::class, 'ship'])->middleware('permission:order.ship');
+
+        // 支付管理 payment.view / payment.manage（API 文档 8.11）—— export 必须注册在 {id} 之前
+        Route::get('/payments', [AdminPaymentController::class, 'index'])->middleware('permission:payment.view');
+        Route::get('/payments/export', [AdminPaymentController::class, 'export'])->middleware('permission:payment.view');
+        Route::get('/payments/{id}', [AdminPaymentController::class, 'show'])->middleware('permission:payment.view');
+        Route::post('/payments/{id}/close', [AdminPaymentController::class, 'close'])->middleware('permission:payment.manage');
+
+        // 支付日志 payment.view（API 文档 8.12，只读）
+        Route::get('/payment-logs', [AdminPaymentLogController::class, 'index'])->middleware('permission:payment.view');
+        Route::get('/payment-logs/{id}', [AdminPaymentLogController::class, 'show'])->middleware('permission:payment.view');
+
+        // 订单状态流水 order.log（API 文档 8.13，只读）
+        Route::get('/order-logs', [AdminOrderLogController::class, 'index'])->middleware('permission:order.log');
+        Route::get('/orders/{orderId}/logs', [AdminOrderLogController::class, 'orderIndex'])->middleware('permission:order.log');
 
         // 退款处理 refund.*（API 文档 8.4 / Roadmap P5）
         Route::get('/refunds', [RefundController::class, 'index'])->middleware('permission:refund.view');

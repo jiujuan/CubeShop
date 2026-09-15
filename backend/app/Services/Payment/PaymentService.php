@@ -247,6 +247,42 @@ class PaymentService
             ->update(['status' => Payment::STATUS_CLOSED, 'updated_at' => now()]);
     }
 
+    /**
+     * 后台人工关闭支付单（权限 payment.manage）
+     *
+     * 仅待支付（pending）可关闭；成功/失败/已关闭均拒绝。
+     * 关闭只作用于支付单本身，不联动取消订单——买家仍可重新发起支付。
+     *
+     * @throws BusinessException 状态不允许关闭（40009）/ 支付单不存在（40004）
+     */
+    public function close(Payment $payment, int $adminId, ?string $reason = null): Payment
+    {
+        if ($payment->status !== Payment::STATUS_PENDING) {
+            throw BusinessException::conflict('仅待支付状态的支付单可关闭');
+        }
+
+        $affected = DB::transaction(function () use ($payment) {
+            $rows = Payment::whereKey($payment->id)
+                ->where('status', Payment::STATUS_PENDING)
+                ->update(['status' => Payment::STATUS_CLOSED, 'updated_at' => now()]);
+
+            return $rows;
+        });
+
+        if ($affected === 0) {
+            throw BusinessException::conflict('支付单状态已变更，请刷新后重试');
+        }
+
+        $payment->refresh();
+
+        $this->log($payment, PaymentLog::EVENT_CLOSE, [
+            'admin_id' => $adminId,
+            'reason' => $reason,
+        ], ['ok' => true, 'status' => Payment::STATUS_CLOSED]);
+
+        return $payment;
+    }
+
     /** 记录支付日志 */
     private function log(Payment $payment, string $event, array $request, array $response = null): void
     {

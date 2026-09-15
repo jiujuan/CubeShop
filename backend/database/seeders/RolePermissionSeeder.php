@@ -35,6 +35,10 @@ class RolePermissionSeeder extends Seeder
         'user.manage',
         'address.view',
         'address.manage',
+        // 支付与订单流水（后台 payment.view / payment.manage / order.log）
+        'payment.view',
+        'payment.manage',
+        'order.log',
         // V1.1 新增权限码（T-017 / T-020 / T-022）
         'review.manage',
         'report.view',
@@ -77,6 +81,8 @@ class RolePermissionSeeder extends Seeder
             'dashboard.view',
             'address.view',
             'review.manage', 'report.view', 'inventory.manage',
+            // 支付只读（查看支付单/支付日志）+ 订单流水；关闭支付单需超管
+            'payment.view', 'order.log',
         ]);
 
         // 超级管理员：全部权限

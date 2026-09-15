@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import {
   exportOrders,
   getOrders,
@@ -16,6 +17,7 @@ import LoadingSpinner from '@/components/LoadingSpinner.vue'
 /**
  * 订单管理（Roadmap P6）：多条件筛选、详情、发货、导出
  */
+const router = useRouter()
 const loading = ref(true)
 const list = ref<AdminOrder[]>([])
 const pagination = ref({ page: 1, page_size: 20, total: 0, total_pages: 1 })
@@ -83,6 +85,11 @@ async function doShip() {
   } finally {
     shipping.value = false
   }
+}
+
+/** 跳转到订单流水页并按该订单号筛选 */
+function viewLogs(order: AdminOrder) {
+  router.push({ path: '/order-logs', query: { order_no: order.order_no } })
 }
 
 async function doExport() {
@@ -168,6 +175,13 @@ onMounted(() => load())
           <td class="px-3 py-1.5">
             <div class="flex items-center gap-1 text-[#1677ff]">
               <button class="hover:underline" @click="detailOrder = order">详情</button>
+              <span class="text-slate-200">|</span>
+              <button
+                v-permission="'order.log'"
+                class="hover:underline"
+                :data-testid="`logs-${order.id}`"
+                @click="viewLogs(order)"
+              >流水</button>
               <template v-if="order.status === 'paid'">
                 <span class="text-slate-200">|</span>
                 <button class="flex items-center gap-0.5 text-orange-500 hover:underline" @click="shipTarget = order; shipRemark = ''">

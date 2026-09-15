@@ -950,6 +950,41 @@
 - 删除：内置角色不可删（40003）；角色下仍有账号时拒绝（40009）。
 - 角色与权限变更均写操作日志（module=role，含 before/after），并刷新 spatie 权限缓存。
 
+### 8.11 支付管理（payments）
+`GET  /admin/payments`（列表 + 汇总）  
+`GET  /admin/payments/export`（CSV 导出，最多 5000 条）  
+`GET  /admin/payments/{id}`（详情，含支付日志时间轴）  
+`POST /admin/payments/{id}/close`（关闭待支付单，body: `reason?`）
+
+**权限**：查看 `payment.view`（运营 + 超管）；关闭 `payment.manage`（仅超管）
+
+查询参数：`payment_no`（模糊）、`order_no`（模糊）、`user_id`、`channel`（wechat/alipay）、`status`（pending/success/failed/closed）、`start_time`、`end_time`、分页。
+
+- 列表额外返回 `summary`：当前筛选下的总笔数、成功笔数、成功金额、待支付数、失败数。
+- 详情返回 `order`（订单号/状态/实付）与 `logs`（该支付单的 payment_logs，按 id 正序，含完整 request/response）。
+- **关闭仅对 `pending` 生效**，非待支付返回 40009；关闭只作用于支付单本身，**不联动取消订单**（买家可重新发起支付）；关闭写 `payment_logs`（event=close）与操作日志（module=payment）。
+
+### 8.12 支付日志（payment_logs）
+`GET /admin/payment-logs`（列表）  
+`GET /admin/payment-logs/{id}`（详情，完整 JSON）
+
+**权限**：`payment.view`（只读，无任何写入口）
+
+查询参数：`payment_no`（模糊）、`event`（create/callback/notify/close）、`start_time`、`end_time`、分页。
+
+- 列表回传 `request_preview` / `response_preview`（JSON 摘要，超 160 字符截断），避免载荷过大；详情回传完整 `request_data` / `response_data`。
+
+### 8.13 订单状态流水（order_logs）
+`GET /admin/order-logs`（列表）  
+`GET /admin/orders/{orderId}/logs`（单笔订单时间轴，正序）
+
+**权限**：`order.log`（只读，运营 + 超管）
+
+查询参数：`order_no`（模糊，关联 orders）、`order_id`、`to_status`、`operator_type`（user/admin/system）、`start_time`、`end_time`、分页。
+
+- 返回字段含 `from_status_label` / `to_status_label`（中文）与 `operator_name`（账号昵称/用户名，system 为空）。
+- **order_logs 为只写不改的审计流水**，唯一写入点是 `OrderService::transitionTo()`（下单/支付/发货/取消/退款等状态机），后台不提供任何新增、修改、删除入口。
+
 ---
 
 ## 9. 权限码参考（与 spatie 对齐）
@@ -971,6 +1006,9 @@
 | user.manage | 用户管理（买家账号查看/搜索/禁用） |
 | address.view | 查看用户收货地址 |
 | address.manage | 代用户修改收货地址 |
+| payment.view | 查看支付单与支付日志 |
+| payment.manage | 关闭待支付单（超管专属） |
+| order.log | 查看订单状态流水 |
 
 超级管理员拥有全部权限。
 
