@@ -3,6 +3,8 @@ import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { Minus, Plus, ShoppingCart, Truck } from 'lucide-vue-next'
 import { getProduct, type ProductDetail } from '@/api/shop'
+import { addToCart } from '@/api/user'
+import { useAuthStore } from '@/stores/auth'
 import ShopFooter from '@/components/ShopFooter.vue'
 import ShopHeader from '@/components/ShopHeader.vue'
 import LoadingSpinner from '@/components/LoadingSpinner.vue'
@@ -71,17 +73,60 @@ function pickSpec(dim: string, value: string) {
   selectedSpecs.value = { ...selectedSpecs.value, [dim]: value }
 }
 
-function addToCart() {
-  // P3（购物车）尚未实现，此处占位
-  alert('购物车功能将在 P3 阶段（库存、购物车与地址）上线')
+const auth = useAuthStore()
+
+/** 加入购物车：未登录跳登录（带回跳）；库存不足/规格未选给出明确提示 */
+const cartTip = ref('')
+const cartTipType = ref<'ok' | 'err'>('ok')
+const adding = ref(false)
+
+async function handleAddToCart() {
+  cartTip.value = ''
+  if (!auth.token) {
+    router.push({ path: '/login', query: { redirect: route.fullPath } })
+    return
+  }
+  const sku = matchedSku.value
+  if (!sku) {
+    cartTipType.value = 'err'
+    cartTip.value = '请先选择完整的商品规格'
+    return
+  }
+  if (quantity.value > sku.stock) {
+    cartTipType.value = 'err'
+    cartTip.value = '库存不足'
+    return
+  }
+
+  adding.value = true
+  try {
+    await addToCart(sku.id, quantity.value)
+    cartTipType.value = 'ok'
+    cartTip.value = '已加入购物车'
+    // 刷新顶栏角标
+    ;(headerRef.value as { refreshCartCount: () => void } | null)?.refreshCartCount()
+  } catch (e) {
+    cartTipType.value = 'err'
+    cartTip.value = e instanceof Error ? e.message : '加购失败'
+  } finally {
+    adding.value = false
+  }
 }
+
+function buyNow() {
+  handleAddToCart().then(() => {
+    if (cartTipType.value === 'ok') router.push('/cart')
+  })
+}
+
+const headerRef = ref<InstanceType<typeof ShopHeader> | null>(null)
 
 const emojiByIndex = ['👕', '🎧', '🥤', '⌨️', '👟', '🧴', '💻', '📦']
 </script>
 
 <template>
   <div>
-    <ShopHeader />
+    <ShopHeader ref="headerRef" />
 
     <main class="mx-auto w-full max-w-6xl flex-1 px-6 py-8">
       <!-- 加载/错误 -->
@@ -162,17 +207,24 @@ const emojiByIndex = ['👕', '🎧', '🥤', '⌨️', '👟', '🧴', '💻', 
               </div>
             </div>
 
+            <!-- 加购反馈 -->
+            <p
+              v-if="cartTip"
+              class="mt-3 rounded-md px-3 py-2 text-xs"
+              :class="cartTipType === 'ok' ? 'bg-[#e8f7ec] text-[#2e9e57]' : 'bg-red-50 text-red-500'"
+            >{{ cartTip }}</p>
+
             <!-- 操作 -->
-            <div class="mt-8 flex items-center gap-3">
+            <div class="mt-4 flex items-center gap-3">
               <button
                 class="flex items-center gap-2 rounded-full border-2 border-[#1677ff] px-8 py-3 font-medium text-[#1677ff] transition-colors hover:bg-[#e6f4ff] disabled:cursor-not-allowed disabled:opacity-50"
-                :disabled="activeStock <= 0"
-                @click="addToCart"
+                :disabled="activeStock <= 0 || adding"
+                @click="handleAddToCart"
               ><ShoppingCart class="h-5 w-5" /> 加入购物车</button>
               <button
                 class="rounded-full bg-[#1677ff] px-8 py-3 font-medium text-white transition-colors hover:bg-[#4096ff] disabled:cursor-not-allowed disabled:opacity-50"
-                :disabled="activeStock <= 0"
-                @click="addToCart"
+                :disabled="activeStock <= 0 || adding"
+                @click="buyNow"
               >立即购买</button>
             </div>
 
