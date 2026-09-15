@@ -149,7 +149,7 @@ async function clear() {
               <button
                 class="rounded-full bg-[#1677ff] px-8 py-2.5 text-sm font-medium text-white transition-colors hover:bg-[#4096ff] disabled:cursor-not-allowed disabled:opacity-50"
                 :disabled="cart.total_quantity <= 0"
-                title="结算功能将在 P4 阶段（订单与结算闭环）上线"
+                @click="$router.push('/checkout')"
               >去结算</button>
             </div>
           </div>

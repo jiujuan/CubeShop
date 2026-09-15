@@ -31,5 +31,10 @@ class AppServiceProvider extends ServiceProvider
         RateLimiter::for('login', function (Request $request) {
             return Limit::perMinute(5)->by($request->input('username', '').'|'.$request->ip());
         });
+
+        // 下单接口限流（API 文档 11.4：下单接口建议限流）：同用户 10 次/分钟
+        RateLimiter::for('order', function (Request $request) {
+            return Limit::perMinute(10)->by('order|'.($request->user()?->id ?? $request->ip()));
+        });
     }
 }

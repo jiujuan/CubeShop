@@ -47,6 +47,30 @@ const router = createRouter({
       meta: { title: '购物车 · CubeShop' },
     },
     {
+      path: '/checkout',
+      name: 'checkout',
+      component: () => import('@/views/CheckoutView.vue'),
+      meta: { title: '确认订单 · CubeShop', requiresAuth: true },
+    },
+    {
+      path: '/orders',
+      name: 'orders',
+      component: () => import('@/views/OrderListView.vue'),
+      meta: { title: '我的订单 · CubeShop', requiresAuth: true },
+    },
+    {
+      path: '/orders/:id',
+      name: 'order-detail',
+      component: () => import('@/views/OrderDetailView.vue'),
+      meta: { title: '订单详情 · CubeShop', requiresAuth: true },
+    },
+    {
+      path: '/orders/:id/pay',
+      name: 'order-pay',
+      component: () => import('@/views/PayPlaceholderView.vue'),
+      meta: { title: '收银台 · CubeShop', requiresAuth: true },
+    },
+    {
       path: '/account/addresses',
       name: 'addresses',
       component: () => import('@/views/AddressView.vue'),

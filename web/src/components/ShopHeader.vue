@@ -127,6 +127,9 @@ async function handleLogout() {
               class="absolute right-0 top-10 z-10 w-32 rounded-lg border border-slate-100 bg-white py-1 text-xs shadow-lg"
               @click="userMenuOpen = false"
             >
+              <RouterLink to="/orders" class="flex items-center gap-1.5 px-3 py-2 text-slate-600 hover:bg-slate-50">
+                <ClipboardList class="h-3.5 w-3.5" /> 我的订单
+              </RouterLink>
               <RouterLink to="/account/addresses" class="flex items-center gap-1.5 px-3 py-2 text-slate-600 hover:bg-slate-50">
                 <UserRound class="h-3.5 w-3.5" /> 收货地址
               </RouterLink>

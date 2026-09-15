@@ -9,6 +9,7 @@ use App\Http\Controllers\Admin\UploadController;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\CartController;
 use App\Http\Controllers\HealthController;
+use App\Http\Controllers\OrderController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\Storefront\ProductController as StorefrontProductController;
 use Illuminate\Support\Facades\Route;
@@ -58,6 +59,13 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::delete('/cart', [CartController::class, 'clear']);
     Route::delete('/cart/{id}', [CartController::class, 'destroy']);
     Route::get('/cart/count', [CartController::class, 'count']);
+
+    // 订单（API 文档 6 / Roadmap P4）
+    Route::get('/orders/by-no/{orderNo}', [OrderController::class, 'showByNo']);
+    Route::get('/orders', [OrderController::class, 'index']);
+    Route::post('/orders', [OrderController::class, 'store'])->middleware('throttle:order');
+    Route::get('/orders/{id}', [OrderController::class, 'show']);
+    Route::post('/orders/{id}/cancel', [OrderController::class, 'cancel']);
 
     // 收货地址（API 文档 3.3 ~ 3.7）
     Route::get('/user/addresses', [AddressController::class, 'index']);
