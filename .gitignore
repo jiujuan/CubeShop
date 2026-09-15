@@ -28,3 +28,9 @@ Homestead.json
 .env.production
 .phpactor.json
 auth.json
+
+
+# Composer
+composer.phar
+
+.workbuddy
