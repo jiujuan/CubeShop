@@ -126,15 +126,24 @@ class PaymentService
             return ['ok' => false, 'message' => '验签失败'];
         }
 
-        // 2. 幂等：已成功直接返回
+        // 2. 金额一致性：回调金额必须与支付单金额一致（防低金额签名入账整单）
+        if (bccomp($amount, (string) $payment->amount, 2) !== 0) {
+            $this->log($payment, 'callback', $payload, ['ok' => false, 'message' => '回调金额与支付单金额不一致']);
+
+            return ['ok' => false, 'message' => '回调金额与支付单金额不一致'];
+        }
+
+        // 3. 幂等：已成功直接返回（仍记录审计日志，渠道重发通知需留痕）
         if ($payment->status === Payment::STATUS_SUCCESS && $status === Payment::STATUS_SUCCESS) {
+            $this->log($payment, 'callback', $payload, ['ok' => true, 'message' => '已处理（幂等跳过）']);
+
             return ['ok' => true, 'message' => '已处理（幂等跳过）'];
         }
         if ($payment->status !== Payment::STATUS_PENDING) {
             return ['ok' => false, 'message' => '支付单状态不允许更新'];
         }
 
-        // 3. 事务：更新支付单 + 订单 + 确认扣减库存
+        // 4. 事务：更新支付单 + 订单 + 确认扣减库存
         try {
             DB::transaction(function () use ($payment, $status, $tradeNo) {
                 // 条件更新防并发回调

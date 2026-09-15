@@ -9,7 +9,8 @@ use Illuminate\Support\Str;
  * 单号生成服务（架构文档 4.1.1 公共服务层）
  *
  * 规则：{前缀}{YYYYMMDD}{6 位日期内序列}，如 CS20260915000042
- * 序列用 PostgreSQL/SQLite 兼容的日期行 + 行内自增实现，事务内安全。
+ * 实现：biz_no_sequences 表行内原子自增（行锁串行化），跨进程唯一，
+ *       与数据库类型无关（PostgreSQL / SQLite 均可用），每日自动重置。
  */
 class NoGeneratorService
 {
@@ -23,12 +24,33 @@ class NoGeneratorService
     {
         $date = now()->format('Ymd');
 
-        // 借助 system_configs 无关的原子递增：使用数据库序列表
-        // 简化实现：日期 + 微秒 + 随机数，冲突概率极低；订单表有唯一索引兜底重试
-        $micro = str_pad((string) (microtime(true) * 10000 % 100000), 5, '0', STR_PAD_LEFT);
-        $rand = str_pad((string) random_int(0, 9), 1, '0');
+        $value = DB::transaction(function () use ($prefix, $date) {
+            // 行锁串行化并发取号
+            $row = DB::table('biz_no_sequences')
+                ->where('biz_date', $date)
+                ->where('prefix', $prefix)
+                ->lockForUpdate()
+                ->first();
 
-        return $prefix.$date.$micro.$rand;
+            if ($row === null) {
+                DB::table('biz_no_sequences')->insert([
+                    'biz_date' => $date,
+                    'prefix' => $prefix,
+                    'current_value' => 1,
+                ]);
+
+                return 1;
+            }
+
+            $value = (int) $row->current_value + 1;
+            DB::table('biz_no_sequences')
+                ->where('id', $row->id)
+                ->update(['current_value' => $value]);
+
+            return $value;
+        });
+
+        return $prefix.$date.str_pad((string) $value, 6, '0', STR_PAD_LEFT);
     }
 
     public function generateOrderNo(): string

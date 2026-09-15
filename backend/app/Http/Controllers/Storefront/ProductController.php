@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Category;
 use App\Models\Product;
 use App\Support\ApiResponse;
+use App\Exceptions\BusinessException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -75,7 +76,7 @@ class ProductController extends Controller
             ->find($id);
 
         if (! $product) {
-            return $this->fail('商品不存在或已下架', 40004);
+            throw BusinessException::notFound('商品不存在或已下架');
         }
 
         $minPrice = $product->skus->where('status', 1)->min('price');
