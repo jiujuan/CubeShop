@@ -2,9 +2,11 @@
 
 namespace App\Providers;
 
+use App\Models\SysUser;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\ServiceProvider;
 
@@ -23,6 +25,12 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        // 超级管理员绕过全部权限校验：角色定义上超管即拥有所有权限，
+        // 避免后续新增权限码时因未同步授权而导致超管被误判为无权限（V1.1 reports 403 问题）
+        Gate::before(function ($user) {
+            return $user instanceof SysUser && $user->hasRole('super_admin') ? true : null;
+        });
+
         // 认证类接口限流（API 文档 11.4：登录/验证码/重置密码）
         RateLimiter::for('auth', function (Request $request) {
             return Limit::perMinute(10)->by($request->ip());
