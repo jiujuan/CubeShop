@@ -101,11 +101,29 @@
 
 | 项 | 约定 |
 |---|---|
-| 后端测试库 | SQLite 内存（phpunit.xml 已配置），`RefreshDatabase` 隔离 |
-| 后端执行 | `cd backend && ./vendor/bin/pest`（testsuite：Unit / Feature） |
+| 后端测试库（日常） | SQLite 内存（phpunit.xml 已配置），`RefreshDatabase` 隔离 |
+| 后端测试库（PG 回归） | 独立 PostgreSQL 库 `cubeshop_test`（127.0.0.1:5432，phpunit.pgsql.xml），与开发库 `cubeshop` 隔离 |
+| 后端执行（日常） | `cd backend && ./vendor/bin/pest` 或 `composer test:sqlite` |
+| 后端执行（PG 回归） | `cd backend && composer test:pgsql`（首次前需创建测试库，脚本见 §6.1） |
 | 前端执行 | `cd admin && npm test` / `cd web && npm test`（vitest run） |
 | 冒烟前置 | `artisan serve` 运行于 127.0.0.1:8000，数据库已 seed |
 | CI 可重复 | 全部测试不依赖外部服务状态（缓存用 array 驱动） |
+
+### 6.1 PostgreSQL 兼容性回归
+
+SQLite 与 PostgreSQL 在序列行为、锁语义、约束报错格式上存在差异，集成测试需定期在 PG 下全量回归：
+
+```bash
+# 一次性创建独立测试库（已存在则重建为空库）
+php -r "$pdo=new PDO('pgsql:host=127.0.0.1;port=5432;dbname=postgres','postgres','admin123'); \
+  $pdo->exec('DROP DATABASE IF EXISTS cubeshop_test'); \
+  $pdo->exec('CREATE DATABASE cubeshop_test ENCODING \'UTF8\'');"
+
+# 全量回归（111 用例，RefreshDatabase 自动 migrate:fresh 到 cubeshop_test）
+cd backend && composer test:pgsql
+```
+
+> **跨库差异教训（2026-09-15 首轮 PG 回归）**：PG 的序列不随事务回滚，而 SQLite rowid 回滚后重用——测试若硬编码自增 id（如 `category_id => 1`）在 PG 全量跑时会因序列已推进而校验失败。规范：测试数据一律通过工厂函数（`createTestCategory()` / `createTestSku()` 等）动态取 id，禁止硬编码。
 
 ---
 
@@ -145,3 +163,11 @@
 
 **结论：P0 = 0、P1 = 0（5 项缺陷均已修复并回归），达到上线测试通过标准。**
 执行方式：后端 `cd backend && ./vendor/bin/pest`；前端 `cd admin|web && npm test`；冒烟 `bash docs/testing/smoke_test.sh`。
+
+## 10. PostgreSQL 兼容性回归记录
+
+| 日期 | 结果 | 备注 |
+|---|---|---|
+| 2026-09-15（首轮） | 111/111 通过（278 断言，33s） | 首轮 3 失败均为测试硬编码 `category_id=1`（PG 序列不回滚所致），改用工厂函数后全绿；未发现应用级跨库缺陷 |
+
+后续定期回归：`cd backend && composer test:pgsql`，结果回填本表。

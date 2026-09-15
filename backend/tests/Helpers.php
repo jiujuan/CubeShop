@@ -60,3 +60,13 @@ if (! function_exists('createTestUser')) {
         ]);
     }
 }
+
+if (! function_exists('createTestCategory')) {
+    /** 创建分类并返回 id（PG 序列不随事务回滚，禁止硬编码 category_id=1） */
+    function createTestCategory(): int
+    {
+        return \App\Models\Category::create([
+            'parent_id' => 0, 'name' => '分类'.uniqid(), 'sort' => 0, 'status' => 1,
+        ])->id;
+    }
+}
