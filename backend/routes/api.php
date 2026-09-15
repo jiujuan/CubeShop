@@ -1,11 +1,13 @@
 <?php
 
+use App\Http\Controllers\AddressController;
 use App\Http\Controllers\Admin\CategoryController;
 use App\Http\Controllers\Admin\ConfigController;
 use App\Http\Controllers\Admin\OperationLogController;
 use App\Http\Controllers\Admin\ProductController;
 use App\Http\Controllers\Admin\UploadController;
 use App\Http\Controllers\AuthController;
+use App\Http\Controllers\CartController;
 use App\Http\Controllers\HealthController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\Storefront\ProductController as StorefrontProductController;
@@ -48,6 +50,21 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/user/profile', [ProfileController::class, 'show']);
     Route::put('/user/profile', [ProfileController::class, 'update']);
     Route::post('/user/upload', [ProfileController::class, 'upload']);
+
+    // 购物车（API 文档 5）
+    Route::get('/cart', [CartController::class, 'index']);
+    Route::post('/cart', [CartController::class, 'store']);
+    Route::put('/cart/{id}', [CartController::class, 'update']);
+    Route::delete('/cart', [CartController::class, 'clear']);
+    Route::delete('/cart/{id}', [CartController::class, 'destroy']);
+    Route::get('/cart/count', [CartController::class, 'count']);
+
+    // 收货地址（API 文档 3.3 ~ 3.7）
+    Route::get('/user/addresses', [AddressController::class, 'index']);
+    Route::post('/user/addresses', [AddressController::class, 'store']);
+    Route::put('/user/addresses/{id}', [AddressController::class, 'update']);
+    Route::post('/user/addresses/{id}/default', [AddressController::class, 'setDefault']);
+    Route::delete('/user/addresses/{id}', [AddressController::class, 'destroy']);
 
     // 后台管理：需要登录 + 对应权限码（API 文档 8）
     Route::prefix('admin')->group(function () {
