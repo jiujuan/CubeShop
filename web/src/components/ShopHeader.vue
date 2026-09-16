@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { Bell, ChevronDown, ClipboardList, Clock, Heart, MapPin, Package, ShoppingCart, SquareUser, UserRound } from 'lucide-vue-next'
+import { Bell, ChevronDown, ClipboardList, Clock, Heart, House, MapPin, Package, ShoppingCart, SquareUser, UserRound, Volume2 } from 'lucide-vue-next'
 import { getCategories, type CategoryNode } from '@/api/shop'
 import { getCartCount } from '@/api/user'
 import NotificationBell from '@/components/NotificationBell.vue'
@@ -74,7 +74,7 @@ async function handleLogout() {
     <!-- 公告条 -->
     <div class="flex h-9 items-center justify-between bg-gradient-to-r from-[#e6f4ff] to-white px-6 text-xs text-slate-500">
       <div class="flex items-center gap-2">
-        <span class="rounded-sm bg-[#1677ff] px-1 py-0.5 text-[10px] text-white">公告</span>
+        <Volume2 class="h-3.5 w-3.5 shrink-0 text-[#1677ff]" />
         全场满 99 元包邮 ｜ 会员专属积分翻倍，购物更优惠！
       </div>
       <div v-if="!auth.token" class="flex items-center gap-3">
@@ -120,10 +120,16 @@ async function handleLogout() {
             <ShoppingCart class="h-5 w-5" />
             <span
               v-if="cartCount > 0"
-              class="absolute -right-2 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-[#ff4d4f] px-0.5 text-[10px] text-white"
+              class="absolute -right-2 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-[#ff8a00] px-0.5 text-[10px] text-white"
             >{{ cartCount > 99 ? '99+' : cartCount }}</span>
           </span>
           购物车
+        </button>
+
+        <!-- 我的订单入口 -->
+        <button class="flex flex-col items-center text-xs hover:text-[#1677ff]" @click="router.push('/orders')">
+          <ClipboardList class="h-5 w-5" />
+          我的订单
         </button>
 
         <!-- 通知铃铛（V1.1 F02 / T-019，登录态可见） -->
@@ -188,7 +194,18 @@ async function handleLogout() {
           </div>
         </div>
 
-        <button class="border-b-2 font-medium" :class="route.path === '/' ? 'border-[#1677ff] text-[#1677ff]' : 'border-transparent hover:text-[#1677ff]'" @click="router.push('/')">热销推荐</button>
+        <button
+          class="flex items-center gap-1 border-b-2"
+          :class="route.path === '/' ? 'border-[#1677ff] font-medium text-[#1677ff]' : 'border-transparent hover:text-[#1677ff]'"
+          @click="router.push('/')"
+        >
+          <House class="h-3.5 w-3.5" /> 首页
+        </button>
+        <button
+          class="border-b-2"
+          :class="route.path === '/search' ? 'border-[#1677ff] font-medium text-[#1677ff]' : 'border-transparent hover:text-[#1677ff]'"
+          @click="router.push('/search?sort=sales_desc')"
+        >热销推荐</button>
         <button
           v-for="root in categories" :key="root.id"
           class="border-b-2 transition-colors"
