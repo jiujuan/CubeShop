@@ -41,11 +41,10 @@ class RefundService
         if ((float) $amount <= 0) {
             throw BusinessException::badRequest('退款金额必须大于 0');
         }
-        if ((float) $amount > (float) $order->pay_amount) {
-            throw BusinessException::badRequest('退款金额不能超过实付金额');
-        }
 
-        // 已存在未完结退款则拒绝（防重复申请）
+        // 已存在未完结退款则拒绝（防重复申请）。先于「可退上限」校验，
+        // 避免「首笔全额退款处理中 + 第二笔同额申请」被误判成「超过可退余额」（40000），
+        // 而应精确命中「重复申请冲突」（40009）。
         $active = Refund::where('order_id', $order->id)
             ->whereIn('status', [Refund::STATUS_PENDING, Refund::STATUS_APPROVED])
             ->exists();
@@ -53,8 +52,21 @@ class RefundService
             throw BusinessException::conflict('该订单已有退款处理中，请勿重复申请');
         }
 
+        // 累计已退款（含处理中）金额：退款总额不得超过订单实付（不变量）
+        $refundedSoFar = (float) Refund::where('order_id', $order->id)
+            ->whereIn('status', [Refund::STATUS_PENDING, Refund::STATUS_APPROVED, Refund::STATUS_SUCCESS])
+            ->sum('amount');
+        $maxRefundable = bcsub((string) $order->pay_amount, number_format($refundedSoFar, 2, '.', ''), 2);
+
+        if (bccomp($amount, $maxRefundable, 2) === 1) {
+            throw BusinessException::badRequest('退款金额超过可退余额');
+        }
+
+        // 固化优惠构成与每行实付快照（来自 orders.amount_details，T-034 同一套分摊口径）
+        $refundDetails = $this->buildRefundDetails($order);
+
         try {
-            $refund = DB::transaction(function () use ($order, $userId, $reason, $amount) {
+            $refund = DB::transaction(function () use ($order, $userId, $reason, $amount, $refundDetails) {
                 // 状态机：paid/pending_ship/shipped/completed → refunding
                 $this->orders->transitionTo($order, Order::STATUS_REFUNDING, $reason, 'order');
 
@@ -66,6 +78,7 @@ class RefundService
                     'amount' => $amount,
                     'reason' => $reason,
                     'status' => Refund::STATUS_PENDING,
+                    'refund_details' => $refundDetails,
                 ]);
             });
         } catch (BusinessException $e) {
@@ -78,9 +91,61 @@ class RefundService
             'refund_no' => $refund->refund_no,
             'amount' => $amount,
             'reason' => $reason,
+            'max_refundable' => $maxRefundable,
         ]);
 
         return $refund;
+    }
+
+    /**
+     * 可退余额 = 订单实付 − 已退款（含处理中）累计
+     *
+     * 供后台审核页展示「可退上限」与申请时的上限校验共用同一口径。
+     */
+    public function maxRefundableAmount(Order $order): string
+    {
+        $refundedSoFar = (float) Refund::where('order_id', $order->id)
+            ->whereIn('status', [Refund::STATUS_PENDING, Refund::STATUS_APPROVED, Refund::STATUS_SUCCESS])
+            ->sum('amount');
+
+        return bcsub((string) $order->pay_amount, number_format($refundedSoFar, 2, '.', ''), 2);
+    }
+
+    /**
+     * 从 orders.amount_details 固化每行实付快照
+     *
+     * 每行实付 = price×qty − coupon_share − promotion_share；Σ 行实付 + 运费处理 = 订单实付
+     * （不变量：T-034 assertInvariants 已保证）。退款金额不得超 Σ 行实付。
+     */
+    private function buildRefundDetails(Order $order): array
+    {
+        $details = $order->amount_details ?? [];
+        $lines = [];
+
+        foreach ($details['lines'] ?? [] as $line) {
+            $payable = number_format(
+                (float) ($line['amount'] ?? 0)
+                - (float) ($line['coupon_share'] ?? 0)
+                - (float) ($line['promotion_share'] ?? 0),
+                2, '.', ''
+            );
+            $lines[] = [
+                'index' => $line['index'] ?? count($lines),
+                'amount' => isset($line['amount']) ? number_format((float) $line['amount'], 2, '.', '') : '0.00',
+                'coupon_share' => isset($line['coupon_share']) ? number_format((float) $line['coupon_share'], 2, '.', '') : '0.00',
+                'promotion_share' => isset($line['promotion_share']) ? number_format((float) $line['promotion_share'], 2, '.', '') : '0.00',
+                'payable' => $payable,
+            ];
+        }
+
+        return [
+            'goods_amount' => $details['goods_amount'] ?? $order->total_amount,
+            'freight_amount' => $details['freight_amount'] ?? $order->freight_amount,
+            'coupon_discount' => $details['coupon_discount'] ?? '0.00',
+            'promotion_discount' => $details['promotion_discount'] ?? '0.00',
+            'pay_amount' => $details['pay_amount'] ?? $order->pay_amount,
+            'lines' => $lines,
+        ];
     }
 
     /**
@@ -102,6 +167,16 @@ class RefundService
                 // 沙箱：直接标记渠道退款成功；生产环境此处对接渠道退款 API
                 $refund->status = Refund::STATUS_SUCCESS;
                 $this->orders->transitionTo($order, Order::STATUS_REFUNDED, '退款成功', 'order');
+
+                // T-036：整单全额退款 → 原样返还券（一券一单，releaseCoupon 幂等且仅返还本单占用券）；
+                // 部分退款默认不返还已使用券（防止「退了钱又白拿券」的资损）。
+                if (abs((float) $refund->amount - (float) $order->pay_amount) < 0.005) {
+                    $this->orders->releaseCoupon($order);
+                    $this->operationLog->record(
+                        $adminId, 'refund', 'coupon_returned', 'order', $order->id,
+                        ['order_no' => $order->order_no, 'coupon_id' => $order->coupon_id, 'reason' => '整单退款返还'],
+                    );
+                }
             } else {
                 $refund->status = Refund::STATUS_REJECTED;
                 // 拒绝后订单回到已支付（状态机 refunding → paid）

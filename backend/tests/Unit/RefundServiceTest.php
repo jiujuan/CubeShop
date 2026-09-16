@@ -39,12 +39,12 @@ test('申请退款后订单进入退款中并生成待审退款单', function ()
         ->and($refund->refund_no)->toStartWith('RF');
 });
 
-// RF-U-02 退款金额不能超过实付
-test('退款金额超过实付被拒绝', function () {
+// RF-U-02 退款金额超过可退余额（首笔退款时即订单实付）被拒绝
+test('退款金额超过可退余额被拒绝', function () {
     [$user, $sku, $order] = createPaidOrder();
 
     app(RefundService::class)->apply($order, $user->id, 'x', '99999.00');
-})->throws(App\Exceptions\BusinessException::class, '退款金额不能超过实付金额');
+})->throws(App\Exceptions\BusinessException::class, '退款金额超过可退余额');
 
 test('退款金额小于等于 0 被拒绝', function () {
     [$user, $sku, $order] = createPaidOrder();

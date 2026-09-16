@@ -20,10 +20,12 @@ class Refund extends Model
     protected $fillable = [
         'refund_no', 'order_id', 'order_no', 'user_id',
         'amount', 'reason', 'status', 'admin_remark', 'processed_by', 'processed_at',
+        'refund_details',
     ];
 
     protected $casts = [
         'amount' => 'decimal:2',
+        'refund_details' => 'array',
         'processed_at' => 'datetime',
     ];
 
