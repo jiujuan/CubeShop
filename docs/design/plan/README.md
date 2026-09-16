@@ -288,7 +288,7 @@ T-001 order_logs → T-002 确认收货 → T-015 评价后端 → T-016 评价�
 | T-037 | [BE] 券过期任务与满减匹配 | 一 | ✅ 测试通过 | `docs/testing/evidence/v1.1/T-037/` |
 | T-038 | [WEB] 领券中心与我的优惠券页 | 一 | ✅ 测试通过 | `docs/testing/evidence/v1.1/T-038/` |
 | T-039 | [WEB] 结算页用券与满减金额明细 | 一 | ✅ 测试通过 | `docs/testing/evidence/v1.1/T-039/` |
-| T-040 | [ADMIN] 营销管理页（券 + 活动 + 核销统计） | 一 | ⬜ 待开始 | `docs/testing/evidence/v1.1/T-040/` |
+| T-040 | [ADMIN] 营销管理页（券 + 活动 + 核销统计） | 一 | ✅ 测试通过 | `docs/testing/evidence/v1.1/T-040/` |
 | T-041 | [QA] 优惠券并发与金额矩阵专项测试 | 一 | ⬜ 待开始 | `docs/testing/evidence/v1.1/T-041/` |
 | T-042~T-047 | 物流管理（四表/发货升级/批量发货/轨迹 Job/前端/后台） | 二 | ⬜ 待开始 | `docs/testing/evidence/v1.1/T-042/` … |
 | T-048~T-053 | 首页装修与账号能力（含可选运费模板） | 三 | ⬜ 待开始 | `docs/testing/evidence/v1.1/T-048/` … |

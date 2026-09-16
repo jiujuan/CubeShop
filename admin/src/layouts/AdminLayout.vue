@@ -92,8 +92,14 @@ const menuGroups = computed<MenuGroup[]>(() => {
         { path: '/payment-logs', title: '支付日志', icon: 'ScrollText', permission: 'payment.view' },
         { path: '/order-logs', title: '订单流水', icon: 'History', permission: 'order.log' },
         { path: '/refunds', title: '退款处理', icon: 'RotateCcw', permission: 'refund.view' },
-        { path: '/reviews', title: '评价管理', icon: 'MessageSquare', permission: 'review.manage' },
         { path: '/balance-recharges', title: '余额充值单', icon: 'Wallet', permission: 'balance.recharge.view' },
+      ],
+    },
+    {
+      title: '运营管理',
+      items: [
+        { path: '/reviews', title: '评价管理', icon: 'MessageSquare', permission: 'review.manage' },
+        { path: '/marketing', title: '营销管理', icon: 'Ticket', permission: 'marketing.manage' },
       ],
     },
     {
