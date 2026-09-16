@@ -130,7 +130,22 @@ const matrixError = ref('')
 const selectedRows = ref<Set<string>>(new Set())
 
 /** 是否走矩阵链路（分类配置了规格属性且有勾选值） */
-const useMatrix = computed(() => specAttributes.value.length > 0)
+const useMatrix = computed(() => specAttributes.value.length > 0 && !matrixFallback.value)
+
+/**
+ * 存量数据的规格值不在属性值库中（历史导入 / 早期数据），矩阵勾选框无法回显，
+ * 此时回退旧表格，避免「界面上看不到、提交时却被静默带上」的隐藏行。
+ */
+const matrixFallback = ref(false)
+
+/** 区块序号按实际渲染的区块动态计算，避免回退模式下出现重复编号 */
+const stepNo = computed(() => {
+  let n = 1 // ① 基础信息
+  const spec = useMatrix.value ? ++n : 0
+  const param = paramAttributes.value.length ? ++n : 0
+  const sku = ++n
+  return { spec, param, sku, media: ++n }
+})
 
 /** 规格列名（用于表头） */
 const specColumns = computed(() => specAttributes.value.map((a) => a.name))
@@ -267,14 +282,27 @@ function addLegacySku() {
 function removeLegacySku(i: number) {
   legacySkus.value.splice(i, 1)
 }
+/**
+ * 规格文本解析：优先「属性名:值」（如 容量:450ml），
+ * 无冒号时按位置回退到常见规格名（兼容「黑色/M」这类简写）。
+ */
 function parseSpecs(text: string): Record<string, string> {
   const parts = text.split('/').map((s) => s.trim()).filter(Boolean)
   const keys = ['颜色', '尺码', '规格', '容量', '轴体', '版本']
   const specs: Record<string, string> = {}
-  parts.forEach((value, i) => {
-    specs[keys[i] ?? `规格${i + 1}`] = value
+  parts.forEach((part, i) => {
+    const sep = part.indexOf(':')
+    if (sep > 0) specs[part.slice(0, sep).trim()] = part.slice(sep + 1).trim()
+    else specs[keys[i] ?? `规格${i + 1}`] = part
   })
   return specs
+}
+
+/** 规格对象 → 可编辑文本（保留属性名，保证往返不丢键） */
+function formatSpecs(specs: Record<string, string> | null | undefined): string {
+  return Object.entries(specs ?? {})
+    .map(([name, value]) => `${name}:${value}`)
+    .join('/')
 }
 
 // ---------- 加载 ----------
@@ -314,17 +342,23 @@ onMounted(async () => {
 
     // 规格勾选回显（后端给出 {attribute_id, name, value_names}）
     const sel: Record<number, number[]> = {}
+    let hasUnresolvedDim = false
     for (const dim of (p.specs_selection ?? []) as Array<{ attribute_id: number | null; name: string; value_names: string[] }>) {
       const aid = dim.attribute_id ?? allAttributes.value.find((a) => a.name === dim.name)?.id
-      if (!aid) continue
+      if (!aid) {
+        hasUnresolvedDim = true
+        continue
+      }
       const ids = attrValues(aid)
         .filter((v) => dim.value_names.includes(v.value))
         .map((v) => v.id)
       if (ids.length) sel[aid] = ids
+      // 规格值不在属性值库中 → 无法在勾选框中回显，整个商品退回旧表格
+      else hasUnresolvedDim = true
     }
     specSelection.value = sel
 
-    if (Object.keys(sel).length) {
+    if (Object.keys(sel).length && !hasUnresolvedDim) {
       // 先填充已有 SKU 行（保留价格库存），再按勾选刷新矩阵
       skuRows.value = (p.skus ?? []).map((s) => ({
         signature: s.signature ?? '',
@@ -337,9 +371,10 @@ onMounted(async () => {
       }))
       await refreshMatrix()
     } else if ((p.skus ?? []).length) {
-      // 老商品（无规格勾选）：回退旧表格
+      // 规格值不在属性值库中（历史导入数据）：回退旧表格，规格名按原样保留
+      matrixFallback.value = specAttributes.value.length > 0
       legacySkus.value = (p.skus ?? []).map((s) => ({
-        specsText: Object.values(s.specs ?? {}).join('/'),
+        specsText: formatSpecs(s.specs),
         sku_code: s.sku_code ?? '',
         price: s.price,
         stock: s.stock,
@@ -363,6 +398,8 @@ async function onCategoryChange() {
   specSelection.value = {}
   paramValues.value = {}
   skuRows.value = []
+  legacySkus.value = []
+  matrixFallback.value = false
   matrixMeta.value = null
   await loadTemplate(form.value.category_id)
 }
@@ -371,7 +408,7 @@ async function onCategoryChange() {
 const saving = ref(false)
 const errorMsg = ref('')
 const summaryOpen = ref(false)
-const summary = ref({ created: 0, kept: 0, invalid: 0 })
+const summary = ref({ created: 0, kept: 0, invalid: 0, legacy: false })
 
 function buildPayload(): ProductPayload {
   const attributeValues = Object.entries(paramValues.value)
@@ -448,10 +485,14 @@ function validate(): string {
 function askSave() {
   errorMsg.value = validate()
   if (errorMsg.value) return
-  const created = skuRows.value.filter((r) => r.isNew).length
-  const kept = skuRows.value.length - created
-  const invalid = matrixMeta.value?.removed ?? 0
-  summary.value = { created, kept, invalid }
+
+  if (!useMatrix.value) {
+    // 旧结构：按 sku_code 差异合并，无「新增/失效」预估
+    summary.value = { created: 0, kept: legacySkus.value.length, invalid: 0, legacy: true }
+  } else {
+    const created = skuRows.value.filter((r) => r.isNew).length
+    summary.value = { created, kept: skuRows.value.length - created, invalid: matrixMeta.value?.removed ?? 0, legacy: false }
+  }
   summaryOpen.value = true
 }
 
@@ -564,7 +605,7 @@ function cancel() {
 
       <!-- ② 规格属性 -->
       <section v-if="useMatrix">
-        <h3 class="mb-3 font-semibold text-slate-700"><span class="mr-1.5 rounded bg-[#1677ff] px-1.5 py-0.5 text-xs text-white">2</span>规格属性（勾选后自动生成 SKU）</h3>
+        <h3 class="mb-3 font-semibold text-slate-700"><span class="mr-1.5 rounded bg-[#1677ff] px-1.5 py-0.5 text-xs text-white">{{ stepNo.spec }}</span>规格属性（勾选后自动生成 SKU）</h3>
         <div v-for="attr in specAttributes" :key="attr.attribute_id" class="mb-3" :data-testid="`spec-attr-${attr.attribute_id}`">
           <div class="mb-1.5 text-slate-600">{{ attr.name }}</div>
           <div class="flex flex-wrap gap-2">
@@ -584,7 +625,7 @@ function cancel() {
 
       <!-- ③ 参数属性 -->
       <section v-if="paramAttributes.length">
-        <h3 class="mb-3 font-semibold text-slate-700"><span class="mr-1.5 rounded bg-[#1677ff] px-1.5 py-0.5 text-xs text-white">{{ useMatrix ? 3 : 2 }}</span>参数属性</h3>
+        <h3 class="mb-3 font-semibold text-slate-700"><span class="mr-1.5 rounded bg-[#1677ff] px-1.5 py-0.5 text-xs text-white">{{ stepNo.param }}</span>参数属性</h3>
         <div v-for="attr in paramAttributes" :key="attr.attribute_id" class="mb-2 flex items-center" :data-testid="`param-attr-${attr.attribute_id}`">
           <label class="w-28 shrink-0 text-slate-600">
             {{ attr.name }}<span v-if="attr.is_required" class="text-red-500"> *</span>
@@ -599,7 +640,7 @@ function cancel() {
       <!-- ④ SKU 表 -->
       <section>
         <h3 class="mb-3 flex items-center gap-2 font-semibold text-slate-700">
-          <span class="rounded bg-[#1677ff] px-1.5 py-0.5 text-xs text-white">{{ useMatrix ? (paramAttributes.length ? 4 : 3) : 2 }}</span>
+          <span class="rounded bg-[#1677ff] px-1.5 py-0.5 text-xs text-white">{{ stepNo.sku }}</span>
           SKU 规格与价格库存
           <span v-if="matrixMeta" class="ml-2 text-xs font-normal text-slate-400" data-testid="matrix-count">
             将生成 {{ matrixMeta.total }} 个 SKU（上限 {{ matrixMeta.maxSkus }}）
@@ -695,7 +736,11 @@ function cancel() {
 
         <!-- 旧结构回退 -->
         <template v-else>
-          <p class="mb-2 text-xs text-slate-400">该分类未配置规格属性模板，使用传统方式填写规格组合（如「黑色/M」）。</p>
+          <p v-if="matrixFallback" class="mb-2 rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-700">
+            该商品的存量规格值不在属性值库中（历史或导入数据），已自动切换为传统规格填写方式。
+            格式为「属性名:值」，多个用 / 分隔，例如「容量:450ml/颜色:白色」。
+          </p>
+          <p v-else class="mb-2 text-xs text-slate-400">该分类未配置规格属性模板，使用传统方式填写规格组合，格式为「属性名:值」，例如「颜色:黑色/尺码:M」。</p>
           <table class="w-full text-[13px]">
             <thead>
               <tr class="border-b border-slate-200 text-left text-slate-500">
@@ -708,7 +753,7 @@ function cancel() {
             </thead>
             <tbody>
               <tr v-for="(sku, i) in legacySkus" :key="i" class="border-b border-slate-100">
-                <td class="px-3 py-2"><input v-model="sku.specsText" type="text" placeholder="如：黑色/M" class="w-full rounded-md border border-slate-300 px-2 py-1.5 outline-none focus:border-[#1677ff]" /></td>
+                <td class="px-3 py-2"><input v-model="sku.specsText" type="text" placeholder="如：容量:450ml" class="w-full rounded-md border border-slate-300 px-2 py-1.5 outline-none focus:border-[#1677ff]" /></td>
                 <td class="px-3 py-2"><input v-model="sku.sku_code" type="text" placeholder="留空自动生成" class="w-full rounded-md border border-slate-300 px-2 py-1.5 outline-none focus:border-[#1677ff]" /></td>
                 <td class="px-3 py-2"><input v-model="sku.price" type="number" step="0.01" min="0" class="w-full rounded-md border border-slate-300 px-2 py-1.5 outline-none focus:border-[#1677ff]" /></td>
                 <td class="px-3 py-2"><input v-model.number="sku.stock" type="number" min="0" class="w-full rounded-md border border-slate-300 px-2 py-1.5 outline-none focus:border-[#1677ff]" /></td>
@@ -724,7 +769,7 @@ function cancel() {
 
       <!-- ⑤ 商品图片与详情 -->
       <section class="flex items-start">
-        <h3 class="w-28 shrink-0 pt-1 font-semibold text-slate-700"><span class="mr-1.5 rounded bg-[#1677ff] px-1.5 py-0.5 text-xs text-white">{{ useMatrix ? 5 : 3 }}</span>图片与详情</h3>
+        <h3 class="w-28 shrink-0 pt-1 font-semibold text-slate-700"><span class="mr-1.5 rounded bg-[#1677ff] px-1.5 py-0.5 text-xs text-white">{{ stepNo.media }}</span>图片与详情</h3>
         <div class="flex flex-1 flex-col gap-6">
           <div class="flex flex-wrap gap-10">
             <div>
@@ -769,9 +814,15 @@ function cancel() {
       <div class="w-full max-w-sm rounded-lg bg-white p-5 shadow-lg">
         <h3 class="mb-3 text-base font-semibold text-slate-800">确认保存</h3>
         <p class="text-[13px] leading-6 text-slate-600">
-          本次将 <b class="text-amber-600">新增 {{ summary.created }}</b> 个 SKU，
-          <b class="text-[#1677ff]">保留 {{ summary.kept }}</b> 个，
-          <b class="text-red-500">失效 {{ summary.invalid }}</b> 个（有订单引用将禁用、否则删除）。
+          <template v-if="summary.legacy">
+            本次将提交 <b class="text-[#1677ff]">{{ summary.kept }}</b> 个 SKU 规格（按编码匹配已有行）
+          </template>
+          <template v-else>
+            本次将 <b class="text-amber-600">新增 {{ summary.created }}</b> 个 SKU，
+            <b class="text-[#1677ff]">保留 {{ summary.kept }}</b> 个，
+            <b class="text-red-500">失效 {{ summary.invalid }}</b> 个
+          </template>
+          （有订单引用将禁用、否则删除）。
         </p>
         <div class="mt-5 flex justify-end gap-2">
           <Button variant="outline" @click="summaryOpen = false">取消</Button>
