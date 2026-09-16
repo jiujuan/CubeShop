@@ -7,6 +7,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Order;
 use App\Models\OrderLog;
 use App\Models\SysUser;
+use App\Models\User;
 use App\Support\ApiResponse;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -91,8 +92,13 @@ class OrderLogController extends Controller
     {
         $operatorName = null;
         if ($log->operator_id) {
-            $operatorName = SysUser::withTrashed()->whereKey($log->operator_id)->value('nickname')
-                ?: SysUser::withTrashed()->whereKey($log->operator_id)->value('username');
+            // 用户表拆分后按 operator_type 分流：user → users（买家）；admin → sys_user（管理员）
+            $source = $log->operator_type === OrderLog::OPERATOR_USER
+                ? User::withTrashed()
+                : SysUser::withTrashed();
+
+            $operatorName = $source->whereKey($log->operator_id)->value('nickname')
+                ?: $source->whereKey($log->operator_id)->value('username');
         }
 
         return [

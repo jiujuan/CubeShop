@@ -42,8 +42,6 @@ export interface UserListResult {
 export interface UserQuery {
   keyword?: string
   status?: 0 | 1
-  /** customer=买家（默认） admin=后台账号 all=不过滤 */
-  role?: 'customer' | 'admin' | 'all'
   start_time?: string
   end_time?: string
   page?: number

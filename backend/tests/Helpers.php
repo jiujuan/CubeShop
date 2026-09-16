@@ -50,9 +50,10 @@ if (! function_exists('createTestSku')) {
 }
 
 if (! function_exists('createTestUser')) {
-    function createTestUser(string $username = 'testuser'): \App\Models\SysUser
+    /** 创建买家（表 users；V1.1 用户表拆分后买家不再使用 SysUser） */
+    function createTestUser(string $username = 'testuser'): \App\Models\User
     {
-        return \App\Models\SysUser::create([
+        return \App\Models\User::create([
             'username' => $username.uniqid(),
             'password' => \Illuminate\Support\Facades\Hash::make('Test@1234'),
             'nickname' => '测试用户',

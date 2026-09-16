@@ -1,6 +1,6 @@
 <?php
 
-use App\Models\SysUser;
+use App\Models\User;
 use App\Services\Common\CaptchaService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
@@ -54,7 +54,7 @@ test('TC-USER-001 注册成功返回 token 与用户信息', function () {
         ->and($body['data']['token'])->not->toBeEmpty()
         ->and($body['data']['user']['username'])->toBe('newuser');
 
-    expect(SysUser::where('username', 'newuser')->exists())->toBeTrue();
+    expect(User::where('username', 'newuser')->exists())->toBeTrue();
 });
 
 // USER-002 重复注册

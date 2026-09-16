@@ -38,7 +38,14 @@ return [
     */
 
     'guards' => [
+        // 后台管理员（会话驱动；接口实际走 auth:sanctum Bearer Token）
         'web' => [
+            'driver' => 'session',
+            'provider' => 'admins',
+        ],
+
+        // 买家（会话驱动；接口实际走 auth:sanctum Bearer Token）
+        'customer' => [
             'driver' => 'session',
             'provider' => 'users',
         ],
@@ -62,15 +69,17 @@ return [
     */
 
     'providers' => [
+        // 买家（表 users）
         'users' => [
             'driver' => 'eloquent',
-            'model' => env('AUTH_MODEL', \App\Models\SysUser::class),
+            'model' => App\Models\User::class,
         ],
 
-        // 'users' => [
-        //     'driver' => 'database',
-        //     'table' => 'users',
-        // ],
+        // 后台管理员（表 sys_user）
+        'admins' => [
+            'driver' => 'eloquent',
+            'model' => env('AUTH_ADMIN_MODEL', App\Models\SysUser::class),
+        ],
     ],
 
     /*

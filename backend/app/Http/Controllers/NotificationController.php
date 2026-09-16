@@ -3,13 +3,16 @@
 namespace App\Http\Controllers;
 
 use App\Models\Notification;
+use App\Models\SysUser;
 use App\Services\Notification\NotificationService;
 use App\Support\ApiResponse;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
 /**
- * 站内通知（前台，V1.1 F02 / T-018 / T-019）
+ * 站内通知（V1.1 F02 / T-018 / T-019）
+ *
+ * user_id 为混合语义列：按当前身份取对应 receiver_type，避免买家与管理员 ID 撞号串号。
  */
 class NotificationController extends Controller
 {
@@ -28,7 +31,9 @@ class NotificationController extends Controller
             'page_size' => ['nullable', 'integer', 'min:1', 'max:50'],
         ]);
 
-        $paginator = Notification::where('user_id', $request->user()->id)
+        $paginator = Notification::query()
+            ->where('user_id', $request->user()->id)
+            ->receiver($this->receiverType($request))
             ->when(isset($data['is_read']), fn ($q) => $q->where('is_read', (bool) $data['is_read']))
             ->orderByDesc('id')
             ->paginate(min($data['page_size'] ?? 15, 50), ['*'], 'page', $data['page'] ?? 1);
@@ -39,7 +44,9 @@ class NotificationController extends Controller
     /** 未读数 GET /me/notifications/unread-count */
     public function unreadCount(Request $request): JsonResponse
     {
-        return $this->success(['count' => $this->notifications->unreadCount($request->user()->id)]);
+        return $this->success([
+            'count' => $this->notifications->unreadCount($request->user()->id, $this->receiverType($request)),
+        ]);
     }
 
     /** 标记已读 POST /me/notifications/read（ids 为空 → 全部已读） */
@@ -50,8 +57,16 @@ class NotificationController extends Controller
             'ids.*' => ['integer'],
         ]);
 
-        $count = $this->notifications->markRead($request->user()->id, $data['ids'] ?? []);
+        $count = $this->notifications->markRead($request->user()->id, $data['ids'] ?? [], $this->receiverType($request));
 
         return $this->success(['updated' => $count], '已标记为已读');
+    }
+
+    /** 当前身份对应的收件人来源 */
+    private function receiverType(Request $request): string
+    {
+        return $request->user() instanceof SysUser
+            ? Notification::RECEIVER_ADMIN
+            : Notification::RECEIVER_CUSTOMER;
     }
 }

@@ -5,6 +5,7 @@ use App\Models\Order;
 use App\Models\Payment;
 use App\Models\PaymentLog;
 use App\Models\SysUser;
+use App\Models\User;
 use App\Services\Payment\PaymentService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
@@ -14,6 +15,7 @@ uses(RefreshDatabase::class);
  * 单元测试：PaymentService::close()（后台关闭支付单，权限 payment.manage）
  */
 beforeEach(function () {
+    // 关闭人（后台管理员，表 sys_user）
     $this->admin = SysUser::create([
         'username' => 'admin'.uniqid(),
         'password' => bcrypt('Test@1234'),
@@ -21,9 +23,17 @@ beforeEach(function () {
         'status' => 1,
     ]);
 
+    // 订单与支付单归属买家（表 users；拆分后 orders.user_id / payments.user_id 指向 users）
+    $this->buyer = User::create([
+        'username' => 'buyer'.uniqid(),
+        'password' => bcrypt('Test@1234'),
+        'nickname' => '买家',
+        'status' => 1,
+    ]);
+
     $this->order = Order::create([
         'order_no' => 'CS'.date('YmdHis').uniqid(),
-        'user_id' => $this->admin->id,
+        'user_id' => $this->buyer->id,
         'status' => Order::STATUS_PENDING_PAYMENT,
         'total_amount' => 100,
         'freight_amount' => 0,
@@ -39,7 +49,7 @@ beforeEach(function () {
         'payment_no' => 'PAY'.uniqid(),
         'order_id' => $this->order->id,
         'order_no' => $this->order->order_no,
-        'user_id' => $this->admin->id,
+        'user_id' => $this->buyer->id,
         'channel' => Payment::CHANNEL_WECHAT,
         'amount' => 100,
         'status' => Payment::STATUS_PENDING,

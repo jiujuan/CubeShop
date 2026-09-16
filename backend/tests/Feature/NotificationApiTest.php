@@ -221,3 +221,45 @@ test('TC-NOTIFY-015 未登录访问通知接口返回 401', function () {
     $this->getJson('/api/me/notifications/unread-count')->assertStatus(401);
     $this->postJson('/api/me/notifications/read', [])->assertStatus(401);
 });
+
+// ---------- V1.1 用户表拆分：收件人身份隔离 ----------
+
+test('TC-NOTIFY-016 运营通知不会串号给同 ID 买家（ID 撞号隔离）', function () {
+    $operatorId = $this->operatorId;
+
+    // 人为制造 ID 撞号：users 表中放一个与 operator 同 ID 的买家
+    \Illuminate\Support\Facades\DB::table('users')->insert([
+        'id' => $operatorId, 'username' => 'collide'.uniqid(), 'password' => bcrypt('Test@1234'),
+        'nickname' => '撞号买家', 'status' => 1, 'created_at' => now(), 'updated_at' => now(),
+    ]);
+
+    // 同一 user_id：一条是发给运营的库存预警，一条是发给买家的支付通知
+    Notification::create([
+        'user_id' => $operatorId, 'receiver_type' => Notification::RECEIVER_ADMIN,
+        'type' => NotificationService::TYPE_LOW_STOCK, 'title' => '库存预警', 'content' => 'x', 'is_read' => false,
+    ]);
+    Notification::create([
+        'user_id' => $operatorId, 'receiver_type' => Notification::RECEIVER_CUSTOMER,
+        'type' => NotificationService::TYPE_ORDER_PAID, 'title' => '支付成功', 'content' => 'y', 'is_read' => false,
+    ]);
+
+    // 买家身份：只看到自己的 1 条，看不到运营的库存预警
+    $buyerToken = \App\Models\User::find($operatorId)->createToken('t')->plainTextToken;
+    $buyerAuth = ['Authorization' => 'Bearer '.$buyerToken];
+
+    expect($this->getJson('/api/me/notifications/unread-count', $buyerAuth)->json('data.count'))->toBe(1);
+    $buyerList = $this->getJson('/api/me/notifications', $buyerAuth)->json('data.list');
+    expect(array_column($buyerList, 'title'))->toBe(['支付成功']);
+
+    // 管理员身份：看到的是运营的库存预警
+    $adminToken = SysUser::find($operatorId)->createToken('t')->plainTextToken;
+    $adminAuth = ['Authorization' => 'Bearer '.$adminToken];
+
+    expect($this->getJson('/api/me/notifications/unread-count', $adminAuth)->json('data.count'))->toBe(1);
+    $adminList = $this->getJson('/api/me/notifications', $adminAuth)->json('data.list');
+    expect(array_column($adminList, 'title'))->toBe(['库存预警']);
+
+    // 买家「全部已读」不会误改运营的预警
+    $this->postJson('/api/me/notifications/read', [], $buyerAuth)->assertOk();
+    expect(Notification::where('receiver_type', Notification::RECEIVER_ADMIN)->first()->is_read)->toBeFalse();
+});

@@ -1,6 +1,7 @@
 <?php
 
 use App\Models\SysUser;
+use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Hash;
 
@@ -20,7 +21,7 @@ beforeEach(function () {
     ])->json('data.token');
     $this->adminAuth = ['Authorization' => 'Bearer '.$this->adminToken];
 
-    // 前台注册买家（对应「购买商品注册的用户」）
+    // 前台注册买家（写入 users 表，V1.1 用户表拆分后不参与 spatie 角色）
     $cap2 = app(\App\Services\Common\CaptchaService::class)->generate();
     $this->buyerUsername = 'buyer'.uniqid();
     $this->buyerToken = $this->postJson('/api/auth/register', [
@@ -31,7 +32,7 @@ beforeEach(function () {
         'captcha_id' => $cap2['captcha_id'],
     ])->json('data.token');
     $this->buyerAuth = ['Authorization' => 'Bearer '.$this->buyerToken];
-    $this->buyer = SysUser::where('username', $this->buyerUsername)->first();
+    $this->buyer = User::where('username', $this->buyerUsername)->first();
 });
 
 // 无 user.manage 权限：买家与运营账号均被拒 403
@@ -49,13 +50,13 @@ test('TC-USER-001 无权限用户访问用户管理被拒绝 403', function () {
     $this->getJson('/api/admin/users', ['Authorization' => 'Bearer '.$operatorToken])->assertStatus(403);
 });
 
-// 列表：默认仅买家，含订单统计；keyword 搜索命中
-test('TC-USER-002 用户列表默认买家账号且支持关键词搜索', function () {
+// 列表：仅买家（管理员属账号管理），含订单统计；keyword 搜索命中
+test('TC-USER-002 用户列表仅含买家账号且支持关键词搜索', function () {
     $list = $this->getJson('/api/admin/users', $this->adminAuth)->json();
     expect($list['code'])->toBe(0)
         ->and($list['data']['pagination']['total'])->toBeGreaterThanOrEqual(1);
 
-    // 默认 role=customer：不包含后台账号 admin/operator
+    // 仅买家：不包含后台账号 admin/operator
     $usernames = array_column($list['data']['list'], 'username');
     expect($usernames)->toContain($this->buyerUsername)
         ->and($usernames)->not->toContain('admin')
@@ -65,11 +66,6 @@ test('TC-USER-002 用户列表默认买家账号且支持关键词搜索', funct
     $searched = $this->getJson('/api/admin/users?keyword='.$this->buyerUsername, $this->adminAuth)->json();
     expect($searched['data']['pagination']['total'])->toBe(1)
         ->and($searched['data']['list'][0]['username'])->toBe($this->buyerUsername);
-
-    // 后台账号视图
-    $admins = $this->getJson('/api/admin/users?role=admin', $this->adminAuth)->json();
-    $adminNames = array_column($admins['data']['list'], 'username');
-    expect($adminNames)->toContain('admin')->and($adminNames)->not->toContain($this->buyerUsername);
 });
 
 // 详情：基础资料 + 统计 + 最近订单
@@ -78,7 +74,8 @@ test('TC-USER-003 用户详情返回资料与最近订单', function () {
     expect($detail['code'])->toBe(0)
         ->and($detail['data']['username'])->toBe($this->buyerUsername)
         ->and($detail['data']['status'])->toBe(1)
-        ->and($detail['data']['roles'])->toContain('customer')
+        // 买家不参与 spatie 权限体系，角色为空
+        ->and($detail['data']['roles'])->toBe([])
         ->and($detail['data']['recent_orders'])->toBeArray();
 });
 
@@ -124,35 +121,71 @@ test('TC-USER-005 禁用用户吊销 Token 且启用恢复', function () {
     expect($enable->json('code'))->toBe(0)->and($enable->json('data.status'))->toBe(1);
 });
 
-// 保护规则：不能禁用自己；超级管理员不可被操作
-test('TC-USER-006 保护规则：自身与超管不可禁用', function () {
-    // super_admin id
-    $adminId = SysUser::where('username', 'admin')->value('id');
+// 账号隔离：买家管理接口只作用于 users，绝不写 sys_user（防两张表 ID 撞号互相误伤）
+test('TC-USER-006 买家管理接口只作用于 users，不影响同 ID 的管理员', function () {
+    $adminId = (int) SysUser::where('username', 'admin')->value('id');
+    $adminNickname = SysUser::find($adminId)->nickname;
+    $adminStatus = (int) SysUser::find($adminId)->status;
 
-    // 不能禁用自己（admin 本人，先命中超管保护规则 → 40003）
-    $self = $this->putJson('/api/admin/users/'.$adminId.'/status', ['status' => 0], $this->adminAuth);
-    expect($self->json('code'))->toBe(40003);
+    // 用管理员的 ID 调用买家管理接口
+    $disable = $this->putJson('/api/admin/users/'.$adminId.'/status', ['status' => 0], $this->adminAuth);
+    $edit = $this->putJson('/api/admin/users/'.$adminId, ['nickname' => '改名'], $this->adminAuth);
+    $detail = $this->getJson('/api/admin/users/'.$adminId, $this->adminAuth);
 
-    // 超管账号不可被禁用/编辑（用另一个管理员身份操作）
-    $guard = SysUser::create([
-        'username' => 'guard'.uniqid(),
-        'password' => Hash::make('Guard@1234'),
-        'nickname' => '守卫账号',
-        'status' => 1,
-    ]);
-    $guard->assignRole('operator');
+    if (User::whereKey($adminId)->exists()) {
+        // 命中 users 表中同 ID 的买家：操作落在买家身上
+        expect($disable->json('code'))->toBe(0)
+            ->and((int) User::find($adminId)->status)->toBe(0)
+            ->and(User::find($adminId)->nickname)->toBe('改名');
+    } else {
+        // users 表中无此 ID → 用户不存在，不会回退去查 sys_user
+        expect($disable->json('code'))->toBe(40004)
+            ->and($edit->json('code'))->toBe(40004)
+            ->and($detail->json('code'))->toBe(40004);
+    }
+
+    // 关键断言：管理员账号的资料与状态始终未被触碰
+    $admin = SysUser::find($adminId);
+    expect((int) $admin->status)->toBe($adminStatus)
+        ->and($admin->nickname)->toBe($adminNickname);
+});
+
+// 注册守卫：买家不得占用后台账号的用户名
+test('TC-USER-007 买家注册不得占用管理员用户名', function () {
     $cap = app(\App\Services\Common\CaptchaService::class)->generate();
-    $guardToken = $this->postJson('/api/auth/login', [
-        'username' => $guard->username,
-        'password' => 'Guard@1234',
+    $resp = $this->postJson('/api/auth/register', [
+        'username' => 'admin',
+        'password' => 'Test@1234',
+        'password_confirmation' => 'Test@1234',
+        'code' => $cap['debug_code'],
+        'captcha_id' => $cap['captcha_id'],
+    ]);
+
+    expect($resp->json('code'))->toBe(40000);
+    expect(User::where('username', 'admin')->exists())->toBeFalse();
+});
+
+// 登录分流：管理员与买家同一入口，各自查自己的表
+test('TC-USER-008 登录按 admin 优先 / 买家兜底正确分流', function () {
+    // 管理员登录
+    $cap = app(\App\Services\Common\CaptchaService::class)->generate();
+    $adminLogin = $this->postJson('/api/auth/login', [
+        'username' => 'admin',
+        'password' => 'Admin@123',
         'captcha_id' => $cap['captcha_id'],
         'captcha_code' => $cap['debug_code'],
-    ])->json('data.token');
-    $guardAuth = ['Authorization' => 'Bearer '.$guardToken];
+    ]);
+    expect($adminLogin->json('code'))->toBe(0)
+        ->and($adminLogin->json('data.user.roles'))->toContain('super_admin');
 
-    $disableAdmin = $this->putJson('/api/admin/users/'.$adminId.'/status', ['status' => 0], $guardAuth);
-    expect($disableAdmin->json('code'))->toBe(40003);
-
-    $editAdmin = $this->putJson('/api/admin/users/'.$adminId, ['nickname' => '改名'], $guardAuth);
-    expect($editAdmin->json('code'))->toBe(40003);
+    // 买家登录
+    $cap2 = app(\App\Services\Common\CaptchaService::class)->generate();
+    $buyerLogin = $this->postJson('/api/auth/login', [
+        'username' => $this->buyerUsername,
+        'password' => 'Test@1234',
+        'captcha_id' => $cap2['captcha_id'],
+        'captcha_code' => $cap2['debug_code'],
+    ]);
+    expect($buyerLogin->json('code'))->toBe(0)
+        ->and($buyerLogin->json('data.user.roles'))->toBe([]);
 });

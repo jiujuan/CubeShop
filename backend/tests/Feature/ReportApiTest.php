@@ -5,7 +5,7 @@ use App\Models\Order;
 use App\Models\OrderItem;
 use App\Models\Product;
 use App\Models\Refund;
-use App\Models\SysUser;
+use App\Models\User;
 use App\Services\Common\CaptchaService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
@@ -41,13 +41,10 @@ beforeEach(function () {
     ])->json('data.token')];
 });
 
-/** 造一个买家账号（customer 角色） */
-function reportBuyer(): SysUser
+/** 造一个买家账号（表 users；拆分后买家不再参与 spatie 角色） */
+function reportBuyer(): User
 {
-    $user = createTestUser('rb');
-    $user->assignRole('customer');
-
-    return $user;
+    return createTestUser('rb');
 }
 
 /**

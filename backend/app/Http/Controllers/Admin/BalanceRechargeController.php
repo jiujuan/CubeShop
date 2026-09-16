@@ -6,7 +6,6 @@ use App\Exceptions\BusinessException;
 use App\Http\Controllers\Controller;
 use App\Models\BalanceRecharge;
 use App\Models\Payment;
-use App\Models\SysUser;
 use App\Models\UserBalanceLog;
 use App\Services\Common\OperationLogService;
 use App\Services\Payment\PaymentService;

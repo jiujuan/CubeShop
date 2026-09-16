@@ -3,7 +3,6 @@
 use App\Models\BalanceRecharge;
 use App\Models\Order;
 use App\Models\Payment;
-use App\Models\SysUser;
 use App\Services\Common\CaptchaService;
 use App\Services\Payment\BalanceService;
 use Illuminate\Foundation\Testing\RefreshDatabase;

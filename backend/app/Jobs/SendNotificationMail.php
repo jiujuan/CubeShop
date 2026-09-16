@@ -2,7 +2,9 @@
 
 namespace App\Jobs;
 
+use App\Models\Notification;
 use App\Models\SysUser;
+use App\Models\User;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -30,12 +32,17 @@ class SendNotificationMail implements ShouldQueue
         public string $title,
         public string $content,
         public ?string $link = null,
+        public string $receiverType = Notification::RECEIVER_CUSTOMER,
     ) {
     }
 
     public function handle(): void
     {
-        $user = SysUser::find($this->userId);
+        // 按收件人来源选择账号表（买家 users / 管理员 sys_user）
+        $user = $this->receiverType === Notification::RECEIVER_ADMIN
+            ? SysUser::find($this->userId)
+            : User::find($this->userId);
+
         if (! $user || ! $user->email) {
             return;
         }

@@ -17,11 +17,18 @@ class OperationLogController extends Controller
      */
     public function index(Request $request)
     {
-        $query = SysOperationLog::query()->with('user:id,username,nickname');
+        // user_id 为混合语义列（买家与管理员都写入），按 actor_type 选择来源表解析操作人
+        $query = SysOperationLog::query()->with([
+            'admin:id,username,nickname',
+            'customer:id,username,nickname',
+        ]);
 
         // V1.1 T-022：新增 operator_id 别名（兼容既有 user_id），并支持 start/end 简写
         if ($userId = ($request->integer('operator_id') ?: $request->integer('user_id'))) {
             $query->where('user_id', $userId);
+        }
+        if ($actorType = $request->input('actor_type')) {
+            $query->where('actor_type', $actorType);
         }
         if ($module = $request->input('module')) {
             $query->where('module', $module);
@@ -41,7 +48,9 @@ class OperationLogController extends Controller
 
         return $this->paginated($logs->through(fn (SysOperationLog $log) => [
             'id' => $log->id,
-            'user' => $log->user?->only(['id', 'username', 'nickname']),
+            'user' => ($log->actor_type === SysOperationLog::ACTOR_CUSTOMER ? $log->customer : $log->admin)
+                ?->only(['id', 'username', 'nickname']),
+            'actor_type' => $log->actor_type ?? SysOperationLog::ACTOR_ADMIN,
             'module' => $log->module,
             'action' => $log->action,
             'target_type' => $log->target_type,

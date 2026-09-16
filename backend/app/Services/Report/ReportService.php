@@ -6,7 +6,7 @@ use App\Models\Order;
 use App\Models\Product;
 use App\Models\Refund;
 use App\Models\Review;
-use App\Models\SysUser;
+use App\Models\User;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 
@@ -175,8 +175,8 @@ class ReportService
         $start = now()->subDays($days - 1)->startOfDay();
         $end = now()->endOfDay();
 
-        $rows = SysUser::query()
-            ->whereHas('roles', fn ($q) => $q->where('name', 'customer'))
+        // 用户表拆分后买家独立成表（users），无需再按 customer 角色过滤
+        $rows = User::query()
             ->whereBetween('created_at', [$start, $end])
             ->selectRaw($this->dateExpr('created_at').' as d, count(*) as cnt')
             ->groupBy('d')

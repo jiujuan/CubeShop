@@ -2,7 +2,7 @@
 
 use App\Models\BalanceRecharge;
 use App\Models\Payment;
-use App\Models\SysUser;
+use App\Models\User;
 use App\Models\UserBalance;
 use App\Models\UserBalanceLog;
 use App\Services\Common\CaptchaService;
@@ -32,7 +32,7 @@ beforeEach(function () {
         'captcha_id' => $cap['captcha_id'],
     ])->json('data.token');
     $this->auth = ['Authorization' => 'Bearer '.$this->token];
-    $this->userId = SysUser::where('username', $this->username)->value('id');
+    $this->userId = User::where('username', $this->username)->value('id');
 
     $login = function (string $username, string $password) {
         $c = app(CaptchaService::class)->generate();
