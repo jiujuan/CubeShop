@@ -13,12 +13,14 @@ use App\Models\PaymentLog;
 use App\Services\Common\ConfigService;
 use App\Services\Common\NoGeneratorService;
 use App\Services\Inventory\InventoryService;
+use App\Services\Marketing\PricingCalculator;
 use App\Services\Order\OrderService;
 use App\Services\Payment\Contracts\PaymentGateway;
 use App\Services\Payment\Dto\PayParams;
 use App\Services\Payment\Gateways\MockGateway;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Throwable;
 
 /**
@@ -505,6 +507,9 @@ class PaymentService
                     throw BusinessException::notFound('订单不存在');
                 }
 
+                // V1.1 F06 / T-035：金额完整性校验（按 amount_details 重算应付），不一致拒绝入账
+                $this->assertOrderAmountConsistent($order, $payment);
+
                 // 锁定库存 → 确认扣减（可售不变，锁定减少）
                 foreach ($order->items()->get() as $item) {
                     if ($item->sku_id) {
@@ -594,6 +599,63 @@ class PaymentService
         });
 
         $payment->refresh();
+    }
+
+    /**
+     * 订单金额完整性校验（V1.1 F06 / T-035）
+     *
+     * 口径：金额一律由 `orders.amount_details` 重算（应付 = 商品总额 − 优惠 + 运费）。
+     *  - 有快照（V1.1 用券/满减单）：重算值必须同时等于 `orders.pay_amount` 与支付单金额；
+     *  - 无快照（V1.0 历史单）：退回旧口径 `orders.pay_amount == 支付单金额`。
+     *
+     * 任一不一致 → 记录告警日志并抛业务冲突，**拒绝入账**（防篡改订单金额后低价支付）。
+     *
+     * @throws BusinessException
+     */
+    private function assertOrderAmountConsistent(Order $order, Payment $payment): void
+    {
+        $details = $order->amount_details;
+        $paymentAmount = (string) $payment->amount;
+
+        if (is_array($details) && isset($details['goods_amount'])) {
+            $expected = number_format(PricingCalculator::recomputePayAmount($details), 2, '.', '');
+
+            if (bccomp((string) $order->pay_amount, $expected, 2) !== 0) {
+                Log::warning('支付金额校验失败：订单应付与 amount_details 重算不一致', [
+                    'order_no' => $order->order_no,
+                    'payment_no' => $payment->payment_no,
+                    'order_pay_amount' => (string) $order->pay_amount,
+                    'recomputed' => $expected,
+                ]);
+
+                throw BusinessException::conflict('订单金额与金额明细不一致，已拒绝处理');
+            }
+
+            if (bccomp($paymentAmount, $expected, 2) !== 0) {
+                Log::warning('支付金额校验失败：支付单金额与订单应付不一致（含优惠后金额）', [
+                    'order_no' => $order->order_no,
+                    'payment_no' => $payment->payment_no,
+                    'payment_amount' => $paymentAmount,
+                    'expected' => $expected,
+                ]);
+
+                throw BusinessException::conflict('支付金额与订单应付金额不一致，已拒绝处理');
+            }
+
+            return;
+        }
+
+        // 历史订单：无分摊快照，沿用 V1.0 口径
+        if (bccomp($paymentAmount, (string) $order->pay_amount, 2) !== 0) {
+            Log::warning('支付金额校验失败：支付单金额与订单金额不一致', [
+                'order_no' => $order->order_no,
+                'payment_no' => $payment->payment_no,
+                'payment_amount' => $paymentAmount,
+                'order_pay_amount' => (string) $order->pay_amount,
+            ]);
+
+            throw BusinessException::conflict('支付金额与订单应付金额不一致，已拒绝处理');
+        }
     }
 
     /** 渠道校验：必须已启用（防伪造未启用渠道） */

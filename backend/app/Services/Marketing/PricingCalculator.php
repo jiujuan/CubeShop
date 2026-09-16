@@ -126,7 +126,6 @@ final class PricingCalculator
         $goods = $ctx->goodsAmount;
         $freight = $ctx->freightAmount;
         $totalDiscount = round($promotionDiscount + $couponDiscount, 2);
-        $payAmount = round($goods - $totalDiscount + $freight, 2);
 
         $details = [
             'v' => self::DETAILS_VERSION,
@@ -135,7 +134,10 @@ final class PricingCalculator
             'promotion_discount' => self::money($promotionDiscount),
             'coupon_discount' => self::money($couponDiscount),
             'discount_amount' => self::money($totalDiscount),
-            'pay_amount' => self::money($payAmount),
+        ];
+        // 应付由 amount_details 单一公式导出，保证「支付回调重算」与「下单落库」永远同源
+        $details['pay_amount'] = self::money(self::recomputePayAmount($details));
+        $details += [
             'promotion_id' => $promotion['id'] ?? null,
             'coupon_id' => $coupon['id'] ?? null,
             'user_coupon_id' => $coupon['user_coupon_id'] ?? null,
@@ -213,6 +215,25 @@ final class PricingCalculator
         }
 
         return round(min($tier['discount'], $base), 2);
+    }
+
+    /**
+     * 由 `amount_details` 重算应付金额（T-035 支付回调完整性校验）
+     *
+     * 口径唯一：应付 = 商品总额 − 优惠合计 + 运费。
+     * 该方法与 `price()` 共用同一公式，任何时刻二者结果必须一致；
+     * 支付回调若发现「订单 pay_amount ≠ 重算值」即判定订单金额被篡改，拒绝入账。
+     *
+     * @param  array<string, mixed>  $details
+     */
+    public static function recomputePayAmount(array $details): float
+    {
+        return round(
+            (float) ($details['goods_amount'] ?? 0)
+            - (float) ($details['discount_amount'] ?? 0)
+            + (float) ($details['freight_amount'] ?? 0),
+            2,
+        );
     }
 
     /**
