@@ -2,7 +2,7 @@
 import { computed, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import {
-  BarChart3, Box, ChevronDown, ChevronRight, ChevronsLeft, ChevronsRight, ClipboardList, CreditCard, FileClock, FolderTree, History, LayoutDashboard, LayoutList, ListTree, LogOut, MessageSquare, Package, RotateCcw, ScrollText, Settings, ShieldCheck, SquareUser, Tags, UserCog, UserRound, Users,
+  BarChart3, Box, ChevronDown, ChevronRight, ChevronsLeft, ChevronsRight, ClipboardList, CreditCard, FileClock, FolderTree, History, LayoutDashboard, LayoutList, ListTree, LogOut, MessageSquare, Package, RotateCcw, ScrollText, Settings, ShieldCheck, SquareUser, Tags, UserCog, UserRound, Users, Wallet,
 } from 'lucide-vue-next'
 import { useAuthStore } from '@/stores/auth'
 
@@ -47,6 +47,7 @@ const icons: Record<string, unknown> = {
   CreditCard,
   ScrollText,
   History,
+  Wallet,
 }
 
 interface MenuItem {
