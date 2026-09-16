@@ -6,6 +6,7 @@ use App\Models\Brand;
 use App\Models\Category;
 use App\Models\Inventory;
 use App\Models\Product;
+use App\Models\ProductImage;
 use App\Models\ProductSku;
 use App\Services\Common\CaptchaService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -376,6 +377,141 @@ test('TC-ATTR-015 旧结构 skus[].specs 创建商品仍可用（向后兼容）
 
     expect($resp['code'])->toBe(0);
     expect(ProductSku::where('product_id', $resp['data']['id'])->count())->toBe(1);
+});
+
+// ---------- 旧结构（历史/导入数据）SKU 差异合并 ----------
+
+/** 造一个「旧结构」商品：SKU 直接带 specs，规格值不在属性值库中（模拟历史导入数据） */
+function makeImportedProduct(int $categoryId, array $rows): Product
+{
+    $product = Product::create([
+        'category_id' => $categoryId,
+        'title' => '历史导入商品'.uniqid(),
+        'price' => '69.00',
+        'status' => 1,
+    ]);
+
+    foreach ($rows as $row) {
+        $sku = ProductSku::create([
+            'product_id' => $product->id,
+            'sku_code' => $row['sku_code'],
+            'specs' => $row['specs'],
+            'price' => $row['price'],
+            'status' => $row['status'] ?? 1,
+        ]);
+
+        Inventory::create(['sku_id' => $sku->id, 'stock' => $row['stock']]);
+    }
+
+    return $product;
+}
+
+test('TC-ATTR-022 旧结构商品改图片/详情保存成功，SKU 原行原地更新不撞唯一键', function () {
+    $product = makeImportedProduct($this->categoryId, [
+        ['sku_code' => 'LEG-01', 'specs' => ['容量' => '450ml'], 'price' => '69.00', 'stock' => 1200],
+        ['sku_code' => 'LEG-02', 'specs' => ['容量' => '600ml'], 'price' => '89.00', 'stock' => 800],
+    ]);
+    $pid = $product->id;
+
+    $before = ProductSku::where('product_id', $pid)->orderBy('id')->pluck('id')->all();
+    expect($before)->toHaveCount(2);
+
+    // 复现报错场景：仅新增详情图后保存（表格沿用原编码原样回传）
+    $resp = $this->putJson("/api/admin/products/{$pid}", [
+        'title' => '历史导入商品',
+        'images' => ['https://cdn.test/a.jpg', 'https://cdn.test/b.jpg'],
+        'skus' => [
+            ['sku_code' => 'LEG-01', 'specs' => ['容量' => '450ml'], 'price' => '69.00', 'stock' => 1200, 'status' => 1],
+            ['sku_code' => 'LEG-02', 'specs' => ['容量' => '600ml'], 'price' => '89.00', 'stock' => 800, 'status' => 1],
+        ],
+    ], $this->adminAuth);
+
+    expect($resp->json('code'))->toBe(0)->and($resp->status())->toBe(200);
+
+    $after = ProductSku::where('product_id', $pid)->orderBy('id')->get();
+    expect($after->pluck('id')->all())->toBe($before)                      // id 不变
+        ->and($after->pluck('sku_code')->all())->toBe(['LEG-01', 'LEG-02'])
+        ->and($after->firstWhere('sku_code', 'LEG-01')->specs)->toBe(['容量' => '450ml']) // 规格名未被篡改
+        ->and(ProductSku::withTrashed()->where('product_id', $pid)->count())->toBe(2)     // 无软删残留
+        ->and(ProductImage::where('product_id', $pid)->count())->toBe(2);                 // 图片已保存
+});
+
+test('TC-ATTR-023 旧结构更新：本次未提交的 SKU 软删除并清零库存', function () {
+    $pid = makeImportedProduct($this->categoryId, [
+        ['sku_code' => 'DROP-01', 'specs' => ['容量' => '450ml'], 'price' => '69.00', 'stock' => 10],
+        ['sku_code' => 'DROP-02', 'specs' => ['容量' => '600ml'], 'price' => '89.00', 'stock' => 5],
+    ])->id;
+
+    $dropped = ProductSku::where('product_id', $pid)->where('sku_code', 'DROP-02')->firstOrFail();
+
+    $resp = $this->putJson("/api/admin/products/{$pid}", [
+        'title' => '历史导入商品',
+        'skus' => [
+            ['sku_code' => 'DROP-01', 'specs' => ['容量' => '450ml'], 'price' => '69.00', 'stock' => 10, 'status' => 1],
+        ],
+    ], $this->adminAuth);
+
+    expect($resp->json('code'))->toBe(0)
+        ->and(ProductSku::where('product_id', $pid)->count())->toBe(1)
+        ->and(ProductSku::withTrashed()->find($dropped->id)->trashed())->toBeTrue()
+        ->and((int) Inventory::where('sku_id', $dropped->id)->value('stock'))->toBe(0);
+});
+
+test('TC-ATTR-024 旧结构更新：提交内编码重复返回业务冲突', function () {
+    $pid = makeImportedProduct($this->categoryId, [
+        ['sku_code' => 'DUP-01', 'specs' => ['容量' => '450ml'], 'price' => '69.00', 'stock' => 1],
+    ])->id;
+
+    $resp = $this->putJson("/api/admin/products/{$pid}", [
+        'title' => '历史导入商品',
+        'skus' => [
+            ['sku_code' => 'DUP-01', 'specs' => ['容量' => '450ml'], 'price' => '69.00', 'stock' => 1],
+            ['sku_code' => 'DUP-01', 'specs' => ['容量' => '600ml'], 'price' => '89.00', 'stock' => 1],
+        ],
+    ], $this->adminAuth);
+
+    expect($resp->json('code'))->toBe(40009)->and($resp->status())->toBe(409);
+});
+
+test('TC-ATTR-025 旧结构更新：占用他商品的编码返回业务冲突而非 500', function () {
+    $other = makeImportedProduct($this->categoryId, [
+        ['sku_code' => 'TAKEN-01', 'specs' => ['容量' => '450ml'], 'price' => '69.00', 'stock' => 1],
+    ])->id;
+    $pid = makeImportedProduct($this->categoryId, [
+        ['sku_code' => 'MINE-01', 'specs' => ['容量' => '450ml'], 'price' => '69.00', 'stock' => 1],
+    ])->id;
+
+    $resp = $this->putJson("/api/admin/products/{$pid}", [
+        'title' => '历史导入商品',
+        'skus' => [
+            ['sku_code' => 'TAKEN-01', 'specs' => ['容量' => '450ml'], 'price' => '69.00', 'stock' => 1],
+        ],
+    ], $this->adminAuth);
+
+    expect($resp->json('code'))->toBe(40009)->and($resp->status())->toBe(409)
+        ->and(ProductSku::where('product_id', $other)->count())->toBe(1)  // 未破坏他商品数据
+        ->and(ProductSku::where('product_id', $pid)->count())->toBe(1);   // 事务回滚
+});
+
+test('TC-ATTR-026 旧结构更新：留空编码自动生成且不与软删历史行冲突', function () {
+    $pid = makeImportedProduct($this->categoryId, [
+        ['sku_code' => 'KEEP-01', 'specs' => ['容量' => '450ml'], 'price' => '69.00', 'stock' => 1],
+    ])->id;
+
+    $payload = fn (string $spec) => [
+        'title' => '历史导入商品',
+        'skus' => [['sku_code' => null, 'specs' => ['容量' => $spec], 'price' => '69.00', 'stock' => 1, 'status' => 1]],
+    ];
+
+    // 连续两次改动规格 → 每次都新增一行并软删上一行，编码必须始终唯一
+    expect($this->putJson("/api/admin/products/{$pid}", $payload('600ml'), $this->adminAuth)->json('code'))->toBe(0)
+        ->and($this->putJson("/api/admin/products/{$pid}", $payload('750ml'), $this->adminAuth)->json('code'))->toBe(0);
+
+    $all = ProductSku::withTrashed()->where('product_id', $pid)->get();
+    expect($all)->toHaveCount(3)
+        ->and($all->pluck('sku_code')->unique())->toHaveCount(3)
+        ->and(ProductSku::where('product_id', $pid)->count())->toBe(1)
+        ->and(ProductSku::where('product_id', $pid)->first()->specs)->toBe(['容量' => '750ml']);
 });
 
 test('TC-ATTR-016 删除被 SKU 规格引用的属性被拒', function () {

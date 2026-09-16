@@ -267,4 +267,81 @@ describe('商品编辑表单（T-010）', () => {
     expect(wrapper.text()).toContain('新增')
     expect(wrapper.text()).toContain('失效 1')
   })
+
+  // ---- 历史/导入数据：规格值不在属性值库中（回归：保存撞 sku_code 唯一键） ----
+  /** 挂载「历史导入商品」编辑页：存量 SKU 规格值 450ml/600ml 不在属性值库（库里只有 黑/白） */
+  async function mountLegacyEdit() {
+    getProductMock.mockResolvedValue({
+      data: {
+        data: {
+          id: 3,
+          title: '不锈钢保温杯',
+          category_id: 3,
+          status: 1,
+          sort: 0,
+          images: [],
+          attribute_values: [],
+          specs_selection: [{ attribute_id: 11, name: '颜色', value_names: ['450ml', '600ml'] }],
+          skus: [
+            { id: 7, sku_code: 'CS-003-01', specs: { 颜色: '450ml' }, signature: '颜色:450ml', price: '69.00', stock: 1200, status: 1 },
+            { id: 8, sku_code: 'CS-003-02', specs: { 颜色: '600ml' }, signature: '颜色:600ml', price: '89.00', stock: 800, status: 1 },
+          ],
+        },
+      },
+    })
+    const router = makeRouter()
+    router.push('/products/3/edit')
+    await router.isReady()
+    const wrapper = mount(ProductEditView, { global: globalCfg(freshPinia(), router), attachTo: document.body })
+    await flushPromises()
+    return { wrapper, router }
+  }
+
+  it('存量规格值无法回显时切换为旧表格，不再把隐藏行静默提交', async () => {
+    const { wrapper } = await mountLegacyEdit()
+
+    expect(wrapper.find('input[placeholder="如：容量:450ml"]').exists()).toBe(true)
+    expect(wrapper.text()).toContain('不在属性值库中')
+    // 矩阵 UI 不渲染，避免「界面上看不到、提交时却被带上」
+    expect(wrapper.find('[data-testid="spec-value-11-111"]').exists()).toBe(false)
+    expect(previewSkuMatrixMock).not.toHaveBeenCalled()
+  })
+
+  it('旧表格保存沿用原编码与原规格名（不回退成猜测的属性名）', async () => {
+    updateProductMock.mockResolvedValue({ data: { code: 0, data: null } })
+    updateProductStatusMock.mockResolvedValue({ data: { code: 0, data: null } })
+    const { wrapper } = await mountLegacyEdit()
+
+    await wrapper.findAll('button').find((b) => b.text().includes('保存'))!.trigger('click')
+    await flushPromises()
+    expect(wrapper.text()).toContain('按编码匹配已有行')
+
+    await wrapper.findAll('button').find((b) => b.text().includes('确认保存'))!.trigger('click')
+    await flushPromises()
+
+    expect(updateProductMock).toHaveBeenCalled()
+    const [id, payload] = updateProductMock.mock.calls[0]
+    expect(id).toBe(3)
+    expect(payload.specs_selection).toBeUndefined()
+    expect(payload.skus).toEqual([
+      { sku_code: 'CS-003-01', specs: { 颜色: '450ml' }, price: 69, stock: 1200, status: 1 },
+      { sku_code: 'CS-003-02', specs: { 颜色: '600ml' }, price: 89, stock: 800, status: 1 },
+    ])
+  })
+
+  it('旧表格填写「属性名:值」可解析回原来的规格键', async () => {
+    updateProductMock.mockResolvedValue({ data: { code: 0, data: null } })
+    updateProductStatusMock.mockResolvedValue({ data: { code: 0, data: null } })
+    const { wrapper } = await mountLegacyEdit()
+
+    const specInput = wrapper.find('input[placeholder="如：容量:450ml"]')
+    await specInput.setValue('容量:450ml/颜色:黑色')
+    await wrapper.findAll('button').find((b) => b.text().includes('保存'))!.trigger('click')
+    await flushPromises()
+    await wrapper.findAll('button').find((b) => b.text().includes('确认保存'))!.trigger('click')
+    await flushPromises()
+
+    const [, payload] = updateProductMock.mock.calls[0]
+    expect(payload.skus[0].specs).toEqual({ 容量: '450ml', 颜色: '黑色' })
+  })
 })

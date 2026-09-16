@@ -249,10 +249,10 @@ class ProductAttributeService
                 }
 
                 // 新增
-                $seq++;
+                $code = trim((string) ($input['sku_code'] ?? ''));
                 $sku = ProductSku::create([
                     'product_id' => $product->id,
-                    'sku_code' => $input['sku_code'] ?? sprintf('CS-%d-%d', $product->id, $seq),
+                    'sku_code' => $code !== '' ? $code : $this->nextSkuCode($product, $seq),
                     'specs' => $item['specs'],
                     'price' => bcadd((string) ($input['price'] ?? $product->price), '0', 2),
                     'status' => (int) ($input['status'] ?? 1),
@@ -330,6 +330,21 @@ class ProductAttributeService
         }
 
         return $map;
+    }
+
+    /**
+     * 生成商品内自增且全表未占用的 SKU 编码
+     *
+     * `product_skus` 走软删除，历史行仍占用 sku_code 唯一索引，故需含 withTrashed 判重。
+     */
+    private function nextSkuCode(Product $product, int &$seq): string
+    {
+        do {
+            $seq++;
+            $code = sprintf('CS-%d-%d', $product->id, $seq);
+        } while (ProductSku::withTrashed()->where('sku_code', $code)->exists());
+
+        return $code;
     }
 
     /** 设置为指定库存（通过 adjust 差值写库存流水） */

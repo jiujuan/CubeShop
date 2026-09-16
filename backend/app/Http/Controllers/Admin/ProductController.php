@@ -125,15 +125,7 @@ class ProductController extends Controller
                 return $product;
             });
         } catch (QueryException $e) {
-            // SKU 编码唯一约束冲突 → 返回业务错误而非 500
-            // PostgreSQL：SQLSTATE 23505 / 索引名；SQLite：UNIQUE constraint failed: product_skus.sku_code
-            $msg = $e->getMessage();
-            $isPgUnique = (int) ($e->errorInfo[1] ?? 0) === 23505
-                || str_contains($msg, 'product_skus_sku_code_unique');
-            $isSqliteUnique = str_contains($msg, 'UNIQUE constraint failed')
-                && str_contains($msg, 'sku_code');
-
-            if ($isPgUnique || $isSqliteUnique) {
+            if ($this->isSkuCodeUniqueViolation($e)) {
                 throw BusinessException::conflict('SKU 编码已存在，请更换后重试');
             }
 
@@ -156,36 +148,41 @@ class ProductController extends Controller
         $payload = $this->validatePayload($request, forUpdate: true);
         $this->validateAttributeValues($payload);
 
-        DB::transaction(function () use ($product, $payload) {
-            $updates = collect($payload)->except(['skus', 'images', 'specs_selection', 'attribute_values'])->all();
-            $product->fill($updates)->save();
+        try {
+            DB::transaction(function () use ($product, $payload) {
+                $updates = collect($payload)->except(['skus', 'images', 'specs_selection', 'attribute_values'])->all();
+                $product->fill($updates)->save();
 
-            if (array_key_exists('specs_selection', $payload) && $payload['specs_selection'] !== []) {
-                // 新链路：按签名差异合并（保留未变化行的价格/库存/编码）
-                $matrix = $this->attributes->generateSkuMatrix($payload['specs_selection']);
-                $this->attributes->mergeSkuMatrix($product, $matrix, $payload['skus'] ?? []);
-            } elseif (array_key_exists('skus', $payload) && $this->hasLegacySpecs($payload['skus'])) {
-                // 旧链路（兼容 V1.0 调用方）：全量替换 SKU
-                $oldSkuIds = $product->skus()->pluck('id');
-                Inventory::whereIn('sku_id', $oldSkuIds)->delete();
-                $product->skus()->delete();
+                if (array_key_exists('specs_selection', $payload) && $payload['specs_selection'] !== []) {
+                    // 新链路：按签名差异合并（保留未变化行的价格/库存/编码）
+                    $matrix = $this->attributes->generateSkuMatrix($payload['specs_selection']);
+                    $this->attributes->mergeSkuMatrix($product, $matrix, $payload['skus'] ?? []);
+                } elseif (array_key_exists('skus', $payload) && $this->hasLegacySpecs($payload['skus'])) {
+                    // 旧链路（兼容 V1.0 调用方 / 历史导入数据）：按 sku_code 差异合并，
+                    // 不可「全删重建」——软删除的行仍占用 sku_code 唯一索引，重建同编码必冲突
+                    $this->replaceSkus($product, $payload['skus']);
+                }
 
-                $this->saveSkus($product, $payload['skus']);
+                if (array_key_exists('images', $payload)) {
+                    $product->images()->delete();
+                    $this->saveImages($product, $payload['images']);
+                }
+
+                if (array_key_exists('attribute_values', $payload)) {
+                    $product->attributeValues()->delete();
+                    $this->saveAttributeValues($product, $payload['attribute_values']);
+                }
+
+                $product->price = $this->refreshDisplayPrice($product);
+                $product->save();
+            });
+        } catch (QueryException $e) {
+            if ($this->isSkuCodeUniqueViolation($e)) {
+                throw BusinessException::conflict('SKU 编码已存在，请更换后重试');
             }
 
-            if (array_key_exists('images', $payload)) {
-                $product->images()->delete();
-                $this->saveImages($product, $payload['images']);
-            }
-
-            if (array_key_exists('attribute_values', $payload)) {
-                $product->attributeValues()->delete();
-                $this->saveAttributeValues($product, $payload['attribute_values']);
-            }
-
-            $product->price = $this->refreshDisplayPrice($product);
-            $product->save();
-        });
+            throw $e;
+        }
 
         $this->opLog->record($request->user()?->id, 'product', 'update', 'Product', $id);
 
@@ -472,12 +469,81 @@ class ProductController extends Controller
         return bcadd((string) min(array_column($skus, 'price')), '0', 2);
     }
 
+    /**
+     * 旧结构 SKU 差异合并（按 sku_code 命中已有行 → 原地更新，未提交的旧行再软删）
+     *
+     * 注意：`product_skus` 走软删除，被删除的行仍留在表内，「sku_code」唯一索引对它们同样生效。
+     * 因此旧实现「先 delete 再 create 同编码」在 PostgreSQL 下必然抛 SQLSTATE[23505]。
+     *
+     * @param  array<int, array{sku_code?:string|null, specs?:array, price:mixed, stock?:int, status?:int}>  $skus
+     */
+    private function replaceSkus(Product $product, array $skus): void
+    {
+        $skus = array_values($skus);
+
+        // 同一次提交内不允许出现重复编码（否则第二行会覆盖第一行）
+        $codes = collect($skus)
+            ->map(fn ($sku) => trim((string) ($sku['sku_code'] ?? '')))
+            ->filter()
+            ->values();
+        if ($codes->duplicates()->isNotEmpty()) {
+            throw BusinessException::conflict('SKU 编码存在重复，请修改后重试');
+        }
+
+        $existing = $product->skus()->get()->keyBy('sku_code');
+        $keptIds = [];
+
+        foreach ($skus as $sku) {
+            $code = trim((string) ($sku['sku_code'] ?? ''));
+            $attrs = [
+                'specs' => $sku['specs'] ?? [],
+                'price' => bcadd((string) $sku['price'], '0', 2),
+                'status' => isset($sku['status']) ? (int) $sku['status'] : 1,
+            ];
+            $stock = max(0, (int) ($sku['stock'] ?? 0));
+
+            $model = $code !== '' ? $existing->get($code) : null;
+
+            if ($model) {
+                // 命中已有行：id / 编码保持不变，订单引用与库存流水不受影响
+                $model->fill($attrs)->save();
+            } else {
+                $code = $code !== '' ? $code : $this->generateSkuCode($product);
+                $this->assertSkuCodeAvailable($code);
+
+                $model = ProductSku::create([
+                    'product_id' => $product->id,
+                    'sku_code' => $code,
+                    ...$attrs,
+                ]);
+
+                Inventory::create(['sku_id' => $model->id, 'stock' => $stock]);
+                $keptIds[] = $model->id;
+
+                continue;
+            }
+
+            Inventory::updateOrCreate(['sku_id' => $model->id], ['stock' => $stock]);
+            $keptIds[] = $model->id;
+        }
+
+        // 本次未提交的存量行：库存清零后软删除
+        foreach ($product->skus()->whereNotIn('id', $keptIds ?: [0])->get() as $stale) {
+            Inventory::updateOrCreate(['sku_id' => $stale->id], ['stock' => 0]);
+            $stale->delete();
+        }
+    }
+
     private function saveSkus(Product $product, array $skus): void
     {
-        foreach ($skus as $index => $sku) {
+        foreach (array_values($skus) as $sku) {
+            $code = trim((string) ($sku['sku_code'] ?? ''));
+            $code = $code !== '' ? $code : $this->generateSkuCode($product);
+            $this->assertSkuCodeAvailable($code);
+
             $skuModel = ProductSku::create([
                 'product_id' => $product->id,
-                'sku_code' => $sku['sku_code'] ?? sprintf('CS-%d-%d', $product->id, $index + 1),
+                'sku_code' => $code,
                 'specs' => $sku['specs'] ?? [],
                 'price' => $sku['price'],
                 'status' => $sku['status'] ?? 1,
@@ -485,9 +551,43 @@ class ProductController extends Controller
 
             Inventory::create([
                 'sku_id' => $skuModel->id,
-                'stock' => (int) $sku['stock'],
+                'stock' => max(0, (int) $sku['stock']),
             ]);
         }
+    }
+
+    /** 生成商品内自增且全表未占用的 SKU 编码（软删除行同样计入占用） */
+    private function generateSkuCode(Product $product): string
+    {
+        $seq = ProductSku::withTrashed()->where('product_id', $product->id)->count();
+
+        do {
+            $seq++;
+            $code = sprintf('CS-%d-%d', $product->id, $seq);
+        } while (ProductSku::withTrashed()->where('sku_code', $code)->exists());
+
+        return $code;
+    }
+
+    /** 编码占用校验（含软删除历史行） */
+    private function assertSkuCodeAvailable(string $code): void
+    {
+        if (ProductSku::withTrashed()->where('sku_code', $code)->exists()) {
+            throw BusinessException::conflict(sprintf('SKU 编码「%s」已被占用，请更换后重试', $code));
+        }
+    }
+
+    /**
+     * SKU 编码唯一约束冲突判定
+     * PostgreSQL：SQLSTATE 23505（索引名 product_skus_sku_code_unique）
+     * SQLite：UNIQUE constraint failed: product_skus.sku_code
+     */
+    private function isSkuCodeUniqueViolation(QueryException $e): bool
+    {
+        $msg = $e->getMessage();
+
+        return (str_contains($msg, 'UNIQUE constraint failed') || (int) ($e->errorInfo[1] ?? 0) === 23505)
+            && str_contains($msg, 'sku_code');
     }
 
     private function saveImages(Product $product, array $images): void
