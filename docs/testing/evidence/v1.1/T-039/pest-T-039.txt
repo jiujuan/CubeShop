@@ -1,0 +1,12 @@
+=== SQLite ===
+  [90mTests:[39m    [32;1m558 passed[39;22m[90m (1987 assertions)[39m
+  [90mDuration:[39m [39m29.76s[39m
+
+
+=== PostgreSQL ===
+  [90mTests:[39m    [32;1m558 passed[39;22m[90m (1987 assertions)[39m
+  [90mDuration:[39m [39m127.40s[39m
+
+
+新增: tests/Feature/PromotionPreviewApiTest.php 4 例（554→558）
+改动: routes/api.php + Storefront/PromotionController（GET /promotions/preview）

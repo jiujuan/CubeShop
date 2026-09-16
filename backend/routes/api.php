@@ -37,6 +37,7 @@ use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\ReviewController;
 use App\Http\Controllers\Storefront\AttributeController as StorefrontAttributeController;
 use App\Http\Controllers\Storefront\CouponController as StorefrontCouponController;
+use App\Http\Controllers\Storefront\PromotionController as StorefrontPromotionController;
 use App\Http\Controllers\Storefront\ProductController as StorefrontProductController;
 use Illuminate\Support\Facades\Route;
 
@@ -117,6 +118,9 @@ Route::middleware(['auth:sanctum', 'account.active'])->group(function () {
     Route::get('/coupons/available', [StorefrontCouponController::class, 'available']);
     Route::post('/coupons/{id}/receive', [StorefrontCouponController::class, 'receive'])->middleware('throttle:coupon');
     Route::get('/me/coupons', [StorefrontCouponController::class, 'my']);
+
+    // 满减预览（V1.1 二期 F06 / T-039 结算页实时明细）
+    Route::get('/promotions/preview', [StorefrontPromotionController::class, 'preview']);
 
     // 站内通知（V1.1 F02 / T-018 / T-019）
     Route::get('/me/notifications/unread-count', [NotificationController::class, 'unreadCount']);

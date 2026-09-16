@@ -1,0 +1,203 @@
+
+[1m[30m[46m RUN [49m[39m[22m [36mv5.0.1 [39m[90mD:/codeproject/PHP/CubeShop/web[39m
+
+ [32m✓[39m tests/auth-store.test.ts [2m([22m[2m5 tests[22m[2m)[22m[32m 204[2mms[22m[39m
+[90mstderr[2m | tests/coupon-center.test.ts[2m > [22m[2m领券中心 CouponCenterView[2m > [22m[2m渲染券卡片（面额/门槛/范围/剩余）
+[22m[39m[Vue Router warn]: No match found for location with path "/account"
+
+[90mstderr[2m | tests/order-center.test.ts[2m > [22m[2m订单详情时间轴与确认收货（T-005）[2m > [22m[2m已发货订单渲染时间轴节点并显示确认收货按钮
+[22m[39m[Vue Router warn]: No match found for location with path "/account"
+
+[90mstderr[2m | tests/checkout-coupon.test.ts[2m > [22m[2m结算页用券与金额明细（T-039）[2m > [22m[2m① 默认选中最优券（discount 最大者）并展示在明细区
+[22m[39m[Vue Router warn]: No match found for location with path "/account"
+
+[90mstderr[2m | tests/my-coupons.test.ts[2m > [22m[2m我的优惠券 MyCouponsView[2m > [22m[2m渲染券列表（未使用/已使用两种状态卡片）
+[22m[39m[Vue Router warn]: No match found for location with path "/account"
+
+[90mstderr[2m | tests/notification.test.ts[2m > [22m[2m通知中心 NotificationsView[2m > [22m[2m渲染通知列表
+[22m[39m[Vue Router warn]: No match found for location with path "/account"
+
+[90mstderr[2m | tests/notification.test.ts[2m > [22m[2m通知中心 NotificationsView[2m > [22m[2m无消息时展示空态
+[22m[39m[Vue Router warn]: No match found for location with path "/account"
+
+[90mstderr[2m | tests/coupon-center.test.ts[2m > [22m[2m领券中心 CouponCenterView[2m > [22m[2m折扣券展示折数文案
+[22m[39m[Vue Router warn]: No match found for location with path "/account"
+
+[90mstderr[2m | tests/address-enhance.test.ts[2m > [22m[2m地址列表（AddressView / T-029）[2m > [22m[2m常用地址按使用次数排序、默认地址置顶并展示标签
+[22m[39m[Vue Router warn]: No match found for location with path "/account"
+
+[90mstderr[2m | tests/checkout-coupon.test.ts[2m > [22m[2m结算页用券与金额明细（T-039）[2m > [22m[2m② 切换券后明细金额变化正确（固定数据断言）
+[22m[39m[Vue Router warn]: No match found for location with path "/account"
+
+[90mstderr[2m | tests/my-coupons.test.ts[2m > [22m[2m我的优惠券 MyCouponsView[2m > [22m[2m未使用券展示「去使用」，已使用券展示「查看订单」并可跳转
+[22m[39m[Vue Router warn]: No match found for location with path "/account"
+
+[90mstderr[2m | tests/favorite-history.test.ts[2m > [22m[2m我的收藏（FavoriteView / T-025）[2m > [22m[2m渲染收藏列表，失效商品灰显并展示原因
+[22m[39m[Vue Router warn]: No match found for location with path "/account"
+
+[90mstderr[2m | tests/order-center.test.ts[2m > [22m[2m订单详情时间轴与确认收货（T-005）[2m > [22m[2m未发货（已支付）订单不显示确认收货按钮
+[22m[39m[Vue Router warn]: No match found for location with path "/account"
+
+[90mstderr[2m | tests/notification.test.ts[2m > [22m[2m通知中心 NotificationsView[2m > [22m[2m切换「未读」Tab 携带 is_read=0 参数
+[22m[39m[Vue Router warn]: No match found for location with path "/account"
+
+[90mstderr[2m | tests/coupon-center.test.ts[2m > [22m[2m领券中心 CouponCenterView[2m > [22m[2m余量为 0 展示「已抢光」且无领取按钮
+[22m[39m[Vue Router warn]: No match found for location with path "/account"
+
+[90mstderr[2m | tests/my-coupons.test.ts[2m > [22m[2m我的优惠券 MyCouponsView[2m > [22m[2m临近过期标红提示
+[22m[39m[Vue Router warn]: No match found for location with path "/account"
+
+[90mstderr[2m | tests/coupon-center.test.ts[2m > [22m[2m领券中心 CouponCenterView[2m > [22m[2m达到限领展示「已领取」且无领取按钮
+[22m[39m[Vue Router warn]: No match found for location with path "/account"
+
+[90mstderr[2m | tests/order-center.test.ts[2m > [22m[2m订单详情时间轴与确认收货（T-005）[2m > [22m[2m点击确认收货弹出二次确认，确认后调用接口并刷新
+[22m[39m[Vue Router warn]: No match found for location with path "/account"
+
+[90mstderr[2m | tests/favorite-history.test.ts[2m > [22m[2m我的收藏（FavoriteView / T-025）[2m > [22m[2m勾选后批量取消收藏，调用接口并刷新
+[22m[39m[Vue Router warn]: No match found for location with path "/account"
+
+[90mstderr[2m | tests/checkout-coupon.test.ts[2m > [22m[2m结算页用券与金额明细（T-039）[2m > [22m[2m③ 不可用券分组展示原因
+[22m[39m[Vue Router warn]: No match found for location with path "/account"
+
+[90mstderr[2m | tests/address-enhance.test.ts[2m > [22m[2m地址列表（AddressView / T-029）[2m > [22m[2m删除默认地址时提示会重新设置默认
+[22m[39m[Vue Router warn]: No match found for location with path "/account"
+
+[90mstderr[2m | tests/notification.test.ts[2m > [22m[2m通知中心 NotificationsView[2m > [22m[2m点击条目标记已读并跳转
+[22m[39m[Vue Router warn]: No match found for location with path "/account"
+
+ [32m✓[39m tests/recharge.test.ts [2m([22m[2m6 tests[22m[2m)[22m[33m 495[2mms[22m[39m
+[90mstderr[2m | tests/my-coupons.test.ts[2m > [22m[2m我的优惠券 MyCouponsView[2m > [22m[2m切换「未使用」Tab 携带 status=unused 并重置页码
+[22m[39m[Vue Router warn]: No match found for location with path "/account"
+
+ [32m✓[39m tests/cashier.test.ts [2m([22m[2m6 tests[22m[2m)[22m[33m 463[2mms[22m[39m
+[90mstderr[2m | tests/notification.test.ts[2m > [22m[2m通知中心 NotificationsView[2m > [22m[2m一键全部已读
+[22m[39m[Vue Router warn]: No match found for location with path "/account"
+
+[90mstderr[2m | tests/review.test.ts[2m > [22m[2m订单详情评价入口[2m > [22m[2m已完成且未评价的行项目显示「评价」按钮，点击展开表单
+[22m[39m[Vue Router warn]: No match found for location with path "/account"
+
+[90mstderr[2m | tests/coupon-center.test.ts[2m > [22m[2m领券中心 CouponCenterView[2m > [22m[2m点击领取：调用接口 + 展示成功 Toast
+[22m[39m[Vue Router warn]: No match found for location with path "/account"
+
+[90mstderr[2m | tests/address-enhance.test.ts[2m > [22m[2m结算页内联新增地址（CheckoutView / T-029）[2m > [22m[2m内联新增地址保存后自动选中且不丢失已填备注
+[22m[39m[Vue Router warn]: No match found for location with path "/account"
+
+ [32m✓[39m tests/notification.test.ts [2m([22m[2m11 tests[22m[2m)[22m[33m 448[2mms[22m[39m
+[90mstderr[2m | tests/checkout-coupon.test.ts[2m > [22m[2m结算页用券与金额明细（T-039）[2m > [22m[2m④ 无券可领时不选券则隐藏优惠行（与 V1.0 一致）
+[22m[39m[Vue Router warn]: No match found for location with path "/account"
+
+[90mstderr[2m | tests/my-coupons.test.ts[2m > [22m[2m我的优惠券 MyCouponsView[2m > [22m[2m切换「已过期」Tab 携带 status=expired
+[22m[39m[Vue Router warn]: No match found for location with path "/account"
+
+[90mstderr[2m | tests/favorite-history.test.ts[2m > [22m[2m我的收藏（FavoriteView / T-025）[2m > [22m[2m无收藏时展示空态
+[22m[39m[Vue Router warn]: No match found for location with path "/account"
+
+[90mstderr[2m | tests/coupon-center.test.ts[2m > [22m[2m领券中心 CouponCenterView[2m > [22m[2m领取成功后刷新列表同步状态（can_receive=false → 已领取）
+[22m[39m[Vue Router warn]: No match found for location with path "/account"
+
+[90mstderr[2m | tests/order-center.test.ts[2m > [22m[2m订单详情时间轴与确认收货（T-005）[2m > [22m[2m确认收货失败展示错误提示且状态不变
+[22m[39m[Vue Router warn]: No match found for location with path "/account"
+
+[90mstderr[2m | tests/favorite-history.test.ts[2m > [22m[2m浏览足迹（HistoryView / T-025）[2m > [22m[2m按今天/昨天/更早分组渲染
+[22m[39m[Vue Router warn]: No match found for location with path "/account"
+
+[90mstderr[2m | tests/my-coupons.test.ts[2m > [22m[2m我的优惠券 MyCouponsView[2m > [22m[2m「全部」Tab status 为 null
+[22m[39m[Vue Router warn]: No match found for location with path "/account"
+
+[90mstderr[2m | tests/checkout-coupon.test.ts[2m > [22m[2m结算页用券与金额明细（T-039）[2m > [22m[2m⑤ 服务端金额与前端预览不一致时弹窗提示且以服务端为准
+[22m[39m[Vue Router warn]: No match found for location with path "/account"
+
+[90mstderr[2m | tests/review.test.ts[2m > [22m[2m订单详情评价入口[2m > [22m[2m已评价且可修改的行项目显示星级与「修改评价」
+[22m[39m[Vue Router warn]: No match found for location with path "/account"
+
+[90mstderr[2m | tests/coupon-center.test.ts[2m > [22m[2m领券中心 CouponCenterView[2m > [22m[2m领取失败展示错误 Toast（后端冲突文案）
+[22m[39m[Vue Router warn]: No match found for location with path "/account"
+
+[90mstderr[2m | tests/address-enhance.test.ts[2m > [22m[2m结算页内联新增地址（CheckoutView / T-029）[2m > [22m[2m内联新增地址保存后自动选中且不丢失已填备注
+[22m[39m[Vue Router warn]: No match found for location with path "/account"
+
+[90mstderr[2m | tests/my-coupons.test.ts[2m > [22m[2m我的优惠券 MyCouponsView[2m > [22m[2m分页：下一页翻页并携带 page=2，末页禁用
+[22m[39m[Vue Router warn]: No match found for location with path "/account"
+
+[90mstderr[2m | tests/coupon-center.test.ts[2m > [22m[2m领券中心 CouponCenterView[2m > [22m[2m无券时展示空态
+[22m[39m[Vue Router warn]: No match found for location with path "/account"
+
+[90mstderr[2m | tests/favorite-history.test.ts[2m > [22m[2m浏览足迹（HistoryView / T-025）[2m > [22m[2m清空足迹需二次确认
+[22m[39m[Vue Router warn]: No match found for location with path "/account"
+
+ [32m✓[39m tests/review.test.ts [2m([22m[2m13 tests[22m[2m)[22m[33m 543[2mms[22m[39m
+[90mstderr[2m | tests/address-enhance.test.ts[2m > [22m[2m结算页内联新增地址（CheckoutView / T-029）[2m > [22m[2m无地址时展示空态并阻断下单
+[22m[39m[Vue Router warn]: No match found for location with path "/account"
+
+[90mstderr[2m | tests/checkout-coupon.test.ts[2m > [22m[2m结算页用券与金额明细（T-039）[2m > [22m[2m⑥ 券失效异常态展示原因并提供「不使用优惠券继续下单」
+[22m[39m[Vue Router warn]: No match found for location with path "/account"
+
+[90mstderr[2m | tests/my-coupons.test.ts[2m > [22m[2m我的优惠券 MyCouponsView[2m > [22m[2m无券时展示空态
+[22m[39m[Vue Router warn]: No match found for location with path "/account"
+
+[90mstderr[2m | tests/order-center.test.ts[2m > [22m[2m订单详情时间轴与确认收货（T-005）[2m > [22m[2m已取消订单渲染异常分支告警
+[22m[39m[Vue Router warn]: No match found for location with path "/account"
+
+[90mstderr[2m | tests/coupon-center.test.ts[2m > [22m[2m领券中心 CouponCenterView[2m > [22m[2m未登录展示登录提示，券面可浏览但领取跳登录
+[22m[39m[Vue Router warn]: No match found for location with path "/register"
+
+ [32m✓[39m tests/address-enhance.test.ts [2m([22m[2m7 tests[22m[2m)[22m[33m 568[2mms[22m[39m
+[90mstderr[2m | tests/favorite-history.test.ts[2m > [22m[2m浏览足迹（HistoryView / T-025）[2m > [22m[2m无足迹时展示空态
+[22m[39m[Vue Router warn]: No match found for location with path "/account"
+
+ [32m✓[39m tests/coupon-center.test.ts [2m([22m[2m9 tests[22m[2m)[22m[33m 602[2mms[22m[39m
+[90mstderr[2m | tests/my-coupons.test.ts[2m > [22m[2m我的优惠券 MyCouponsView[2m > [22m[2m未登录展示「请先登录」
+[22m[39m[Vue Router warn]: No match found for location with path "/register"
+
+[90mstderr[2m | tests/checkout-coupon.test.ts[2m > [22m[2m结算页用券与金额明细（T-039）[2m > [22m[2m下单请求携带默认选中的 user_coupon_id（正常路径）
+[22m[39m[Vue Router warn]: No match found for location with path "/account"
+
+[90mstderr[2m | tests/favorite-history.test.ts[2m > [22m[2m商品详情收藏（DetailView / T-025）[2m > [22m[2m未收藏点击后调用收藏接口并切换为已收藏
+[22m[39m[Vue Router warn]: No match found for location with path "/account"
+
+[90mstderr[2m | tests/order-center.test.ts[2m > [22m[2m订单列表分组、检索与再次购买（T-006）[2m > [22m[2m切换 Tab 时按 tab 参数请求（而非 status）
+[22m[39m[Vue Router warn]: No match found for location with path "/account"
+
+ [32m✓[39m tests/my-coupons.test.ts [2m([22m[2m9 tests[22m[2m)[22m[33m 636[2mms[22m[39m
+[90mstderr[2m | tests/checkout-coupon.test.ts[2m > [22m[2m结算页用券与金额明细（T-039）[2m > [22m[2m满减与券同时生效时明细金额正确（150 − 满减10 − 券10 + 运费）
+[22m[39m[Vue Router warn]: No match found for location with path "/account"
+
+[90mstderr[2m | tests/order-center.test.ts[2m > [22m[2m订单列表分组、检索与再次购买（T-006）[2m > [22m[2m关键词与时间区间组装为请求参数
+[22m[39m[Vue Router warn]: No match found for location with path "/account"
+
+ [32m✓[39m tests/checkout-coupon.test.ts [2m([22m[2m8 tests[22m[2m)[22m[33m 676[2mms[22m[39m
+[90mstderr[2m | tests/favorite-history.test.ts[2m > [22m[2m商品详情收藏（DetailView / T-025）[2m > [22m[2m未登录点击收藏跳转登录并带 redirect
+[22m[39m[Vue Router warn]: No match found for location with path "/register"
+
+[90mstderr[2m | tests/order-center.test.ts[2m > [22m[2m订单列表分组、检索与再次购买（T-006）[2m > [22m[2m空态文案按 Tab 区分
+[22m[39m[Vue Router warn]: No match found for location with path "/account"
+
+[90mstderr[2m | tests/favorite-history.test.ts[2m > [22m[2m商品详情收藏（DetailView / T-025）[2m > [22m[2m未登录点击收藏跳转登录并带 redirect
+[22m[39m[Vue Router warn]: No match found for location with path "/register"
+
+ [32m✓[39m tests/favorite-history.test.ts [2m([22m[2m8 tests[22m[2m)[22m[33m 623[2mms[22m[39m
+[90mstderr[2m | tests/order-center.test.ts[2m > [22m[2m订单列表分组、检索与再次购买（T-006）[2m > [22m[2m待付款订单展示倒计时
+[22m[39m[Vue Router warn]: No match found for location with path "/account"
+
+ [32m✓[39m tests/browse-view.test.ts [2m([22m[2m8 tests[22m[2m)[22m[33m 807[2mms[22m[39m
+[90mstderr[2m | tests/order-center.test.ts[2m > [22m[2m订单列表分组、检索与再次购买（T-006）[2m > [22m[2m再次购买成功跳转购物车
+[22m[39m[Vue Router warn]: No match found for location with path "/account"
+
+[90mstderr[2m | tests/order-center.test.ts[2m > [22m[2m订单列表分组、检索与再次购买（T-006）[2m > [22m[2m再次购买存在失效行时弹层提示明细
+[22m[39m[Vue Router warn]: No match found for location with path "/account"
+
+[90mstderr[2m | tests/order-center.test.ts[2m > [22m[2m订单列表分组、检索与再次购买（T-006）[2m > [22m[2m已发货订单可下单确认收货（走二次确认而非直接调用）
+[22m[39m[Vue Router warn]: No match found for location with path "/account"
+
+ [32m✓[39m tests/order-center.test.ts [2m([22m[2m12 tests[22m[2m)[22m[33m 834[2mms[22m[39m
+ [32m✓[39m tests/account-center.test.ts [2m([22m[2m7 tests[22m[2m)[22m[33m 2809[2mms[22m[39m
+   [32m✓[39m 个人中心（AccountCenterView / T-026） [2m(3)[22m
+     [33m[2m✓[22m[39m 渲染概览分区、订单快捷入口与服务入口（含未读角标）[33m 334[2mms[22m[39m
+   [32m✓[39m 修改密码（T-027 前端校验） [2m(3)[22m
+     [33m[2m✓[22m[39m 两次密码不一致时本地拦截[33m 1833[2mms[22m[39m
+
+[2m Test Files [22m [1m[32m13 passed[39m[22m[90m (13)[39m
+[2m      Tests [22m [1m[32m109 passed[39m[22m[90m (109)[39m
+[2m   Start at [22m 23:51:36
+[2m   Duration [22m 6.29s[2m (environment 43%, tests 20%, transform 19%, import 16%, setup 1%, worker 1%)[22m
+

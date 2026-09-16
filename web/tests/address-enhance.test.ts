@@ -44,6 +44,14 @@ vi.mock('@/api/order', () => ({
   createOrder: createOrderMock,
 }))
 
+vi.mock('@/api/coupon', () => ({
+  getAvailableCoupons: vi.fn().mockResolvedValue({ data: { data: { usable: [], unusable: [] } } }),
+  getPromotionPreview: vi.fn().mockResolvedValue({ data: { data: { promotion: null } } }),
+  getCouponCenter: vi.fn(),
+  receiveCoupon: vi.fn(),
+  getMyCoupons: vi.fn(),
+}))
+
 vi.mock('@/api/shop', () => ({
   getCategories: vi.fn().mockResolvedValue({ data: { data: [] } }),
   getProducts: vi.fn(),
