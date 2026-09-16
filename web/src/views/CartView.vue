@@ -3,6 +3,7 @@ import { onMounted, ref } from 'vue'
 import { Minus, Plus, ShoppingCart, Trash2 } from 'lucide-vue-next'
 import { clearCart, getCart, removeCartItem, updateCartItem, type CartSummary } from '@/api/user'
 import LoadingSpinner from '@/components/LoadingSpinner.vue'
+import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import ShopFooter from '@/components/ShopFooter.vue'
 import ShopHeader from '@/components/ShopHeader.vue'
 import { useAuthStore } from '@/stores/auth'
@@ -47,8 +48,11 @@ async function remove(id: number) {
   await load()
 }
 
-async function clear() {
-  if (!confirm('确定清空购物车？')) return
+// 清空购物车二次确认（弹层）
+const showClearDialog = ref(false)
+
+async function doClear() {
+  showClearDialog.value = false
   await clearCart()
   await load()
 }
@@ -138,7 +142,7 @@ async function clear() {
           <!-- 合计栏 -->
           <div class="sticky bottom-0 mt-6 flex flex-wrap items-center justify-between gap-4 rounded-xl border border-slate-100 bg-white px-6 py-4 shadow-lg">
             <div class="flex items-center gap-4 text-sm text-slate-500">
-              <button class="hover:text-red-500" @click="clear">清空购物车</button>
+              <button class="rounded-full border border-slate-200 bg-slate-100 px-4 py-1.5 text-xs text-slate-600 transition-colors hover:bg-slate-200 hover:text-red-500" @click="showClearDialog = true">清空购物车</button>
               <span>已选 <b class="text-[#1677ff]">{{ cart.total_quantity }}</b> 件</span>
             </div>
             <div class="flex items-center gap-6">
@@ -156,6 +160,15 @@ async function clear() {
         </template>
       </template>
     </main>
+
+    <!-- 清空购物车二次确认弹层 -->
+    <ConfirmDialog
+      v-model="showClearDialog"
+      title="清空购物车"
+      content="确定清空购物车吗？清空后已加入的商品将全部移除。"
+      confirm-text="确认清空"
+      @confirm="doClear"
+    />
 
     <ShopFooter />
   </div>

@@ -38,7 +38,7 @@ function close() {
   <div v-if="modelValue" class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-6" data-testid="confirm-dialog">
     <div class="w-full max-w-sm rounded-xl bg-white p-6 shadow-xl">
       <h3 class="text-base font-semibold text-slate-800">{{ title }}</h3>
-      <p class="mt-2 text-sm text-slate-500">{{ content }}</p>
+      <p class="mt-2 whitespace-pre-line text-sm text-slate-500">{{ content }}</p>
       <div class="mt-6 flex justify-end gap-3">
         <button
           class="rounded-full border border-slate-200 px-5 py-1.5 text-sm text-slate-500 hover:bg-slate-50"
