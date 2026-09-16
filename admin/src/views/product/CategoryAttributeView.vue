@@ -33,6 +33,14 @@ const flatCategories = computed(() => {
   return out
 })
 
+/** 当前分类名（吸附操作栏用，滚到列表底部时也能确认在给哪个分类保存） */
+const activeCategoryLabel = computed(
+  () => flatCategories.value.find((c) => c.id === activeCategoryId.value)?.label ?? '',
+)
+
+/** 已勾选属性数 */
+const selectedCount = computed(() => Object.keys(selected.value).length)
+
 onMounted(async () => {
   const [cRes, aRes] = await Promise.all([getCategories(), getAttributes({ page_size: 200 })])
   categories.value = cRes.data.data
@@ -154,11 +162,15 @@ async function save() {
           </tbody>
         </table>
 
-        <div class="mt-4 flex items-center gap-3">
+        <!-- 操作栏：吸附在内容区底部，属性值再多也不用滚到底才能保存 -->
+        <div class="sticky -bottom-4 z-10 mt-4 flex flex-wrap items-center gap-3 border-t border-slate-100 bg-white pb-3 pt-3 shadow-[0_-6px_16px_-12px_rgba(15,23,42,0.35)]">
           <Button v-permission="'product.update'" class="bg-[#1677ff] hover:bg-[#4096ff]" :disabled="saving || activeCategoryId == null" @click="save">
             <Save class="mr-1 h-4 w-4" /> {{ saving ? '保存中...' : '保存模板' }}
           </Button>
           <span v-if="message" class="text-[13px]" :class="message.includes('成功') ? 'text-[#2e9e57]' : 'text-red-500'">{{ message }}</span>
+          <span class="ml-auto text-xs text-slate-400">
+            <template v-if="activeCategoryLabel">当前分类：{{ activeCategoryLabel }} · </template>已选 {{ selectedCount }} 项
+          </span>
         </div>
       </div>
     </div>

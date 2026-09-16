@@ -164,6 +164,26 @@ describe('分类属性模板页（T-011）', () => {
     expect(catId).toBe(3)
     expect(attrs).toEqual([{ attribute_id: 11, is_required: false, sort: 1 }])
   })
+
+  // 属性库很长时，保存按钮需吸附在内容区底部，无需滚到底
+  it('「保存模板」操作栏吸附底部，并显示当前分类与已选数量', async () => {
+    const wrapper = mount(CategoryAttributeView, { global: globalCfg(freshPinia()) })
+    await flushPromises()
+
+    const saveBtn = wrapper.findAll('button').find((b) => b.text().includes('保存模板'))!
+    const bar = saveBtn.element.parentElement!
+    expect(bar.className).toContain('sticky')
+    // 用负的 bottom 偏移把吸附栏压到内容区最下沿（布局 <main> 有 p-4，
+    // 若用 bottom-0 会在栏下方留出 16px 让表格行露出来）
+    expect(bar.className).toMatch(/(^|\s)-bottom-\d/)
+    // 吸附栏需有不透明底色，否则表格行会穿透到按钮下面
+    expect(bar.className).toMatch(/bg-white/)
+
+    // 勾选一个属性后，计数同步
+    await wrapper.find('[data-testid="tmpl-attr-11"]').setValue(true)
+    expect(bar.textContent).toContain('已选 1 项')
+    expect(bar.textContent).toContain('当前分类')
+  })
 })
 
 // ---------- T-010 商品表单 ----------
