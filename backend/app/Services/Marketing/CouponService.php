@@ -4,17 +4,21 @@ namespace App\Services\Marketing;
 
 use App\Exceptions\BusinessException;
 use App\Models\Coupon;
+use App\Models\Promotion;
 use App\Models\UserCoupon;
+use App\Services\Marketing\Dto\OrderContext;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Facades\DB;
 
 /**
- * 优惠券服务（V1.1 二期 F06 / T-033，T-034 扩展金额分摊）
+ * 优惠券服务（V1.1 二期 F06 / T-033 领券，T-034 用券校验与金额分摊）
  *
  * 关键点：
  *  - 领取采用 **条件 UPDATE 原子防超发**：`issued_count = issued_count + 1 WHERE issued_count < total_count`，
  *    受影响行数为 0 即判定「已领完」；限领校验与之处于**同一事务**，避免并发绕过。
  *  - `expire_at` 在领取时按 `valid_type` 计算并固化，后续改券模板不影响已领券。
+ *  - **金额计算为纯函数**（`PricingCalculator` / `AmountAllocator`），本服务只负责
+ *    「模型 → 参数」「DB 边界（分类回库）」与「抛业务异常」，保证口径单一、可单测。
  */
 class CouponService
 {
@@ -153,6 +157,8 @@ class CouponService
     public function availableFor(int $userId, array $items, float $totalAmount): array
     {
         $now = now();
+        $ctx = $this->buildContext($items);
+        $fallbackTotal = round($totalAmount, 2);
 
         $userCoupons = UserCoupon::with('coupon')
             ->where('user_id', $userId)
@@ -175,7 +181,10 @@ class CouponService
                 continue;
             }
 
-            $base = $this->scopeBaseAmount($coupon, $items, $totalAmount);
+            // 门店上下文优先按行项目命中金额；无行项目时对全场券回退到总金额
+            $base = ($ctx->lines === [] && $coupon->scope === Coupon::SCOPE_ALL)
+                ? $fallbackTotal
+                : $ctx->scopeBaseAmount($coupon->scope, $coupon->scope_refs ?? []);
 
             if ($coupon->scope !== Coupon::SCOPE_ALL && $base <= 0) {
                 $unusable[] = $this->briefUnusable($uc, '适用范围不符');
@@ -217,20 +226,116 @@ class CouponService
      */
     public function couponDiscount(Coupon $coupon, float $base): float
     {
-        if ($base <= 0) {
-            return 0.0;
+        return PricingCalculator::couponDiscount($this->couponModelParams($coupon), $base);
+    }
+
+    /**
+     * 满减优惠额（按活动命中金额取最优梯度）
+     *
+     * @param  float  $base  活动命中范围的原始金额
+     */
+    public function promotionDiscount(Promotion $promotion, float $base): float
+    {
+        return PricingCalculator::promotionDiscount($promotion->rules ?? [], $base);
+    }
+
+    /**
+     * 校验用户券可用于给定订单上下文（T-034）
+     *
+     * 校验项：状态 unused、未过期、券模板仍启用、门槛满足、适用范围命中。
+     * 任一不满足抛出业务冲突（40009 / HTTP 409），message 即为不可用原因。
+     *
+     * @throws BusinessException
+     */
+    public function validateUse(UserCoupon $uc, OrderContext $ctx): void
+    {
+        $reason = $this->usabilityReason($uc, $ctx);
+        if ($reason !== null) {
+            throw BusinessException::conflict($reason);
+        }
+    }
+
+    /**
+     * 返回不可用原因（null = 可用）；供可用券列表与下单校验共用同一口径
+     */
+    public function usabilityReason(UserCoupon $uc, OrderContext $ctx): ?string
+    {
+        if ($uc->status !== UserCoupon::STATUS_UNUSED) {
+            return '优惠券已使用或不可用';
+        }
+        if ($uc->isExpired()) {
+            return '优惠券已过期';
         }
 
-        if ($coupon->type === Coupon::TYPE_FIXED) {
-            return round(min((float) $coupon->amount, $base), 2);
+        $coupon = $uc->coupon;
+        if (! $coupon) {
+            return '优惠券不存在或已失效';
+        }
+        if ($coupon->status !== Coupon::STATUS_ACTIVE) {
+            return '优惠券已停止使用';
         }
 
-        $discount = round($base * (100 - (int) $coupon->percent) / 100, 2);
-        if ($coupon->max_discount !== null) {
-            $discount = min($discount, (float) $coupon->max_discount);
+        $base = $ctx->scopeBaseAmount($coupon->scope, $coupon->scope_refs ?? []);
+        if ($coupon->scope !== Coupon::SCOPE_ALL && $base <= 0) {
+            return '订单中没有适用该优惠券的商品';
+        }
+        if (round($base, 2) < round((float) $coupon->min_spend, 2)) {
+            return '未达到优惠券使用门槛';
         }
 
-        return round(min($discount, $base), 2);
+        return null;
+    }
+
+    /**
+     * 计算订单金额明细（T-034）：券 + 满减 → 分摊 → `orders.amount_details` 结构
+     *
+     * **纯计算**，不落库；落库与状态流转由 T-035 在下单事务内完成。
+     *
+     * @return array<string, mixed>
+     */
+    public function priceOrder(OrderContext $ctx, ?UserCoupon $uc = null, ?Promotion $promotion = null): array
+    {
+        return PricingCalculator::price($ctx, $this->couponParams($uc), $this->promotionParams($promotion));
+    }
+
+    /**
+     * 用券中心/结算上下文构造：把缺失的分类 id 回库补全（DB 边界），其余为纯计算
+     *
+     * @param  array<int, array<string, mixed>>  $items
+     */
+    public function buildContext(array $items, float|string $freightAmount = 0.0): OrderContext
+    {
+        $normalized = [];
+        $needLookup = [];
+
+        foreach (array_values($items) as $i => $item) {
+            $pid = isset($item['product_id']) ? (int) $item['product_id'] : null;
+            $normalized[$i] = [
+                'product_id' => $pid,
+                'sku_id' => isset($item['sku_id']) ? (int) $item['sku_id'] : null,
+                'category_id' => isset($item['category_id']) ? (int) $item['category_id'] : null,
+                'price' => $item['price'] ?? 0,
+                'quantity' => $item['quantity'] ?? 0,
+            ];
+
+            if ($normalized[$i]['category_id'] === null && $pid !== null) {
+                $needLookup[] = $pid;
+            }
+        }
+
+        if ($needLookup !== []) {
+            $map = DB::table('products')->whereIn('id', array_unique($needLookup))->pluck('category_id', 'id');
+            foreach ($normalized as $i => $row) {
+                if ($row['category_id'] === null && $row['product_id'] !== null) {
+                    $cid = $map->get($row['product_id']);
+                    if ($cid !== null) {
+                        $normalized[$i]['category_id'] = (int) $cid;
+                    }
+                }
+            }
+        }
+
+        return new OrderContext($normalized, $freightAmount);
     }
 
     /** 批量过期：unused 且 expire_at < now → expired（分批） */
@@ -273,78 +378,51 @@ class CouponService
     }
 
     /**
-     * 券适用范围命中金额
+     * 用户券 → 计算器券参数（含 user_coupon_id）；券模板已删则返回 null
      *
-     * @param  array<int, array{product_id?: int, category_id?: int, price: float|string, quantity: int}>  $items
+     * @return array<string, mixed>|null
      */
-    private function scopeBaseAmount(Coupon $coupon, array $items, float $totalAmount): float
+    public function couponParams(?UserCoupon $uc): ?array
     {
-        // 归一化行金额
-        $lines = array_map(fn ($i) => [
-            'product_id' => isset($i['product_id']) ? (int) $i['product_id'] : null,
-            'price' => (float) ($i['price'] ?? 0),
-            'quantity' => (int) ($i['quantity'] ?? 1),
-        ], $items);
-
-        if ($coupon->scope === Coupon::SCOPE_ALL) {
-            return $lines !== []
-                ? round(array_sum(array_map(fn ($l) => $l['price'] * $l['quantity'], $lines)), 2)
-                : round($totalAmount, 2);
+        if (! $uc || ! $uc->coupon) {
+            return null;
         }
 
-        $refs = array_map('intval', $coupon->scope_refs ?? []);
-        if ($coupon->scope === Coupon::SCOPE_PRODUCT) {
-            $matched = array_filter($lines, fn ($l) => $l['product_id'] !== null && in_array($l['product_id'], $refs, true));
-        } else {
-            // category：按商品归类判定（缺省 category_id 时回库查询）
-            $categoryOf = $this->resolveCategoryMap($lines, $items);
-            $matched = array_filter($lines, function ($l) use ($refs, $categoryOf) {
-                if ($l['product_id'] === null) {
-                    return false;
-                }
-                $cid = $categoryOf[$l['product_id']] ?? null;
+        return $this->couponModelParams($uc->coupon) + ['user_coupon_id' => $uc->id];
+    }
 
-                return $cid !== null && in_array((int) $cid, $refs, true);
-            });
-        }
-
-        if ($matched === []) {
-            return 0.0;
-        }
-
-        return round(array_sum(array_map(fn ($l) => $l['price'] * $l['quantity'], $matched)), 2);
+    /** 券模板 → 计算器券参数 */
+    private function couponModelParams(Coupon $coupon): array
+    {
+        return [
+            'id' => $coupon->id,
+            'type' => $coupon->type,
+            'amount' => $coupon->amount !== null ? (float) $coupon->amount : null,
+            'percent' => $coupon->percent !== null ? (int) $coupon->percent : null,
+            'max_discount' => $coupon->max_discount !== null ? (float) $coupon->max_discount : null,
+            'min_spend' => (float) $coupon->min_spend,
+            'scope' => $coupon->scope,
+            'scope_refs' => $coupon->scope_refs ?? [],
+        ];
     }
 
     /**
-     * 解析 items 中商品 → 分类 id（优先使用入参 category_id，缺失则查库）
+     * 满减活动 → 计算器活动参数
      *
-     * @return array<int, int>
+     * @return array<string, mixed>|null
      */
-    private function resolveCategoryMap(array $lines, array $rawItems): array
+    public function promotionParams(?Promotion $promotion): ?array
     {
-        $map = [];
-        $needLookup = [];
-
-        foreach ($lines as $idx => $l) {
-            if ($l['product_id'] === null) {
-                continue;
-            }
-            $inline = $rawItems[$idx]['category_id'] ?? null;
-            if ($inline !== null) {
-                $map[$l['product_id']] = (int) $inline;
-            } else {
-                $needLookup[] = $l['product_id'];
-            }
+        if (! $promotion) {
+            return null;
         }
 
-        if ($needLookup !== []) {
-            $rows = DB::table('products')->whereIn('id', array_unique($needLookup))->pluck('category_id', 'id');
-            foreach ($rows as $pid => $cid) {
-                $map[(int) $pid] = (int) $cid;
-            }
-        }
-
-        return $map;
+        return [
+            'id' => $promotion->id,
+            'rules' => $promotion->rules ?? [],
+            'scope' => $promotion->scope,
+            'scope_refs' => $promotion->scope_refs ?? [],
+        ];
     }
 
     /** @return array<string, mixed> */
