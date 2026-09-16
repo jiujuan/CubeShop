@@ -4,6 +4,8 @@
 >
 > 适用版本：Laravel 13 + PHP 8.3（后端）、Vue 3 + Vite（web / admin）。
 
+> **错误码注记**：本文原稿多处将「余额不足 / 充值超限 / 渠道未启用」等校验失败写作 `40010`，系早期笔误；系统实际统一返回 **`40000`**（`BusinessException::badRequest`）。**一律以 `docs/design/CubeShop_API_v1.0.md` §1.3 为准**；下文中标注「实际 40000」处即指此。
+
 ---
 
 ## 1. 结论先行：五个关键设计决策
@@ -378,7 +380,7 @@ CREATE TABLE balance_recharges (
 |---|---|---|---|
 | **微信（Native 扫码）** | 后端调 `WechatGw::create()` 拿 `code_url` → 前端渲染二维码（用现有 `QrCode` 占位替换为真实二维码渲染，建议 `qrcode.vue` 组件或后端生成 SVG） | 前端 2s 轮询 `GET /payments/{no}`；**另由服务端主动查单补偿**（见 §7.2） | 超时关单后支付 → 原路退款 |
 | **支付宝（PC 网站支付）** | 后端返回 `form_html`（自动提交表单）或 `pay_url`，前端跳转 | 前端回跳 `return_url` → 结果页轮询兜底；回调优先 | 同上 |
-| **余额** | `BalanceGw::create()` 在**同一事务内**完成：行锁 `user_balances` → 校验余额 ≥ 应付 → 扣减 → 写 `user_balance_logs(consume)` → 支付单直接置 `success` → 订单 `paid` | 同步返回，无需轮询 | 余额不足返回 `40010 余额不足`；并发支付用行锁 + 版本号防超扣 |
+| **余额** | `BalanceGw::create()` 在**同一事务内**完成：行锁 `user_balances` → 校验余额 ≥ 应付 → 扣减 → 写 `user_balance_logs(consume)` → 支付单直接置 `success` → 订单 `paid` | 同步返回，无需轮询 | 余额不足返回 `40010 余额不足`（实际 `40000`）；并发支付用行锁 + 版本号防超扣 |
 | **线下转账** | 用户填付款人/账号/流水号/转账时间 + 上传凭证 → `POST /payments {channel:'offline', extra:{...}}` → 支付单 `reviewing`，**不驱动订单状态** | 后台 `[核账]`：通过 → `success` + 订单 `paid` + 写 `order_logs`；驳回 → `failed` + 凭证与备注保留，用户可重新提交 | 驳回后订单仍 `pending_payment`，可换渠道重付 |
 
 ### 6.3 `PayParams` 标准化返回（前端按 `type` 分支渲染）
@@ -409,9 +411,9 @@ type PayParams =
 ```
 
 校验顺序（沿用现有风格，抛 `BusinessException`）：
-1. 订单存在且属于当前用户 → 40404
+1. 订单存在且属于当前用户 → 40404（实际 `40004`）
 2. 订单 `pending_payment` → 40009
-3. 渠道已启用（读 `payment_channels` + `system_configs` 总开关）→ 40010
+3. 渠道已启用（读 `payment_channels` + `system_configs` 总开关）→ 40010（实际 `40000`）
 4. 未超时（`created_at + order.timeout_minutes`）→ 40009（超时由调度任务统一取消，此为兜底）
 5. 渠道专属校验（余额是否足够 / 凭证字段是否完整）
 
@@ -429,7 +431,7 @@ type PayParams =
 
 服务端处理（`BalanceRechargeService::create()`）：
 
-1. 校验：登录态、金额 ∈ [`recharge_min_amount`, `recharge_max_single`]、单日累计 ≤ `recharge_max_daily` → 超限 40010
+1. 校验：登录态、金额 ∈ [`recharge_min_amount`, `recharge_max_single`]、单日累计 ≤ `recharge_max_daily` → 超限 40010（实际 `40000`）
 2. 命中赠送规则 → 计算 `gift_amount`
 3. 建 `balance_recharges`（`status=pending`，`expired_at = now + recharge_timeout_minutes`）
 4. 建 `payments`（`biz_type=recharge`、`biz_no=recharge_no`、`order_id=null`），回填 `recharge.payment_id`
@@ -548,17 +550,17 @@ Schedule::command('payments:cancel-timeout')->everyMinute()->withoutOverlapping(
 - 各网关 `create()` 返回 `PayParams` 类型正确（微信为 `qrcode`、支付宝为 `form/redirect`、余额为 `direct`、线下为 `voucher`）
 
 **集成测试（Pest Feature，真实 HTTP + 中间件 + DB）**
-- 未启用渠道发起支付 → 40010；未登录 → 401；他人订单 → 404
+- 未启用渠道发起支付 → 40010（实际 `40000`）；未登录 → 401；他人订单 → 404
 - 微信 Mock 全流程：建单 → 回调成功 → 订单 `paid` + 库存确认扣减 + `order_logs` 写入
 - 回调验签失败 / 金额不一致 / 重复回调幂等
-- 余额支付：扣款 + 流水 + 订单 `paid`；余额不足 40010
+- 余额支付：扣款 + 流水 + 订单 `paid`；余额不足 40010（实际 `40000`）
 - 线下转账：提交 → `reviewing` → 后台核账通过 → `paid`；驳回 → `failed` 且订单回到 `pending_payment`
 - 渠道切换时旧 pending 单被关闭
 - 主动查单补偿：模拟回调丢失后 `POST /payments/{no}/sync` 命中成功
 - 超时关单命令：超时候订单 `cancelled` + 支付单 `closed` + 库存回滚；充值单超时 → `closed` 且不入账
 - 权限：运营无 `payment.channel.manage` 时配置接口 403；`payment.offline.review` 控制核账
 - **充值链路**：下单 → Mock 支付成功 → 余额 `+= amount + gift`、流水 `recharge` 写入、`recharge.status=success`；`scene=recharge` 渠道列表不含 balance
-- **充值风控**：低于 `recharge_min_amount`、高于 `recharge_max_single`、单日累计超 `recharge_max_daily` 均 40010
+- **充值风控**：低于 `recharge_min_amount`、高于 `recharge_max_single`、单日累计超 `recharge_max_daily` 均 40010（实际 `40000`）
 - **充值核账**：线下充值 `reviewing` → 后台通过 → 入账；驳回 → `failed` 不入账
 
 **前端测试（Vitest）**
