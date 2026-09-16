@@ -95,7 +95,7 @@ const todos = computed(() => {
   const p = overview.value?.pending
   if (!p) return []
   return [
-    { key: 'ship', label: '待发货', value: p.ship, path: '/orders?status=paid', tone: 'text-orange-500 bg-orange-50', icon: PackageCheck },
+    { key: 'ship', label: '待发货', value: p.ship, path: '/orders?status=pending_ship', tone: 'text-orange-500 bg-orange-50', icon: PackageCheck },
     { key: 'refund', label: '待处理退款', value: p.refund, path: '/refunds', tone: 'text-red-500 bg-red-50', icon: RotateCcw },
     { key: 'review', label: '待审核评价', value: p.review, path: '/reviews?status=pending', tone: 'text-[#1677ff] bg-blue-50', icon: MessageSquare },
     { key: 'stock', label: '库存预警', value: p.stock_warning, path: '/products', tone: 'text-amber-600 bg-amber-50', icon: AlertTriangle },

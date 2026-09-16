@@ -14,6 +14,7 @@ class Order extends Model
     /** 订单状态（API 文档 10） */
     public const STATUS_PENDING_PAYMENT = 'pending_payment';
     public const STATUS_PAID = 'paid';
+    public const STATUS_PENDING_SHIP = 'pending_ship';
     public const STATUS_SHIPPED = 'shipped';
     public const STATUS_COMPLETED = 'completed';
     public const STATUS_CANCELLED = 'cancelled';
@@ -22,10 +23,17 @@ class Order extends Model
 
     /**
      * 状态机：允许的状态流转（Roadmap P4 / API 文档 10）
+     *
+     * 履约主链路：待支付 → 已支付 → 待发货 → 已发货 → 已完成
+     * - `paid`（已支付）：货款到账。线上/线下支付成功后由系统写入；
+     * - `pending_ship`（待发货）：已进入发货队列。默认由系统在支付成功后**自动**流转，
+     *   异常滞留（如自动流转失败、退款被驳回回流到 paid）时由后台「受理备货」手动推进；
+     * - `paid → shipped` 不再直达，必须先落到 `pending_ship`，保证发货队列口径唯一。
      */
     public const TRANSITIONS = [
         self::STATUS_PENDING_PAYMENT => [self::STATUS_PAID, self::STATUS_CANCELLED],
-        self::STATUS_PAID => [self::STATUS_SHIPPED, self::STATUS_REFUNDING, self::STATUS_CANCELLED],
+        self::STATUS_PAID => [self::STATUS_PENDING_SHIP, self::STATUS_REFUNDING, self::STATUS_CANCELLED],
+        self::STATUS_PENDING_SHIP => [self::STATUS_SHIPPED, self::STATUS_REFUNDING, self::STATUS_CANCELLED],
         self::STATUS_SHIPPED => [self::STATUS_COMPLETED, self::STATUS_REFUNDING],
         self::STATUS_COMPLETED => [self::STATUS_REFUNDING],
         self::STATUS_REFUNDING => [self::STATUS_REFUNDED, self::STATUS_PAID],
@@ -37,6 +45,7 @@ class Order extends Model
     public const STATUS_LABELS = [
         self::STATUS_PENDING_PAYMENT => '待支付',
         self::STATUS_PAID => '已支付',
+        self::STATUS_PENDING_SHIP => '待发货',
         self::STATUS_SHIPPED => '已发货',
         self::STATUS_COMPLETED => '已完成',
         self::STATUS_CANCELLED => '已取消',
@@ -52,7 +61,8 @@ class Order extends Model
     public const TAB_STATUS_MAP = [
         'all' => null,
         'pending_payment' => [self::STATUS_PENDING_PAYMENT],
-        'pending_ship' => [self::STATUS_PAID],
+        // 买家视角不区分「已支付 / 待发货」：两者对买家都是「已付款、等发货」
+        'pending_ship' => [self::STATUS_PAID, self::STATUS_PENDING_SHIP],
         'pending_receive' => [self::STATUS_SHIPPED],
         'pending_review' => [self::STATUS_COMPLETED],
         'after_sale' => [self::STATUS_REFUNDING, self::STATUS_REFUNDED],
@@ -129,7 +139,7 @@ class Order extends Model
             'can_pay' => $this->status === self::STATUS_PENDING_PAYMENT,
             'can_cancel' => $this->status === self::STATUS_PENDING_PAYMENT,
             'can_confirm' => $this->status === self::STATUS_SHIPPED,
-            'can_refund' => in_array($this->status, [self::STATUS_PAID, self::STATUS_SHIPPED, self::STATUS_COMPLETED], true),
+            'can_refund' => in_array($this->status, [self::STATUS_PAID, self::STATUS_PENDING_SHIP, self::STATUS_SHIPPED, self::STATUS_COMPLETED], true),
             'can_review' => $this->status === self::STATUS_COMPLETED,
             // 再次购买对任何历史订单都可用（失效行由后端逐行跳过并返回原因）
             'can_rebuy' => true,

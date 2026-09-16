@@ -195,6 +195,36 @@ class OrderService
     }
 
     /**
+     * 受理备货：已支付 → 待发货（进入发货队列）
+     *
+     * 两条触发路径：
+     * - **系统自动**：支付成功后由 PaymentService 立即调用（默认路径，订单不会停留在「已支付」）；
+     * - **后台手动**：订单滞留「已支付」（自动流转失败、退款被驳回回流 refunding → paid）时，
+     *   运营在订单管理页点「受理备货」兜底。
+     *
+     * 幂等：已是待发货时直接返回，不重复写流水。
+     */
+    public function acceptForShipment(
+        Order $order,
+        ?int $operatorId = null,
+        string $operatorType = OrderLog::OPERATOR_SYSTEM,
+        ?string $reason = null,
+    ): Order {
+        if ($order->status === Order::STATUS_PENDING_SHIP) {
+            return $order;
+        }
+
+        return $this->transitionTo(
+            $order,
+            Order::STATUS_PENDING_SHIP,
+            $reason ?? '订单进入发货队列',
+            'order',
+            $operatorId,
+            $operatorType,
+        );
+    }
+
+    /**
      * 再次购买（V1.1 E02-D / T-004）
      *
      * 按历史订单行项目批量加入购物车：

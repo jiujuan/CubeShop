@@ -6,6 +6,7 @@ import type { ApiResult } from './request'
 export type OrderStatus =
   | 'pending_payment'
   | 'paid'
+  | 'pending_ship'
   | 'shipped'
   | 'completed'
   | 'cancelled'
@@ -76,6 +77,16 @@ export function getOrder(id: number) {
 
 export function shipOrder(id: number, remark?: string) {
   return request.post<ApiResult<AdminOrder>>(`/admin/orders/${id}/ship`, { remark })
+}
+
+/**
+ * 受理备货（paid → pending_ship）
+ *
+ * 正常路径由系统在支付成功后自动流转到「待发货」；本操作是异常滞留订单
+ * （自动流转失败、退款被驳回回流到「已支付」）的人工兜底。
+ */
+export function acceptOrder(id: number, remark?: string) {
+  return request.post<ApiResult<AdminOrder>>(`/admin/orders/${id}/accept`, { remark })
 }
 
 /** 订单导出（CSV，Excel 可直接打开） */
@@ -176,9 +187,16 @@ export function getDashboard() {
   return request.get<ApiResult<DashboardData>>('/admin/dashboard')
 }
 
+/**
+ * 订单状态标签（与后端 `Order::STATUS_LABELS` 一一对应）
+ *
+ * 键顺序即后台订单管理页的 Tab / 筛选下拉顺序（履约主链路）：
+ * 待支付 → 已支付 → 待发货 → 已发货 → 已完成 → 已取消 → 退款中 → 已退款
+ */
 export const ORDER_STATUS_LABELS: Record<OrderStatus, string> = {
   pending_payment: '待支付',
   paid: '已支付',
+  pending_ship: '待发货',
   shipped: '已发货',
   completed: '已完成',
   cancelled: '已取消',
@@ -186,22 +204,10 @@ export const ORDER_STATUS_LABELS: Record<OrderStatus, string> = {
   refunded: '已退款',
 }
 
-/**
- * 订单管理页（后台）状态标签：运营视角把 paid 呈现为「待发货」
- *
- * - 与买家端 `Order::TAB_LABELS.pending_ship`（= paid）语义一致，后台发货是运营的主任务队列；
- * - 仅用于订单管理页的 Tab / 筛选下拉 / 状态徽标，**不改动** `ORDER_STATUS_LABELS`
- *   （订单流水页 OrderLogView 的审计语义仍保留「已支付」）；
- * - 后端 `status_label` 仍返回「已支付」，前端展示以此表为准。
- */
-export const ORDER_TAB_LABELS: Record<OrderStatus, string> = {
-  ...ORDER_STATUS_LABELS,
-  paid: '待发货',
-}
-
 export const ORDER_STATUS_CLASS: Record<OrderStatus, string> = {
   pending_payment: 'bg-orange-100 text-orange-500',
   paid: 'bg-blue-100 text-blue-500',
+  pending_ship: 'bg-amber-100 text-amber-600',
   shipped: 'bg-cyan-100 text-cyan-600',
   completed: 'bg-green-100 text-green-600',
   cancelled: 'bg-slate-100 text-slate-500',

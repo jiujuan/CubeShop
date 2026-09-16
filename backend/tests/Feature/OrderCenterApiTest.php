@@ -78,15 +78,17 @@ test('TC-CENTER-001 各分组 Tab 返回数量正确', function () {
     seedOrder($this->userId, Order::STATUS_PENDING_PAYMENT);
     seedOrder($this->userId, Order::STATUS_PENDING_PAYMENT);
     seedOrder($this->userId, Order::STATUS_PAID);
+    seedOrder($this->userId, Order::STATUS_PENDING_SHIP);
     seedOrder($this->userId, Order::STATUS_SHIPPED);
     seedOrder($this->userId, Order::STATUS_COMPLETED);
     seedOrder($this->userId, Order::STATUS_REFUNDING);
     seedOrder($this->userId, Order::STATUS_CANCELLED);
 
     $expect = [
-        'all' => 7,
+        'all' => 8,
         'pending_payment' => 2,
-        'pending_ship' => 1,
+        // 「待发货」对买家不区分已支付/待发货：paid + pending_ship 合并展示
+        'pending_ship' => 2,
         'pending_receive' => 1,
         'pending_review' => 1,
         'after_sale' => 1,

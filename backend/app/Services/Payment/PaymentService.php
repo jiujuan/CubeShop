@@ -6,6 +6,7 @@ use App\Events\OrderPaid;
 use App\Exceptions\BusinessException;
 use App\Models\BalanceRecharge;
 use App\Models\Order;
+use App\Models\OrderLog;
 use App\Models\Payment;
 use App\Models\PaymentChannel;
 use App\Models\PaymentLog;
@@ -512,7 +513,15 @@ class PaymentService
                     }
                 }
 
-                $this->orders->transitionTo($order, Order::STATUS_PAID, null, 'order');
+                $order = $this->orders->transitionTo($order, Order::STATUS_PAID, null, 'order');
+
+                // 支付成功即进入发货队列（已支付 → 待发货），正常路径无需运营手工受理
+                $this->orders->acceptForShipment(
+                    $order,
+                    operatorType: OrderLog::OPERATOR_SYSTEM,
+                    reason: '支付成功，系统自动受理进入发货队列',
+                );
+
                 $paidOrder = $order;
 
                 return;

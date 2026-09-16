@@ -63,7 +63,7 @@ class OrderController extends Controller
     }
 
     /**
-     * 发货（paid → shipped，权限 order.ship）
+     * 发货（pending_ship → shipped，权限 order.ship）
      * POST /admin/orders/{id}/ship  body: { remark? }
      */
     public function ship(Request $request, int $id): JsonResponse
@@ -90,6 +90,34 @@ class OrderController extends Controller
         event(new \App\Events\OrderShipped($order));
 
         return $this->success($this->detail($order->load('items')), '发货成功');
+    }
+
+    /**
+     * 受理备货（paid → pending_ship，权限 order.ship）
+     * POST /admin/orders/{id}/accept  body: { remark? }
+     *
+     * 正常路径由系统在支付成功后自动流转到「待发货」；本接口是异常滞留订单
+     * （自动流转失败、退款被驳回回流到「已支付」）的人工兜底。
+     */
+    public function accept(Request $request, int $id): JsonResponse
+    {
+        $data = $request->validate([
+            'remark' => ['nullable', 'string', 'max:200'],
+        ]);
+
+        $order = Order::query()->find($id);
+        if (! $order) {
+            throw BusinessException::notFound('订单不存在');
+        }
+
+        $order = $this->orders->acceptForShipment(
+            $order,
+            $request->user()->id,
+            \App\Models\OrderLog::OPERATOR_ADMIN,
+            $data['remark'] ?? '商家受理备货',
+        );
+
+        return $this->success($this->detail($order->load('items')), '订单已进入发货队列');
     }
 
     /**

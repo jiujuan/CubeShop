@@ -79,20 +79,31 @@ test('TC-LIFE-001 下单产生创建流水且操作人为 user', function () {
         ->and($logs[0]->operator_id)->not->toBeNull();
 });
 
-// T-001：完整链路流水顺序与操作人类型
+// T-001：完整链路流水顺序与操作人类型（支付成功 → 系统自动受理待发货 → 商家发货）
 test('TC-LIFE-002 支付与发货各写一条流水且顺序正确', function () {
     $orderId = makeShippedOrder($this);
 
     $logs = OrderLog::where('order_id', $orderId)->orderBy('id')->get();
 
     expect($logs->pluck('to_status')->all())
-        ->toBe([Order::STATUS_PENDING_PAYMENT, Order::STATUS_PAID, Order::STATUS_SHIPPED])
+        ->toBe([
+            Order::STATUS_PENDING_PAYMENT,
+            Order::STATUS_PAID,
+            Order::STATUS_PENDING_SHIP,
+            Order::STATUS_SHIPPED,
+        ])
         ->and($logs->pluck('from_status')->all())
-        ->toBe([null, Order::STATUS_PENDING_PAYMENT, Order::STATUS_PAID]);
+        ->toBe([
+            null,
+            Order::STATUS_PENDING_PAYMENT,
+            Order::STATUS_PAID,
+            Order::STATUS_PENDING_SHIP,
+        ]);
 
-    // 支付为系统（渠道回调），发货为 admin
+    // 支付与自动受理为系统（渠道回调），发货为 admin
     expect($logs[1]->operator_type)->toBe(OrderLog::OPERATOR_SYSTEM)
-        ->and($logs[2]->operator_type)->toBe(OrderLog::OPERATOR_ADMIN);
+        ->and($logs[2]->operator_type)->toBe(OrderLog::OPERATOR_SYSTEM)
+        ->and($logs[3]->operator_type)->toBe(OrderLog::OPERATOR_ADMIN);
 });
 
 // T-002：确认收货成功
@@ -258,9 +269,11 @@ test('TC-LIFE-015 订单详情返回状态流水', function () {
     $detail = $this->getJson("/api/orders/{$orderId}", $this->userAuth)->json('data');
 
     expect($detail)->toHaveKey('logs')
-        ->and($detail['logs'])->toHaveCount(3)
-        ->and($detail['logs'][2]['to_status'])->toBe(Order::STATUS_SHIPPED)
-        ->and($detail['logs'][2]['to_status_label'])->toBe('已发货');
+        ->and($detail['logs'])->toHaveCount(4)
+        ->and($detail['logs'][2]['to_status'])->toBe(Order::STATUS_PENDING_SHIP)
+        ->and($detail['logs'][2]['to_status_label'])->toBe('待发货')
+        ->and($detail['logs'][3]['to_status'])->toBe(Order::STATUS_SHIPPED)
+        ->and($detail['logs'][3]['to_status_label'])->toBe('已发货');
 });
 
 // T-001：回填命令幂等

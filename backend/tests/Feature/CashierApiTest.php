@@ -81,7 +81,7 @@ test('余额不足时余额支付被拒（40000）', function () {
         ->and(Order::where('order_no', $this->order['order_no'])->value('status'))->toBe(Order::STATUS_PENDING_PAYMENT);
 });
 
-/** 余额充足：同步扣款、入账流水、订单转 paid */
+/** 余额充足：同步扣款、入账流水、订单转待发货 */
 test('余额充足时余额支付成功并扣减余额', function () {
     app(BalanceService::class)->credit($this->userId, '500.00');
 
@@ -92,7 +92,7 @@ test('余额充足时余额支付成功并扣减余额', function () {
 
     expect($resp->json('code'))->toBe(0)
         ->and($resp->json('data.status'))->toBe(Payment::STATUS_SUCCESS)
-        ->and(Order::where('order_no', $this->order['order_no'])->value('status'))->toBe(Order::STATUS_PAID)
+        ->and(Order::where('order_no', $this->order['order_no'])->value('status'))->toBe(Order::STATUS_PENDING_SHIP)
         ->and((string) UserBalance::where('user_id', $this->userId)->value('balance'))->toBe(bcsub('500.00', (string) $this->order['pay_amount'], 2))
         ->and(UserBalanceLog::where('user_id', $this->userId)->where('type', UserBalanceLog::TYPE_CONSUME)->exists())->toBeTrue();
 });

@@ -14,7 +14,7 @@ use Illuminate\Support\Facades\DB;
  * 经营报表聚合服务（V1.1 F03 / T-020）
  *
  * ── 统计口径（全站唯一，任何改动须同步 V1.0 仪表盘与文档）──
- * 1. 销售额：订单状态 ∈ {paid, shipped, completed, refunding}，按 `paid_at` 归属日期；
+ * 1. 销售额：订单状态 ∈ {paid, pending_ship, shipped, completed, refunding}，按 `paid_at` 归属日期；
  *    - 已取消（cancelled）不计入；
  *    - 已退款（refunded）不计入（款已退回）；
  *    - 退款中（refunding）计入（款尚未退回，属在途收入）。
@@ -26,9 +26,14 @@ use Illuminate\Support\Facades\DB;
  */
 class ReportService
 {
-    /** 计入销售额的订单状态 */
+    /**
+     * 计入销售额的订单状态
+     *
+     * 注意：`pending_ship` 是支付成功后订单的**常驻**状态，缺了它销售额会凭空少一大截。
+     */
     public const SALES_STATUSES = [
         Order::STATUS_PAID,
+        Order::STATUS_PENDING_SHIP,
         Order::STATUS_SHIPPED,
         Order::STATUS_COMPLETED,
         Order::STATUS_REFUNDING,
@@ -51,7 +56,7 @@ class ReportService
             'yesterday' => $yesterday,
             'last_7_days' => $last7,
             'pending' => [
-                'ship' => Order::where('status', Order::STATUS_PAID)->count(),
+                'ship' => Order::where('status', Order::STATUS_PENDING_SHIP)->count(),
                 'refund' => Order::where('status', Order::STATUS_REFUNDING)->count(),
                 'review' => Review::where('status', Review::STATUS_PENDING)->count(),
                 'stock_warning' => $this->stockWarningCount(),

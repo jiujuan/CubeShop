@@ -26,9 +26,10 @@ class UserController extends Controller
 {
     use ApiResponse;
 
-    /** 有效订单状态（用于消费统计） */
+    /** 有效订单状态（用于消费统计）：已支付 / 待发货 / 已发货 / 已完成 */
     private const PAID_STATUSES = [
         Order::STATUS_PAID,
+        Order::STATUS_PENDING_SHIP,
         Order::STATUS_SHIPPED,
         Order::STATUS_COMPLETED,
     ];

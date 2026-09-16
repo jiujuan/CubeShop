@@ -269,7 +269,7 @@ test('线下转账：核账通过驱动订单支付成功，驳回回到失败',
     $reviewed = $service->review($payment2, 1, true, '核对无误');
 
     expect($reviewed->status)->toBe(Payment::STATUS_SUCCESS)
-        ->and($order->fresh()->status)->toBe(Order::STATUS_PAID)
+        ->and($order->fresh()->status)->toBe(Order::STATUS_PENDING_SHIP)
         ->and(PaymentLog::where('event', PaymentLog::EVENT_REVIEW)->count())->toBe(2);
 });
 

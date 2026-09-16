@@ -285,7 +285,7 @@ CREATE TABLE IF NOT EXISTS orders (
     id               BIGSERIAL PRIMARY KEY,
     order_no         VARCHAR(32)    NOT NULL,
     user_id          BIGINT         NOT NULL REFERENCES sys_user(id),
-    status           VARCHAR(32)    NOT NULL,  -- pending_payment/paid/shipped/completed/cancelled/refunding/refunded
+    status           VARCHAR(32)    NOT NULL,  -- pending_payment/paid/pending_ship/shipped/completed/cancelled/refunding/refunded
     total_amount     DECIMAL(12,2)  NOT NULL DEFAULT 0,
     freight_amount   DECIMAL(12,2)  NOT NULL DEFAULT 0,
     pay_amount       DECIMAL(12,2)  NOT NULL DEFAULT 0,
@@ -305,7 +305,7 @@ CREATE INDEX idx_orders_user_status    ON orders (user_id, status);
 CREATE INDEX idx_orders_status_created ON orders (status, created_at);
 
 COMMENT ON TABLE  orders IS '订单主表';
-COMMENT ON COLUMN orders.status IS 'pending_payment/paid/shipped/completed/cancelled/refunding/refunded';
+COMMENT ON COLUMN orders.status IS 'pending_payment/paid/pending_ship/shipped/completed/cancelled/refunding/refunded';
 COMMENT ON COLUMN orders.address_snapshot IS '下单时收货地址快照 JSON';
 
 -- ------------------------------------------------------------

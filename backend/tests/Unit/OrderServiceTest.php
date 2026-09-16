@@ -121,7 +121,7 @@ test('订单状态机禁止非法流转', function () {
     app(OrderService::class)->transitionTo($order, Order::STATUS_COMPLETED);
 })->throws(App\Exceptions\BusinessException::class, '不允许变更');
 
-test('合法流转：待支付→已支付→已发货→已完成', function () {
+test('合法流转：待支付→已支付→待发货→已发货→已完成', function () {
     [$user, $sku, $address] = prepareCartContext();
     $service = app(OrderService::class);
     $order = $service->createFromCart($user->id, $address->id, null, null);
@@ -129,12 +129,25 @@ test('合法流转：待支付→已支付→已发货→已完成', function ()
     $order = $service->transitionTo($order, Order::STATUS_PAID);
     expect($order->status)->toBe(Order::STATUS_PAID)->and($order->paid_at)->not->toBeNull();
 
+    $order = $service->transitionTo($order, Order::STATUS_PENDING_SHIP);
+    expect($order->status)->toBe(Order::STATUS_PENDING_SHIP);
+
     $order = $service->transitionTo($order, Order::STATUS_SHIPPED);
     expect($order->status)->toBe(Order::STATUS_SHIPPED)->and($order->shipped_at)->not->toBeNull();
 
     $order = $service->transitionTo($order, Order::STATUS_COMPLETED);
     expect($order->status)->toBe(Order::STATUS_COMPLETED)->and($order->completed_at)->not->toBeNull();
 });
+
+// ORD-U-09 待发货是发货的唯一前置：已支付不可直接发货
+test('已支付订单不能跳过待发货直接变为已发货', function () {
+    [$user, $sku, $address] = prepareCartContext();
+    $service = app(OrderService::class);
+    $order = $service->createFromCart($user->id, $address->id, null, null);
+    $order = $service->transitionTo($order, Order::STATUS_PAID);
+
+    $service->transitionTo($order, Order::STATUS_SHIPPED);
+})->throws(App\Exceptions\BusinessException::class, '不允许变更');
 
 // ORD-U-06 取消订单：他人订单不可取消
 test('取消他人订单返回订单不存在', function () {
@@ -171,7 +184,7 @@ test('已支付订单不能被用户直接取消为已完成以外状态', funct
     $service->transitionTo($order, Order::STATUS_PAID);
 
     // paid → cancelled 在状态机中允许（退款等场景），但 cancel() 走同一状态机；
-    // 依据状态机定义 PAID => [SHIPPED, REFUNDING, CANCELLED]，paid 可取消属于设计允许
+    // 依据状态机定义 PAID => [PENDING_SHIP, REFUNDING, CANCELLED]，paid 可取消属于设计允许
     $cancelled = $service->cancel($order, $user->id);
     expect($cancelled->status)->toBe(Order::STATUS_CANCELLED);
 });

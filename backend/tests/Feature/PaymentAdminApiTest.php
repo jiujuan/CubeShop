@@ -130,7 +130,7 @@ test('TC-PAY-003 详情含订单摘要与支付日志时间轴', function () {
     $detail = $this->getJson('/api/admin/payments/'.$payment->id, $this->adminAuth)->json('data');
 
     expect($detail['order']['order_no'])->toBe($order['order_no'])
-        ->and($detail['order']['status'])->toBe(Order::STATUS_PAID)
+        ->and($detail['order']['status'])->toBe(Order::STATUS_PENDING_SHIP)
         ->and($detail['status_label'])->toBe('支付成功')
         ->and($detail['channel_trade_no'])->not->toBeNull();
 

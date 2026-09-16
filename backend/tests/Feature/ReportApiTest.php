@@ -135,7 +135,7 @@ test('TC-RPT-002 销售额口径：取消/已退款剔除，退款中计入', fu
 test('TC-RPT-003 待办聚合卡数值', function () {
     $u = reportBuyer();
     $today = now()->toDateTimeString();
-    seedReportOrder($u->id, Order::STATUS_PAID, '10.00', $today, $today);       // 待发货
+    seedReportOrder($u->id, Order::STATUS_PENDING_SHIP, '10.00', $today, $today);       // 待发货
     seedReportOrder($u->id, Order::STATUS_REFUNDING, '10.00', $today, $today);  // 待退款
 
     $pending = $this->getJson('/api/admin/reports/overview', $this->adminAuth)->json('data.pending');

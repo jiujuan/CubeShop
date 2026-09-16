@@ -58,7 +58,7 @@ const actions = computed(() => {
     can_pay: order.value?.status === 'pending_payment',
     can_cancel: order.value?.status === 'pending_payment',
     can_confirm: order.value?.status === 'shipped',
-    can_refund: ['paid', 'shipped', 'completed'].includes(order.value?.status ?? ''),
+    can_refund: ['paid', 'pending_ship', 'shipped', 'completed'].includes(order.value?.status ?? ''),
     can_review: order.value?.status === 'completed',
     can_rebuy: true,
   }
