@@ -17,3 +17,6 @@ Schedule::command('payments:sync-pending')->everyMinute()->withoutOverlapping();
 
 // 订单自动确认收货（V1.1 T-003）：每小时检查 shipped 超期订单
 Schedule::command('orders:auto-complete')->hourly()->withoutOverlapping();
+
+// 优惠券过期收敛（V1.1 二期 T-033 / T-037）：每小时把过期未用券置 expired
+Schedule::command('coupons:expire')->hourly()->withoutOverlapping();

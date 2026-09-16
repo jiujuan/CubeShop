@@ -36,6 +36,7 @@ use App\Http\Controllers\PaymentController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\ReviewController;
 use App\Http\Controllers\Storefront\AttributeController as StorefrontAttributeController;
+use App\Http\Controllers\Storefront\CouponController as StorefrontCouponController;
 use App\Http\Controllers\Storefront\ProductController as StorefrontProductController;
 use Illuminate\Support\Facades\Route;
 
@@ -62,6 +63,9 @@ Route::get('/brands', [StorefrontAttributeController::class, 'brands']);
 
 // 行政区划（V1.1 E04 / T-028，无需登录，可缓存）
 Route::get('/regions', [AddressController::class, 'regions']);
+
+// 领券中心（V1.1 二期 F06 / T-033，无需登录；登录后附带个人领取状态）
+Route::get('/coupons', [StorefrontCouponController::class, 'center']);
 
 // 认证：注册 / 登录 / 验证码 / 重置密码（带限流）
 Route::middleware('throttle:auth')->group(function () {
@@ -108,6 +112,11 @@ Route::middleware(['auth:sanctum', 'account.active'])->group(function () {
     Route::post('/orders/{orderId}/items/{itemId}/review', [OrderController::class, 'review']);
     Route::put('/reviews/{id}', [ReviewController::class, 'update']);
     Route::get('/me/reviews', [ReviewController::class, 'myReviews']);
+
+    // 优惠券（V1.1 二期 F06 / T-033）—— available 需先于 {id} 注册
+    Route::get('/coupons/available', [StorefrontCouponController::class, 'available']);
+    Route::post('/coupons/{id}/receive', [StorefrontCouponController::class, 'receive'])->middleware('throttle:coupon');
+    Route::get('/me/coupons', [StorefrontCouponController::class, 'my']);
 
     // 站内通知（V1.1 F02 / T-018 / T-019）
     Route::get('/me/notifications/unread-count', [NotificationController::class, 'unreadCount']);
