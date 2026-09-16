@@ -246,6 +246,7 @@
 4. 分类模板接口：`/admin/categories/{id}/attributes`（GET 当前模板、PUT 覆盖保存：`[{attribute_id, is_required, sort}]`）；保存时校验属性存在性。
 5. 前台只读接口：`GET /attributes?category_id=&filterable=1`（返回属性与其值，供筛选器与详情页参数表）、`GET /brands`（品牌列表）。
 6. 商品保存时的参数校验：`ProductController::store/update` 校验 `product_attribute_values` 的 `attribute_id` 属于该分类模板、必填属性不缺、值在 `attribute_values` 合法集合内（参数类允许自由文本时以 `attribute.allow_custom` 控制，若不做该字段则统一要求合法值）。
+   - **必填的提交渠道随属性类型而分（T-008 落地补充）**：`type=spec` 的规格属性由 `specs_selection` 勾选提交、落库进 `product_skus.specs`，**不会出现在 `attribute_values` 里**；旧结构链路则体现在 `skus[].specs` 的键名上。只有 `type=param` 的参数属性才以 `attribute_values` 判定必填。两者混用会导致「配了必填规格属性的分类永远保存不了」（报 40000「以下必填属性未填写：xxx」）。请求未带 `specs_selection`（历史数据回退旧表格）时无法表达规格维度，不做阻断。
 7. 删除属性/属性值时的引用校验：被商品或 SKU 规格引用时拒绝删除，返回引用数量。
 
 **测试要求**

@@ -514,6 +514,111 @@ test('TC-ATTR-026 旧结构更新：留空编码自动生成且不与软删历�
         ->and(ProductSku::where('product_id', $pid)->first()->specs)->toBe(['容量' => '750ml']);
 });
 
+// ---------- 必填属性：规格属性走 specs_selection，参数属性走 attribute_values ----------
+
+/**
+ * 造一个「必填规格属性 + 必填参数属性」的分类模板
+ *
+ * @return array{color: Attribute, c1: AttributeValue, c2: AttributeValue, size: Attribute, s1: AttributeValue, material: Attribute, mv: AttributeValue}
+ */
+function seedRequiredTemplate(int $categoryId): array
+{
+    $color = Attribute::create(['name' => '颜色', 'type' => 'spec', 'is_filterable' => true, 'is_multiple' => false, 'allow_custom' => false, 'sort' => 0]);
+    $c1 = AttributeValue::create(['attribute_id' => $color->id, 'value' => '白色', 'sort' => 0]);
+    $c2 = AttributeValue::create(['attribute_id' => $color->id, 'value' => '黑色', 'sort' => 0]);
+
+    $size = Attribute::create(['name' => '尺码', 'type' => 'spec', 'is_filterable' => true, 'is_multiple' => false, 'allow_custom' => false, 'sort' => 0]);
+    $s1 = AttributeValue::create(['attribute_id' => $size->id, 'value' => 'M', 'sort' => 0]);
+
+    $material = Attribute::create(['name' => '材质', 'type' => 'param', 'is_filterable' => false, 'is_multiple' => false, 'allow_custom' => false, 'sort' => 0]);
+    $mv = AttributeValue::create(['attribute_id' => $material->id, 'value' => '纯棉', 'sort' => 0]);
+
+    \App\Models\CategoryAttribute::create(['category_id' => $categoryId, 'attribute_id' => $color->id, 'is_required' => true, 'sort' => 30]);
+    \App\Models\CategoryAttribute::create(['category_id' => $categoryId, 'attribute_id' => $size->id, 'is_required' => true, 'sort' => 20]);
+    \App\Models\CategoryAttribute::create(['category_id' => $categoryId, 'attribute_id' => $material->id, 'is_required' => true, 'sort' => 10]);
+
+    return compact('color', 'c1', 'c2', 'size', 's1', 'material', 'mv');
+}
+
+test('TC-ATTR-027 必填「规格属性」由 specs_selection 满足，不再误报必填缺失', function () {
+    $t = seedRequiredTemplate($this->categoryId);
+
+    $resp = $this->postJson('/api/admin/products', [
+        'category_id' => $this->categoryId,
+        'title' => '必填规格商品',
+        'specs_selection' => [
+            ['attribute_id' => $t['color']->id, 'values' => [$t['c1']->id, $t['c2']->id]],
+            ['attribute_id' => $t['size']->id, 'values' => [$t['s1']->id]],
+        ],
+        'attribute_values' => [['attribute_id' => $t['material']->id, 'value' => '纯棉']],
+    ], $this->adminAuth)->json();
+
+    // 修复前：规格属性不在 attribute_values 中 → 40000「以下必填属性未填写：颜色、尺码」
+    expect($resp['code'])->toBe(0);
+    expect(ProductSku::where('product_id', $resp['data']['id'])->count())->toBe(2);
+});
+
+test('TC-ATTR-028 矩阵链路漏勾选必填规格属性 → 报缺失且点名该规格', function () {
+    $t = seedRequiredTemplate($this->categoryId);
+
+    $resp = $this->postJson('/api/admin/products', [
+        'category_id' => $this->categoryId,
+        'title' => '漏勾规格商品',
+        'specs_selection' => [
+            ['attribute_id' => $t['color']->id, 'values' => [$t['c1']->id]],
+        ],
+        'attribute_values' => [['attribute_id' => $t['material']->id, 'value' => '纯棉']],
+    ], $this->adminAuth)->json();
+
+    expect($resp['code'])->toBe(40000)
+        ->and($resp['message'])->toContain('尺码')
+        ->and($resp['message'])->not->toContain('颜色')
+        ->and($resp['message'])->not->toContain('材质');
+});
+
+test('TC-ATTR-029 必填「参数属性」仍以 attribute_values 为准', function () {
+    $t = seedRequiredTemplate($this->categoryId);
+
+    $resp = $this->postJson('/api/admin/products', [
+        'category_id' => $this->categoryId,
+        'title' => '漏填参数商品',
+        'specs_selection' => [
+            ['attribute_id' => $t['color']->id, 'values' => [$t['c1']->id]],
+            ['attribute_id' => $t['size']->id, 'values' => [$t['s1']->id]],
+        ],
+    ], $this->adminAuth)->json();
+
+    expect($resp['code'])->toBe(40000)->and($resp['message'])->toContain('材质');
+});
+
+test('TC-ATTR-030 旧表格链路：规格键名命中即视为已填，不因必填规格阻断', function () {
+    $t = seedRequiredTemplate($this->categoryId);
+
+    // 历史数据回退旧表格：没有 specs_selection，规格维度体现在 skus[].specs 的键名上
+    $resp = $this->postJson('/api/admin/products', [
+        'category_id' => $this->categoryId,
+        'title' => '旧表格商品',
+        'attribute_values' => [['attribute_id' => $t['material']->id, 'value' => '纯棉']],
+        'skus' => [
+            ['sku_code' => 'OLD-01', 'specs' => ['颜色' => '白色', '尺码' => 'M'], 'price' => '99.00', 'stock' => 1],
+        ],
+    ], $this->adminAuth)->json();
+
+    expect($resp['code'])->toBe(0);
+
+    // 旧表格里完全没写规格键名（历史脏数据）：无从表达维度，同样不阻断
+    $resp2 = $this->postJson('/api/admin/products', [
+        'category_id' => $this->categoryId,
+        'title' => '旧表格脏数据商品',
+        'attribute_values' => [['attribute_id' => $t['material']->id, 'value' => '纯棉']],
+        'skus' => [
+            ['sku_code' => 'OLD-02', 'specs' => ['规格' => '标准'], 'price' => '99.00', 'stock' => 1],
+        ],
+    ], $this->adminAuth)->json();
+
+    expect($resp2['code'])->toBe(0);
+});
+
 test('TC-ATTR-016 删除被 SKU 规格引用的属性被拒', function () {
     $attribute = Attribute::create(['name' => '被引用规格'.uniqid(), 'type' => 'spec', 'is_filterable' => false, 'is_multiple' => false, 'allow_custom' => false, 'sort' => 0]);
 

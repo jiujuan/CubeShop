@@ -460,6 +460,11 @@ function validate(): string {
 
   if (useMatrix.value) {
     if (!buildSelection().length) return '请至少勾选一个规格属性及其值'
+    // 必填规格属性：提交渠道是「规格勾选」（后端落在 SKU 的 specs 上，不进属性值表），提前拦截
+    const missSpecs = specAttributes.value
+      .filter((a) => a.is_required && !(specSelection.value[a.attribute_id] ?? []).length)
+      .map((a) => a.name)
+    if (missSpecs.length) return `请勾选必填规格属性：${missSpecs.join('、')}`
     if (!skuRows.value.length) return '规格组合生成失败，请调整规格勾选'
     if (matrixMeta.value && matrixMeta.value.total > matrixMeta.value.maxSkus) {
       return `将生成 ${matrixMeta.value.total} 个 SKU，超过上限 ${matrixMeta.value.maxSkus}，请减少规格值`
@@ -478,6 +483,13 @@ function validate(): string {
       if (Number(s.stock) < 0) return `第 ${i + 1} 行 SKU：库存不能为负`
     }
   }
+
+  // 必填参数属性（提交渠道是 attribute_values）
+  const missParams = paramAttributes.value
+    .filter((a) => a.is_required && !(paramValues.value[a.attribute_id] ?? '').trim())
+    .map((a) => a.name)
+  if (missParams.length) return `请填写必填参数属性：${missParams.join('、')}`
+
   return ''
 }
 
@@ -607,7 +619,7 @@ function cancel() {
       <section v-if="useMatrix">
         <h3 class="mb-3 font-semibold text-slate-700"><span class="mr-1.5 rounded bg-[#1677ff] px-1.5 py-0.5 text-xs text-white">{{ stepNo.spec }}</span>规格属性（勾选后自动生成 SKU）</h3>
         <div v-for="attr in specAttributes" :key="attr.attribute_id" class="mb-3" :data-testid="`spec-attr-${attr.attribute_id}`">
-          <div class="mb-1.5 text-slate-600">{{ attr.name }}</div>
+          <div class="mb-1.5 text-slate-600">{{ attr.name }}<span v-if="attr.is_required" class="text-red-500"> *</span></div>
           <div class="flex flex-wrap gap-2">
             <button
               v-for="v in attrValues(attr.attribute_id)" :key="v.id"
