@@ -1,0 +1,11 @@
+commit 7ec18b0d5f09027e3601bd2805daa28d4db1c5f3
+feat(web): T-039 结算页用券与满减金额明细（最优券默认 + 分组选券弹层 + 服务端核对 + 失效降级）
+
+- BE 新增 GET /promotions/preview（Storefront\PromotionController，复用 buildContext + displayFor）+ 4 例 Pest（双库 558×2 全绿）
+- CheckoutView：可用券加载默认选中最优、券选择弹层（可用/不可用分组+原因）、金额明细实时预览（商品→满减→券→运费→应付，无优惠行隐藏保持 V1.0 视觉）
+- 提交带 user_coupon_id；服务端 pay_amount 与预览差 >0.01 弹窗确认以服务端为准；券失效提示后端冲突文案并提供「不使用优惠券继续下单」降级
+- api 层：getAvailableCoupons / getPromotionPreview / createOrder 扩展入参与响应
+- 测试：Vitest 新增 8 例（109 全绿）+ 构建 vue-tsc 通过；顺带修复 account-center/address-enhance 既有用例 mock 缺失导致的并发 flaky
+- 真浏览器验收：明细 199−10−19.9=169.10 与手算一致，下单→支付页金额一致（订单 37）
+- 证据：docs/testing/evidence/v1.1/T-039/
+
