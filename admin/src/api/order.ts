@@ -186,6 +186,19 @@ export const ORDER_STATUS_LABELS: Record<OrderStatus, string> = {
   refunded: '已退款',
 }
 
+/**
+ * 订单管理页（后台）状态标签：运营视角把 paid 呈现为「待发货」
+ *
+ * - 与买家端 `Order::TAB_LABELS.pending_ship`（= paid）语义一致，后台发货是运营的主任务队列；
+ * - 仅用于订单管理页的 Tab / 筛选下拉 / 状态徽标，**不改动** `ORDER_STATUS_LABELS`
+ *   （订单流水页 OrderLogView 的审计语义仍保留「已支付」）；
+ * - 后端 `status_label` 仍返回「已支付」，前端展示以此表为准。
+ */
+export const ORDER_TAB_LABELS: Record<OrderStatus, string> = {
+  ...ORDER_STATUS_LABELS,
+  paid: '待发货',
+}
+
 export const ORDER_STATUS_CLASS: Record<OrderStatus, string> = {
   pending_payment: 'bg-orange-100 text-orange-500',
   paid: 'bg-blue-100 text-blue-500',

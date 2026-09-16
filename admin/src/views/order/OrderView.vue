@@ -5,7 +5,7 @@ import {
   exportOrders,
   getOrders,
   ORDER_STATUS_CLASS,
-  ORDER_STATUS_LABELS,
+  ORDER_TAB_LABELS,
   shipOrder,
   type AdminOrder,
   type OrderStatus,
@@ -35,9 +35,10 @@ const shipRemark = ref('')
 const shipping = ref(false)
 const exporting = ref(false)
 
+// 状态 Tab / 筛选下拉同源：paid 按运营语义显示为「待发货」
 const statusTabs: Array<{ value: '' | OrderStatus; label: string }> = [
   { value: '', label: '全部' },
-  ...(Object.keys(ORDER_STATUS_LABELS) as OrderStatus[]).map((s) => ({ value: s as OrderStatus, label: ORDER_STATUS_LABELS[s] })),
+  ...(Object.keys(ORDER_TAB_LABELS) as OrderStatus[]).map((s) => ({ value: s as OrderStatus, label: ORDER_TAB_LABELS[s] })),
 ]
 
 const queryParams = computed(() => ({
@@ -169,7 +170,7 @@ onMounted(() => load())
           <td class="max-w-64 truncate px-3 py-1.5 text-black" :title="specsText(order)">{{ specsText(order) }}</td>
           <td class="px-3 py-1.5 font-medium text-black">¥{{ order.pay_amount }}</td>
           <td class="px-3 py-1.5">
-            <span class="rounded px-2 py-0.5 text-xs" :class="ORDER_STATUS_CLASS[order.status]">{{ order.status_label }}</span>
+            <span class="rounded px-2 py-0.5 text-xs" :class="ORDER_STATUS_CLASS[order.status]">{{ ORDER_TAB_LABELS[order.status] ?? order.status_label }}</span>
           </td>
           <td class="px-3 py-1.5 text-black">{{ order.created_at }}</td>
           <td class="px-3 py-1.5">
@@ -232,7 +233,7 @@ onMounted(() => load())
         <p class="mb-1 text-sm"><span class="text-slate-400">订单号：</span><span class="font-mono">{{ detailOrder.order_no }}</span></p>
         <p class="mb-4 text-sm">
           <span class="text-slate-400">状态：</span>
-          <span class="rounded px-1.5 py-0.5 text-xs" :class="ORDER_STATUS_CLASS[detailOrder.status]">{{ detailOrder.status_label }}</span>
+          <span class="rounded px-1.5 py-0.5 text-xs" :class="ORDER_STATUS_CLASS[detailOrder.status]">{{ ORDER_TAB_LABELS[detailOrder.status] ?? detailOrder.status_label }}</span>
         </p>
 
         <div class="mb-4 rounded-lg bg-slate-50 p-3 text-[13px]" v-if="detailOrder.address_snapshot">
