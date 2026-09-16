@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { Bell, ChevronDown, ClipboardList, Clock, Heart, House, MapPin, Package, ShoppingCart, SquareUser, UserRound, Volume2 } from 'lucide-vue-next'
+import { Bell, ChevronDown, ClipboardList, Clock, Heart, House, MapPin, Package, ShoppingCart, SquareUser, Ticket, UserRound, Volume2 } from 'lucide-vue-next'
 import { getCategories, type CategoryNode } from '@/api/shop'
 import { getCartCount } from '@/api/user'
 import NotificationBell from '@/components/NotificationBell.vue'
@@ -152,6 +152,12 @@ async function handleLogout() {
               </RouterLink>
               <RouterLink to="/orders" class="flex items-center gap-1.5 px-3 py-2 text-slate-600 hover:bg-slate-50">
                 <ClipboardList class="h-3.5 w-3.5" /> 我的订单
+              </RouterLink>
+              <RouterLink to="/coupons/mine" class="flex items-center gap-1.5 px-3 py-2 text-slate-600 hover:bg-slate-50">
+                <Ticket class="h-3.5 w-3.5" /> 我的优惠券
+              </RouterLink>
+              <RouterLink to="/coupons/center" class="flex items-center gap-1.5 px-3 py-2 text-slate-600 hover:bg-slate-50">
+                <Ticket class="h-3.5 w-3.5" /> 领券中心
               </RouterLink>
               <RouterLink to="/account/favorites" class="flex items-center gap-1.5 px-3 py-2 text-slate-600 hover:bg-slate-50">
                 <Heart class="h-3.5 w-3.5" /> 我的收藏

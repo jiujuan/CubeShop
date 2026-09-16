@@ -5,6 +5,8 @@ import { Heart, Minus, Plus, ShoppingCart, Truck } from 'lucide-vue-next'
 import { getProduct, type ProductDetail } from '@/api/shop'
 import { addToCart } from '@/api/user'
 import { favoriteProduct, trackProduct, unfavoriteProduct } from '@/api/favorite'
+import { getCouponCenter, type ReceivableCoupon } from '@/api/coupon'
+import { couponConditionText, couponValueText } from '@/utils/coupon'
 import { useAuthStore } from '@/stores/auth'
 import ShopFooter from '@/components/ShopFooter.vue'
 import ShopHeader from '@/components/ShopHeader.vue'
@@ -107,10 +109,33 @@ async function load() {
   } finally {
     loading.value = false
   }
+  loadApplicableCoupons()
+}
+
+/** 详情页「领券」小标（V1.1 二期 T-038）：命中本商品的在领券列表即展示，失败静默 */
+async function loadApplicableCoupons() {
+  const productId = product.value?.id
+  if (!productId) return
+  try {
+    const { data } = await getCouponCenter()
+    const list = data.data.list ?? []
+    applicableCoupons.value = list.filter((c) => {
+      if (c.remaining <= 0 || !c.can_receive) return false
+      if (c.scope === 'all') return true
+      if (c.scope === 'product') return c.scope_refs.includes(productId)
+      if (c.scope === 'category') return !!product.value?.category && c.scope_refs.includes(product.value.category.id)
+      return false
+    }).slice(0, 3)
+  } catch {
+    applicableCoupons.value = []
+  }
 }
 
 /** 收藏状态（V1.1 F05 / T-024） */
 const isFavorited = ref(false)
+
+/** 命中本商品的在领券列表（V1.1 二期 T-038，最多展示 3 张） */
+const applicableCoupons = ref<ReceivableCoupon[]>([])
 const favBusy = ref(false)
 
 async function toggleFavorite() {
@@ -238,6 +263,18 @@ const emojiByIndex = ['👕', '🎧', '🥤', '⌨️', '👟', '🧴', '💻', 
                 <span class="text-sm text-[#ff4d4f]">价 格</span>
                 <span class="text-3xl font-bold text-[#ff4d4f]">¥{{ activePrice }}</span>
                 <span class="ml-auto text-xs text-slate-400">已售 {{ product.sales_count }} 件</span>
+              </div>
+
+              <!-- 领券小标（V1.1 二期 T-038）：命中本商品的在领券 -->
+              <div v-if="applicableCoupons.length" class="mt-2 flex flex-wrap items-center gap-1.5" data-testid="detail-coupons">
+                <span class="text-xs text-slate-400">领券</span>
+                <button
+                  v-for="c in applicableCoupons" :key="c.id"
+                  class="rounded border border-[#ff4d4f]/40 bg-white/70 px-1.5 py-0.5 text-[11px] text-[#ff4d4f] transition-colors hover:bg-[#ff4d4f] hover:text-white"
+                  :data-testid="`detail-coupon-${c.id}`"
+                  @click="router.push('/coupons/center')"
+                >{{ couponValueText(c) }} · {{ couponConditionText(c) }}</button>
+                <button class="text-[11px] text-[#1677ff] hover:underline" data-testid="detail-coupon-more" @click="router.push('/coupons/center')">更多 ›</button>
               </div>
             </div>
 

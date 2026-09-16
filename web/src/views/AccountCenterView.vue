@@ -3,7 +3,7 @@ import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import {
   Bell, ChevronRight, Clock, Heart, KeyRound, LogOut, MapPin, PackageCheck,
-  ClipboardList, ShieldCheck, UserRound, Wallet,
+  ClipboardList, ShieldCheck, Ticket, UserRound, Wallet,
 } from 'lucide-vue-next'
 import { changePassword, getProfile, updateProfile, uploadImage, type UserProfile } from '@/api/user'
 import {
@@ -76,6 +76,8 @@ const orderShortcuts = [
 
 /** 权益与功能入口 */
 const entries = computed(() => [
+  { key: 'coupons', label: '我的优惠券', icon: Ticket, path: '/coupons/mine' },
+  { key: 'coupon-center', label: '领券中心', icon: Ticket, path: '/coupons/center' },
   { key: 'favorites', label: '我的收藏', icon: Heart, path: '/account/favorites' },
   { key: 'histories', label: '浏览足迹', icon: Clock, path: '/account/histories' },
   { key: 'addresses', label: '收货地址', icon: MapPin, path: '/account/addresses' },

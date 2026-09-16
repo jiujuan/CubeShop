@@ -95,6 +95,18 @@ const router = createRouter({
       meta: { title: '余额充值 · CubeShop', requiresAuth: true },
     },
     {
+      path: '/coupons/center',
+      name: 'coupon-center',
+      component: () => import('@/views/CouponCenterView.vue'),
+      meta: { title: '领券中心 · CubeShop' },
+    },
+    {
+      path: '/coupons/mine',
+      name: 'my-coupons',
+      component: () => import('@/views/MyCouponsView.vue'),
+      meta: { title: '我的优惠券 · CubeShop', requiresAuth: true },
+    },
+    {
       path: '/account',
       name: 'account',
       component: () => import('@/views/AccountCenterView.vue'),

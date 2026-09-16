@@ -1,0 +1,18 @@
+T-037 提交记录
+============
+
+commit: 10e47b2
+title:  feat(marketing): T-037 券过期收敛与满减匹配精化
+
+改动文件：
+- backend/app/Services/Marketing/CouponService.php
+- backend/app/Services/Marketing/PromotionService.php
+- backend/tests/Unit/PromotionServiceTest.php (新增)
+- backend/tests/Feature/CouponExpireApiTest.php (新增)
+- docs/design/plan/README.md (进度看板 二期 7/24)
+- docs/testing/evidence/v1.1/T-037/* (pest/pest-pgsql/sql/gen_evidence)
+
+验证：
+- 单元 9 例（PromotionService::match / displayFor）
+- 接口 5 例（expireOverdue / availableFor 过滤 / 活动停发）
+- 双库 554 passed（SQLite + PG），无回归
