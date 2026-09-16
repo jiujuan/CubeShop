@@ -268,6 +268,88 @@ describe('商品编辑表单（T-010）', () => {
     expect(wrapper.text()).toContain('失效 1')
   })
 
+  // ---- 必填规格属性：提交渠道是「规格勾选」，不落在参数属性里 ----
+  /** 颜色（可选）+ 尺码（必填）两个规格维度 */
+  function mockRequiredSpecTemplate() {
+    const sizeRow = {
+      id: 12, name: '尺码', type: 'spec', type_label: '规格',
+      is_filterable: true, is_multiple: false, allow_custom: false, sort: 0,
+      values: [{ id: 121, value: 'M', sort: 0 }],
+    }
+    getAttributesMock.mockResolvedValue({
+      data: { data: { list: [attrRow, sizeRow], pagination: { page: 1, page_size: 200, total: 2, total_pages: 1 } } },
+    })
+    getCategoryTemplateMock.mockResolvedValue({
+      data: {
+        data: {
+          category_id: 3, category_name: '数码配件',
+          attributes: [
+            { attribute_id: 11, name: '颜色', type: 'spec', is_filterable: true, is_required: false, sort: 20 },
+            { attribute_id: 12, name: '尺码', type: 'spec', is_filterable: true, is_required: true, sort: 10 },
+          ],
+        },
+      },
+    })
+  }
+
+  it('必填规格属性未勾选时给出明确提示，不发请求', async () => {
+    mockRequiredSpecTemplate()
+    previewSkuMatrixMock.mockResolvedValue({
+      data: { data: { total: 1, created: [{ signature: '颜色:黑', specs: { 颜色: '黑' } }], kept: [], removed: [], max_skus: 200 } },
+    })
+    const { wrapper } = await mountCreate()
+    await wrapper.find('[data-testid="category-select"]').setValue(31)
+    await flushPromises()
+    await wrapper.find('input[placeholder="请输入商品标题"]').setValue('测试商品')
+
+    // 必填规格带 * 标记
+    expect(wrapper.find('[data-testid="spec-attr-12"]').text()).toContain('*')
+
+    // 只勾了可选的颜色
+    await wrapper.find('[data-testid="spec-value-11-111"]').trigger('click')
+    await flushPromises()
+
+    await wrapper.findAll('button').find((b) => b.text().includes('保存'))!.trigger('click')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('请勾选必填规格属性：尺码')
+    expect(createProductMock).not.toHaveBeenCalled()
+  })
+
+  it('补齐必填规格后正常提交，specs_selection 含全部勾选维度', async () => {
+    mockRequiredSpecTemplate()
+    createProductMock.mockResolvedValue({ data: { data: { id: 99 } } })
+    updateProductStatusMock.mockResolvedValue({ data: { data: null } })
+    previewSkuMatrixMock.mockResolvedValue({
+      data: { data: { total: 1, created: [{ signature: '颜色:黑', specs: { 颜色: '黑', 尺码: 'M' } }], kept: [], removed: [], max_skus: 200 } },
+    })
+
+    const { wrapper } = await mountCreate()
+    await wrapper.find('[data-testid="category-select"]').setValue(31)
+    await flushPromises()
+    await wrapper.find('input[placeholder="请输入商品标题"]').setValue('测试商品')
+    await wrapper.find('[data-testid="spec-value-11-111"]').trigger('click')
+    await wrapper.find('[data-testid="spec-value-12-121"]').trigger('click')
+    await flushPromises()
+
+    for (const el of wrapper.findAll('input[type="number"]')) {
+      const input = el.element as HTMLInputElement
+      if (input.step === '0.01') await el.setValue('99')
+    }
+
+    await wrapper.findAll('button').find((b) => b.text().includes('保存'))!.trigger('click')
+    await flushPromises()
+    await wrapper.findAll('button').find((b) => b.text().includes('确认保存'))!.trigger('click')
+    await flushPromises()
+
+    expect(createProductMock).toHaveBeenCalled()
+    const payload = createProductMock.mock.calls[0][0]
+    expect(payload.specs_selection).toEqual([
+      { attribute_id: 11, values: [111] },
+      { attribute_id: 12, values: [121] },
+    ])
+  })
+
   // ---- 历史/导入数据：规格值不在属性值库中（回归：保存撞 sku_code 唯一键） ----
   /** 挂载「历史导入商品」编辑页：存量 SKU 规格值 450ml/600ml 不在属性值库（库里只有 黑/白） */
   async function mountLegacyEdit() {

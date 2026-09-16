@@ -395,7 +395,7 @@ class ProductController extends Controller
      * 校验商品参数（V1.1 E01 / T-008 步骤 6）
      *
      * - attribute_id 必须属于该分类的属性模板
-     * - 模板中的必填属性不能缺失
+     * - 模板中的必填属性不能缺失（规格属性看 specs_selection / skus[].specs，参数属性看 attribute_values）
      * - 值必须在 attribute_values 合法集合内（allow_custom=true 时允许自由文本）
      */
     private function validateAttributeValues(array $payload): void
@@ -430,20 +430,68 @@ class ProductController extends Controller
             }
         }
 
+        // 属性定义一次取全（模板内全部属性），供必填判定与值合法性复用
+        /** @var \Illuminate\Support\Collection<int, Attribute> $attributes */
+        $attributes = Attribute::whereIn('id', array_unique($templateIds))->get()->keyBy('id');
+
         // 必填属性不能缺失
+        //
+        // 「必填」的提交渠道随属性类型而不同，混为一谈会让配了必填规格属性的分类永远保存不了：
+        //   - 规格属性（spec）：由 specs_selection 勾选提交，落库进 product_skus.specs，
+        //     不会出现在 attribute_values 里；旧结构链路则体现在 skus[].specs 的键名上。
+        //   - 参数属性（param）：由 attribute_values 提交。
         $submitted = array_map(fn ($r) => (int) $r['attribute_id'], $rows);
-        $missing = [];
-        foreach ($template as $item) {
-            if ($item->is_required && ! in_array((int) $item->attribute_id, $submitted, true)) {
-                $missing[] = Attribute::whereKey($item->attribute_id)->value('name') ?? $item->attribute_id;
+
+        // 规格勾选命中的属性（矩阵链路）
+        $specSelectedIds = collect($payload['specs_selection'] ?? [])
+            ->filter(fn ($dim) => ! empty($dim['values']))
+            ->map(fn ($dim) => (int) $dim['attribute_id'])
+            ->all();
+
+        // 旧结构链路下 skus[].specs 覆盖到的规格名
+        $legacySpecNames = [];
+        foreach ($payload['skus'] ?? [] as $sku) {
+            foreach (array_keys((array) ($sku['specs'] ?? [])) as $specName) {
+                $legacySpecNames[(string) $specName] = true;
             }
         }
+
+        $missing = [];
+        foreach ($template as $item) {
+            if (! $item->is_required) {
+                continue;
+            }
+
+            $attribute = $attributes->get((int) $item->attribute_id);
+            $name = $attribute?->name ?? $item->attribute_id;
+
+            if ($attribute && $attribute->type === 'spec') {
+                if (in_array((int) $item->attribute_id, $specSelectedIds, true)) {
+                    continue;
+                }
+                if (isset($legacySpecNames[$attribute->name])) {
+                    continue;
+                }
+                // 请求未带 specs_selection（旧表格链路 / 历史数据）无从表达规格维度，不做阻断
+                if (! array_key_exists('specs_selection', $payload)) {
+                    continue;
+                }
+
+                $missing[] = $name;
+
+                continue;
+            }
+
+            if (! in_array((int) $item->attribute_id, $submitted, true)) {
+                $missing[] = $name;
+            }
+        }
+
         if ($missing !== []) {
             throw BusinessException::badRequest('以下必填属性未填写：'.implode('、', $missing));
         }
 
         // 值合法性
-        $attributes = Attribute::whereIn('id', array_unique($submitted))->get()->keyBy('id');
         foreach ($rows as $row) {
             /** @var Attribute|null $attribute */
             $attribute = $attributes->get((int) $row['attribute_id']);
