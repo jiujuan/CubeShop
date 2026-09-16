@@ -131,6 +131,12 @@ const router = createRouter({
           meta: { title: '评价管理', menu: true, icon: 'MessageSquare', permission: 'review.manage' },
         },
         {
+          path: 'marketing',
+          name: 'marketing',
+          component: () => import('@/views/operation/MarketingView.vue'),
+          meta: { title: '营销管理', menu: true, icon: 'Ticket', permission: 'marketing.manage' },
+        },
+        {
           path: 'users',
           name: 'users',
           component: () => import('@/views/user/UserListView.vue'),
