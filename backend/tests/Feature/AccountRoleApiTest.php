@@ -118,8 +118,9 @@ test('TC-ACC-005 弱密码（纯字母/过短）返回 422', function () {
 });
 
 test('TC-ACC-006 非法角色返回 422', function () {
+    // 后台账号只能分配后台角色；买家不参与 spatie（用户表拆分后已无 customer 角色）
     $this->postJson('/api/admin/accounts', [
-        'username' => 'badrole', 'password' => 'Abcd1234', 'roles' => ['customer'],
+        'username' => 'badrole', 'password' => 'Abcd1234', 'roles' => ['not_a_role'],
     ], $this->adminAuth)->assertStatus(422);
 });
 

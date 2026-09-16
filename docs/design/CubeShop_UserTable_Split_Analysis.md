@@ -1,11 +1,12 @@
 # 用户表拆分方案分析（sys_user 保留管理员 + 新建 users 承载买家）
 
 - 日期：2026-09-16
-- 状态：**阶段 1、阶段 2 已完成**（阶段 3 待执行）
+- 状态：**阶段 1、2、3 全部完成** ✅（拆分 → 代码切换 → 清理收口）
 - 决策：`sys_user` **保持不动**，继续承载后台管理员；新建买家表拆分前台注册用户
 - 实施记录：
   - 阶段 1 验收：`docs/testing/evidence/v1.1/user-split/phase1-acceptance.md`
   - 阶段 2 验收：`docs/testing/evidence/v1.1/user-split/phase2-acceptance.md`
+  - 阶段 3 验收：`docs/testing/evidence/v1.1/user-split/phase3-acceptance.md`
   - 实施偏差见阶段 2 报告第二节（登录未拆独立端点、`Admin\UserController` 改为买家专表、
     额外新增 `notifications.receiver_type`）
 
@@ -206,12 +207,14 @@ users      （买家，新建）     注册买家
 7. 改写存量买家令牌的 `tokenable_type`（或明确接受一次重新登录）。
 8. 全量回归：后端双库 + 前端两端 + 冒烟。
 
-### 阶段 3：清理与收口
+### 阶段 3：清理与收口 ✅ 已完成
 
-1. 删除 `sys_user` 中的买家记录（此时已是僵尸数据）。
-2. 清理 `model_has_roles` 中的买家角色记录；注册逻辑不再 `assignRole('customer')`。
-3. 评估 `customer` 角色的去留（保留仅作历史数据标识，或彻底移除）。
-4. 更新 `docs/design/` 措辞约定：「用户」= 买家、「账号」= 管理员。
+1. ✅ 删除 `sys_user` 中的买家记录（36 条僵尸数据，迁移 `000028`）。
+2. ✅ 清理 `model_has_roles` 中的买家角色记录；注册逻辑不再 `assignRole('customer')`。
+3. ✅ **彻底移除** `customer` 角色（seeder / RoleController / admin 前端映射同步清理）。
+4. ✅ 更新 `docs/design/` 措辞约定：「用户」= 买家、「账号」= 管理员（见第八节）。
+
+> 验收报告：`docs/testing/evidence/v1.1/user-split/phase3-acceptance.md`
 
 ---
 
@@ -223,21 +226,54 @@ users      （买家，新建）     注册买家
 | `sys_user` 是否重命名为 `sys_admin` | **否**，保持不动，省下 22 个后台控制器的改动 |
 | 买家表名 | **`users`**，模型 `App\Models\User` |
 | 执行时机 | 阶段 0 收尾提交后，从阶段 1 起分阶段落地 |
+| `customer` 角色 | **彻底移除**（拆分后买家不参与 spatie，该角色已无持有者） |
 
 ---
 
-## 附：影响面检查清单（执行时逐项核对）
+## 八、术语约定（V1.1 用户表拆分后生效）
 
-- [ ] `config/auth.php` 双 guard 后，`current_password:sanctum` 改密校验是否仍正确
-- [ ] `config/sanctum.php` 的 `guard` 列表是否覆盖后台端
-- [ ] spatie `guard_name` 是否保持 `web`（保持则无需迁移权限表）
-- [ ] 存量买家令牌 `tokenable_type` 的处理策略（改写或接受重新登录）
-- [ ] `AppServiceProvider::Gate::before` 的超管兜底是否仍只作用于 `SysUser`
-- [ ] `sys_operation_log` 的历史数据是否需要补 `actor_type`
-- [ ] `ReportService` 复购率口径是否仍按买家统计
-- [ ] 后台用户管理列表的「买家 / 后台账号」筛选逻辑（改为查 `users` 表）
-- [ ] 3 个外键约束在 PostgreSQL 下的重建顺序
-- [ ] `users` 表自增序列是否已对齐，避免新注册 ID 冲突
-- [ ] 买家注销（软删除）与管理员软删除的相互隔离
-- [ ] `user_balances` 等余额表在搬迁后的完整性校验
-- [ ] `admin` 前端 401 跳转与 token 存储键是否需按端区分
+`sys_user` 与 `users` 拆分后，本项目的中文措辞统一如下，**文档、代码注释、接口文案、后台菜单均按此措辞**：
+
+| 术语 | 指向 | 表 / 模型 |
+|---|---|---|
+| **用户**、**买家** | 前台注册的购买者 | `users` / `App\Models\User` |
+| **账号**、**后台账号**、**管理员** | 后台运营与超级管理员 | `sys_user` / `App\Models\SysUser` |
+
+由此派生的对应关系：
+
+| 后台菜单 / 接口 | 管理对象 |
+|---|---|
+| 用户管理（`/admin/users`，权限 `user.manage`） | **买家**（`users`） |
+| 账号管理（`/admin/accounts`，权限 `account.manage`） | **后台管理员**（`sys_user`） |
+| 角色管理（`/admin/roles`，权限 `role.manage`） | 仅后台角色（`super_admin` / `operator` 及自定义） |
+
+> 历史文档中「系统用户」「sys_user 用户」等混称，一律按上表理解：涉及买家的部分现由 `users` 承载。
+
+---
+
+## 附：影响面检查清单（已执行核对）
+
+| # | 检查项 | 结论 |
+|---|---|---|
+| 1 | `config/auth.php` 双 guard 后，`current_password:sanctum` 改密校验是否仍正确 | ✅ 接口统一走 `auth:sanctum` Bearer Token，与 guard provider 无关；`PasswordChangeTest` 全绿 |
+| 2 | `config/sanctum.php` 的 `guard` 列表是否覆盖后台端 | ✅ **无需改动**：Token 认证由 `tokenable_type` 解析模型，`guard => ['web']` 仅影响未使用的 SPA 会话式认证 |
+| 3 | spatie `guard_name` 是否保持 `web` | ✅ `auth.defaults.guard` 保持 `web`，未迁移权限表数据 |
+| 4 | 存量买家令牌 `tokenable_type` 的处理策略 | ✅ **改写**（迁移 000026）：43 条买家令牌改写，0 漏改 0 误改，登录态不失效 |
+| 5 | `AppServiceProvider::Gate::before` 是否仍只作用于 `SysUser` | ✅ 保持 `instanceof SysUser`，买家不受影响 |
+| 6 | `sys_operation_log` 是否需要补 `actor_type` | ✅ **已补**（迁移 000025）：customer 71 / admin 103 |
+| 7 | `ReportService` 复购率口径是否仍按买家统计 | ✅ 用户增长改查 `users`；复购率按 `orders.user_id` + 完成单统计，口径不变 |
+| 8 | 后台用户管理的「买家 / 后台账号」筛选 | ✅ 改为**买家专表**，下线混合视图；管理员由账号管理负责（两表 ID 各自从 1 起，混列会歧义） |
+| 9 | 3 个外键在 PostgreSQL 下的重建顺序 | ✅ 迁移 000024：先 `dropForeign(['user_id'])` 再重建，PG 与 SQLite 均实测通过 |
+| 10 | `users` 表自增序列是否已对齐 | ✅ 迁移 000023 已 `setval`，下一个 ID 不与存量冲突（`TC-SPLIT-005` 覆盖） |
+| 11 | 买家与管理员软删除是否相互隔离 | ✅ 两表独立 `SoftDeletes`；删除买家不影响 `sys_user` |
+| 12 | `user_balances` 等余额表搬迁后完整性 | ✅ 12 张业务表孤儿检查全为 0 |
+| 13 | admin 前端 401 跳转与 token 存储键是否需按端区分 | ✅ **无需区分**：两端各自独立的 Vite 应用与 localStorage，接口路径未变 |
+
+**额外发现并修复（超出原清单）**
+
+| 项 | 说明 |
+|---|---|
+| `notifications.user_id` 混合语义 | 库存预警（发给运营）会把管理员 ID 写进买家读取的通知表，撞号后买家可读到运营预警。已新增 `receiver_type`（迁移 000027）+ 收件人身份隔离测试 `TC-NOTIFY-016` |
+| `/user/profile` 唯一性校验表名 | 原硬编码 `unique:sys_user`，买家更新资料会查错表（可占用管理员手机号）。已按身份落到对应表，`ProfileApiTest` 覆盖 |
+| `Admin\UserController` 自我禁用判断 | 原 `$user->id === $request->user()->id` 跨表比较会误判（买家 #1 与管理员 #1）。已随混合视图下线一并移除 |
+

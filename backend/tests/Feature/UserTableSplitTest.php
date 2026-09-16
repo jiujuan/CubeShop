@@ -29,6 +29,12 @@ function runBuyerMigration(): void
     (require database_path('migrations/2026_09_16_000023_migrate_customers_to_users_table.php'))->up();
 }
 
+/** 创建遗留的 customer 角色（拆分后已从 seeder 移除，此处用于模拟存量数据） */
+function legacyCustomerRole(): \Spatie\Permission\Models\Role
+{
+    return \Spatie\Permission\Models\Role::findOrCreate('customer', 'web');
+}
+
 /** 创建一个买家（持有 customer 角色） */
 function makeBuyer(string $username, array $extra = []): SysUser
 {
@@ -41,7 +47,7 @@ function makeBuyer(string $username, array $extra = []): SysUser
         'status' => 1,
     ], $extra));
 
-    $user->assignRole('customer');
+    $user->assignRole(legacyCustomerRole());
 
     return $user;
 }

@@ -25,13 +25,12 @@ class RoleController extends Controller
     use ApiResponse;
 
     /** 内置角色（不允许删除/重命名） */
-    private const BUILTIN_ROLES = ['super_admin', 'operator', 'customer'];
+    private const BUILTIN_ROLES = ['super_admin', 'operator'];
 
     /** 角色中文标签 */
     private const ROLE_LABELS = [
         'super_admin' => '超级管理员',
         'operator' => '运营',
-        'customer' => '买家',
     ];
 
     /** 权限码模块中文标签 */
