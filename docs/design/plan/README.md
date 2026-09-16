@@ -284,7 +284,7 @@ T-001 order_logs → T-002 确认收货 → T-015 评价后端 → T-016 评价�
 | T-033 | [BE] 领券接口（原子防超发）与我的券接口 | 一 | ✅ 测试通过 | `docs/testing/evidence/v1.1/T-033/` |
 | T-034 | [BE] 用券校验与金额分摊 Service | 一 | ✅ 测试通过 | `docs/testing/evidence/v1.1/T-034/` |
 | T-035 | [BE] 订单金额链路改造与支付回调校验扩展 | 一 | ✅ 测试通过 | `docs/testing/evidence/v1.1/T-035/` |
-| T-036 | [BE] 取消/退款与券回退逻辑 | 一 | ⬜ 待开始 | `docs/testing/evidence/v1.1/T-036/` |
+| T-036 | [BE] 取消/退款与券回退逻辑 | 一 | ✅ 测试通过 | `docs/testing/evidence/v1.1/T-036/` |
 | T-037 | [BE] 券过期任务与满减匹配 | 一 | ⬜ 待开始 | `docs/testing/evidence/v1.1/T-037/` |
 | T-038 | [WEB] 领券中心与我的优惠券页 | 一 | ⬜ 待开始 | `docs/testing/evidence/v1.1/T-038/` |
 | T-039 | [WEB] 结算页用券与满减金额明细 | 一 | ⬜ 待开始 | `docs/testing/evidence/v1.1/T-039/` |
