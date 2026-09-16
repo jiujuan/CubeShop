@@ -89,6 +89,15 @@ async function doConfirm() {
   }
 }
 
+/** 再次购买弹层提示：有失效行时展示明细，替代原生 alert */
+const rebuyNotice = ref<{ title: string; message: string; goCart: boolean } | null>(null)
+
+function onRebuyNoticeConfirm() {
+  const n = rebuyNotice.value
+  rebuyNotice.value = null
+  if (n?.goCart) router.push('/cart')
+}
+
 /** 再次购买：失效行以弹窗提示 */
 async function doRebuy() {
   if (!order.value) return
@@ -99,9 +108,12 @@ async function doRebuy() {
     const result = data.data
     if (result.skipped.length) {
       const lines = result.skipped.map((s) => `· ${s.title}：${s.reason}`).join('\n')
-      alert(`已加入购物车 ${result.added} 件商品\n以下商品未能加入：\n${lines}`)
-    }
-    if (result.added > 0) {
+      rebuyNotice.value = {
+        title: '再次购买',
+        message: `已加入购物车 ${result.added} 件商品\n以下商品未能加入：\n${lines}`,
+        goCart: result.added > 0,
+      }
+    } else if (result.added > 0) {
       router.push('/cart')
     }
   } catch (e) {
@@ -333,6 +345,17 @@ async function onReviewSubmitted() {
           confirm-text="确认收货"
           :loading="confirming"
           @confirm="doConfirm"
+        />
+
+        <!-- 再次购买失效明细弹层 -->
+        <ConfirmDialog
+          :model-value="rebuyNotice !== null"
+          :title="rebuyNotice?.title"
+          :content="rebuyNotice?.message"
+          :confirm-text="rebuyNotice?.goCart ? '去购物车' : '知道了'"
+          cancel-text="留在此页"
+          @update:model-value="(v: boolean) => { if (!v) rebuyNotice = null }"
+          @confirm="onRebuyNoticeConfirm"
         />
       </template>
     </main>

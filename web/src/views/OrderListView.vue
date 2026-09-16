@@ -52,6 +52,10 @@ let timer: ReturnType<typeof setInterval> | null = null
 const confirmTarget = ref<OrderBrief | null>(null)
 const confirming = ref(false)
 
+// 取消订单二次确认（弹层替代原生 confirm）
+const cancelTarget = ref<OrderBrief | null>(null)
+const cancelling = ref(false)
+
 const activeTabMeta = computed(
   () => ORDER_TABS.find((t) => t.value === activeTab.value) ?? ORDER_TABS[0],
 )
@@ -161,14 +165,19 @@ watch(nowTs, async () => {
   if (expired) await load()
 })
 
-async function doCancel(order: OrderBrief) {
-  if (!confirm(`确定取消订单 ${order.order_no} 吗？`)) return
+async function doCancel() {
+  if (!cancelTarget.value) return
+  cancelling.value = true
   tip.value = ''
   try {
-    await cancelOrder(order.id)
+    await cancelOrder(cancelTarget.value.id)
+    cancelTarget.value = null
     await load()
   } catch (e) {
     tip.value = e instanceof Error ? e.message : '取消失败'
+    cancelTarget.value = null
+  } finally {
+    cancelling.value = false
   }
 }
 
@@ -188,6 +197,15 @@ async function doConfirm() {
   }
 }
 
+/** 再次购买弹层提示：有失效行时展示明细，替代原生 alert */
+const rebuyNotice = ref<{ title: string; message: string; goCart: boolean } | null>(null)
+
+function onRebuyNoticeConfirm() {
+  const n = rebuyNotice.value
+  rebuyNotice.value = null
+  if (n?.goCart) router.push('/cart')
+}
+
 /** 再次购买：成功跳购物车；有失效行则弹窗明细 */
 async function doRebuy(order: OrderBrief) {
   tip.value = ''
@@ -196,9 +214,14 @@ async function doRebuy(order: OrderBrief) {
     const result = data.data
     if (result.skipped.length) {
       const lines = result.skipped.map((s) => `· ${s.title}：${s.reason}`).join('\n')
-      alert(`已加入购物车 ${result.added} 件商品\n以下商品未能加入：\n${lines}`)
+      rebuyNotice.value = {
+        title: '再次购买',
+        message: `已加入购物车 ${result.added} 件商品\n以下商品未能加入：\n${lines}`,
+        goCart: result.added > 0,
+      }
+    } else if (result.added > 0) {
+      router.push('/cart')
     }
-    if (result.added > 0) router.push('/cart')
   } catch (e) {
     tip.value = e instanceof Error ? e.message : '再次购买失败'
   }
@@ -335,7 +358,7 @@ function goReview(order: OrderBrief) {
                 <button
                   v-if="order.actions.can_cancel"
                   class="rounded-full border border-slate-200 px-4 py-1.5 text-xs text-slate-500 hover:border-red-300 hover:text-red-500"
-                  @click.stop="doCancel(order)"
+                  @click.stop="cancelTarget = order"
                 >取消订单</button>
                 <button
                   v-if="order.actions.can_confirm"
@@ -375,6 +398,27 @@ function goReview(order: OrderBrief) {
           :loading="confirming"
           @update:model-value="(v: boolean) => { if (!v) confirmTarget = null }"
           @confirm="doConfirm"
+        />
+
+        <!-- 取消订单二次确认弹层 -->
+        <ConfirmDialog
+          :model-value="cancelTarget !== null"
+          title="取消订单"
+          :content="`确定取消订单 ${cancelTarget?.order_no ?? ''} 吗？取消后不可恢复，已支付款项将原路退回。`"
+          confirm-text="确认取消"
+          :loading="cancelling"
+          @update:model-value="(v: boolean) => { if (!v) cancelTarget = null }"
+          @confirm="doCancel"
+        />
+        <!-- 再次购买失效明细弹层 -->
+        <ConfirmDialog
+          :model-value="rebuyNotice !== null"
+          :title="rebuyNotice?.title"
+          :content="rebuyNotice?.message"
+          :confirm-text="rebuyNotice?.goCart ? '去购物车' : '知道了'"
+          cancel-text="留在此页"
+          @update:model-value="(v: boolean) => { if (!v) rebuyNotice = null }"
+          @confirm="onRebuyNoticeConfirm"
         />
       </template>
     </main>
