@@ -32,6 +32,10 @@ vi.mock('@/api/user', () => ({
   updateAddress: vi.fn(),
   deleteAddress: vi.fn(),
   setDefaultAddress: vi.fn(),
+  // 余额（P6）：AccountCenterView load() 会调用，缺失会走真实 axios 导致全量并发下偶发超时
+  getBalance: vi.fn().mockResolvedValue({ data: { data: { balance: '0.00', total_recharge: '0.00', total_consume: '0.00' } } }),
+  getRecharges: vi.fn().mockResolvedValue({ data: { data: { list: [], pagination: { page: 1, page_size: 5, total: 0, total_pages: 1 } } } }),
+  getBalanceLogs: vi.fn().mockResolvedValue({ data: { data: { list: [], pagination: { page: 1, page_size: 5, total: 0, total_pages: 1 } } } }),
 }))
 
 vi.mock('@/api/notification', () => ({
@@ -67,6 +71,8 @@ function makeRouter() {
       { path: '/account/favorites', component: { template: '<div />' } },
       { path: '/account/histories', component: { template: '<div />' } },
       { path: '/account/addresses', component: { template: '<div />' } },
+      { path: '/coupons/mine', component: { template: '<div />' } },
+      { path: '/coupons/center', component: { template: '<div />' } },
       { path: '/notifications', component: { template: '<div />' } },
     ],
   })
@@ -143,9 +149,10 @@ describe('修改密码（T-027 前端校验）', () => {
   }
 
   async function gotoSecurity() {
-    await waitFor(() => expect(screen.getByTestId('account-tab-security')).toBeTruthy())
+    // 全量并发时 jsdom 负载高，默认 1s 偶发不够（单跑稳定），放宽到 3s
+    await waitFor(() => expect(screen.getByTestId('account-tab-security')).toBeTruthy(), { timeout: 3000 })
     await fireEvent.click(screen.getByTestId('account-tab-security'))
-    await waitFor(() => expect(screen.getByTestId('change-password-btn')).toBeTruthy())
+    await waitFor(() => expect(screen.getByTestId('change-password-btn')).toBeTruthy(), { timeout: 3000 })
   }
 
   it('新密码不符合强度规则时本地拦截，不调用接口', async () => {

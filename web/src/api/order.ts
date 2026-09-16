@@ -151,10 +151,21 @@ export interface CreateOrderResult {
   freight_amount: string
   pay_amount: string
   status: OrderStatus
+  /** V1.1 T-035/T-039：用券下单返回的金额明细（核对前端预览口径） */
+  discount_amount?: string
+  promotion_discount?: string
+  coupon_id?: number | null
+  amount_details?: Record<string, unknown> | null
 }
 
-/** 创建订单（cart_item_ids 不传则结算全部有效项） */
-export function createOrder(data: { address_id: number; cart_item_ids?: number[]; remark?: string }) {
+/** 创建订单（cart_item_ids 不传则结算全部有效项；V1.1 T-035/T-039 支持 user_coupon_id） */
+export function createOrder(data: {
+  address_id: number
+  cart_item_ids?: number[]
+  remark?: string
+  user_coupon_id?: number
+  promotion_id?: number
+}) {
   return request.post<ApiResult<CreateOrderResult>>('/orders', data)
 }
 
