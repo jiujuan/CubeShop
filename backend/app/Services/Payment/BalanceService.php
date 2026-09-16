@@ -52,6 +52,9 @@ class BalanceService
 
     /**
      * 入账（正金额）
+     *
+     * @param  string|null  $totalRechargeDelta  计入「累计充值」的金额（默认与入账金额相同）；
+     *                                           充值含赠送时传本金，使 total_recharge 只统计本金（§6.5）
      */
     public function credit(
         int $userId,
@@ -61,15 +64,16 @@ class BalanceService
         ?int $relatedId = null,
         ?string $remark = null,
         ?int $createdBy = null,
+        ?string $totalRechargeDelta = null,
     ): UserBalanceLog {
-        return DB::transaction(function () use ($userId, $amount, $type, $relatedType, $relatedId, $remark, $createdBy) {
+        return DB::transaction(function () use ($userId, $amount, $type, $relatedType, $relatedId, $remark, $createdBy, $totalRechargeDelta) {
             $account = $this->account($userId, lock: true);
             $before = (string) $account->balance;
             $after = $this->add($before, $amount);
 
             $account->balance = $after;
             if ($type === UserBalanceLog::TYPE_RECHARGE) {
-                $account->total_recharge = $this->add((string) $account->total_recharge, $amount);
+                $account->total_recharge = $this->add((string) $account->total_recharge, $totalRechargeDelta ?? $amount);
             }
             $account->version = (int) $account->version + 1;
             $account->save();
@@ -162,6 +166,7 @@ class BalanceService
                 'recharge',
                 $recharge->id,
                 '余额充值 '.$recharge->recharge_no.$giftText,
+                totalRechargeDelta: (string) $recharge->amount,
             );
         });
     }

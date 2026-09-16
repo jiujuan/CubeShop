@@ -77,6 +77,12 @@ const router = createRouter({
       meta: { title: '支付结果 · CubeShop', requiresAuth: true },
     },
     {
+      path: '/balance/recharge',
+      name: 'balance-recharge',
+      component: () => import('@/views/BalanceRechargeView.vue'),
+      meta: { title: '余额充值 · CubeShop', requiresAuth: true },
+    },
+    {
       path: '/account',
       name: 'account',
       component: () => import('@/views/AccountCenterView.vue'),

@@ -654,16 +654,18 @@ Schedule::command('payments:cancel-timeout')->everyMinute()->withoutOverlapping(
 
 ## 11. 实施计划
 
-| 阶段 | 内容 | 预估 |
-|---|---|---|
-| P1 数据层 | `payment_channels`、`user_balances`、`user_balance_logs`、`balance_recharges` 迁移 + `payments` 扩展列与 `order_id` 改可空 + 常量与标签扩展 + 权限码迁移（幂等） | 0.5 天 |
-| P2 适配层 | `PaymentGateway` 接口 + `MockGateway`（迁移现有沙箱）+ `BalanceGateway` + `OfflineGateway` + `PaymentService` 重构为编排层（按 `biz_type` 分流） | 1.5 天 |
-| P3 真实渠道 | `WechatGateway`（**Native 扫码**：V3 证书验签/解密/查单/退款）+ `AlipayGateway`（RSA2/沙箱网关/查单/退款）；建议用 `yansongda/pay` | 2 天 |
-| P4 后台 | 支付渠道配置页 + 接口 + 加密/脱敏 + 连接测试（文本域 + .pem 上传）；支付管理页核账；充值订单管理页；用户余额与流水区块 | 2 天 |
-| P5 前台 | 收银台重构（微信 Native 二维码）+ 结果页 + 渠道接口 + 凭证上传 + 轮询/查单补偿 | 1.5 天 |
-| P6 充值 | 充值页 + 充值单/入账服务 + 赠送与限额 + 充值记录与余额流水 | 1 天 |
-| P7 可靠性 | 超时关单命令（订单 + 充值）、主动查单调度、切换渠道关旧单 | 0.5 天 |
-| P8 测试 | 单元 + 集成 + 前端测试；支付宝沙箱联调；微信 1 分钱验收 | 1.5 天 |
+| 阶段 | 内容 | 预估 | 状态 |
+|---|---|---|---|
+| P1 数据层 | `payment_channels`、`user_balances`、`user_balance_logs`、`balance_recharges` 迁移 + `payments` 扩展列与 `order_id` 改可空 + 常量与标签扩展 + 权限码迁移（幂等） | 0.5 天 | ✅ 已实现 |
+| P2 适配层 | `PaymentGateway` 接口 + `MockGateway`（迁移现有沙箱）+ `BalanceGateway` + `OfflineGateway` + `PaymentService` 重构为编排层（按 `biz_type` 分流） | 1.5 天 | ✅ 已实现 |
+| P3 真实渠道 | `WechatGateway`（**Native 扫码**：V3 证书验签/解密/查单/退款）+ `AlipayGateway`（RSA2/沙箱网关/查单/退款）；建议用 `yansongda/pay` | 2 天 | ✅ 已实现 |
+| P4 后台 | 支付渠道配置页 + 接口 + 加密/脱敏 + 连接测试（文本域 + .pem 上传）；支付管理页核账；充值订单管理页；用户余额与流水区块 | 2 天 | ✅ 已实现 |
+| P5 前台 | 收银台重构（微信 Native 二维码）+ 结果页 + 渠道接口 + 凭证上传 + 轮询/查单补偿 | 1.5 天 | ✅ 已实现 |
+| P6 充值 | 充值页 + 充值单/入账服务 + 赠送与限额 + 充值记录与余额流水 | 1 天 | ✅ 已实现 |
+| P7 可靠性 | 超时关单命令（订单 + 充值）、主动查单调度、切换渠道关旧单 | 0.5 天 | ⏳ 待开始 |
+| P8 测试 | 单元 + 集成 + 前端测试；支付宝沙箱联调；微信 1 分钱验收 | 1.5 天 | ⏳ 待开始 |
+
+> **进度**：P1 ~ P6 已实现并通过双库全量回归（后端 397 passed ×2、前端 77 passed）。P6 证据见 `docs/testing/evidence/v1.1/cashier/P6-recharge.md`。
 
 合计约 **10.5 人日**（不含等商户号审批的等待时间）。其中 P1~P2 + P5 是前台可用的最小闭环（约 4 天，四种支付方式 + 沙箱），P3/P4 的真实渠道与后台配置可并行推进。
 

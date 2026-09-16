@@ -266,7 +266,9 @@ onBeforeUnmount(() => {
               </button>
             </div>
 
-            <p v-if="balanceInsufficient" class="mb-3 text-xs text-[#ff4d4f]">余额不足，请更换支付方式</p>
+            <p v-if="balanceInsufficient" class="mb-3 text-xs text-[#ff4d4f]">
+              余额不足，<button class="text-[#1677ff] underline" data-testid="go-recharge" @click="$router.push('/balance/recharge')">去充值</button> 或更换支付方式
+            </p>
 
             <!-- 线下转账：收款账户 + 凭证表单 -->
             <div v-if="selectedChannel === 'offline'" class="mb-4 space-y-3 rounded-lg bg-slate-50 p-4">
