@@ -182,8 +182,6 @@ describe('订单详情时间轴与确认收货（T-005）', () => {
     vi.clearAllMocks()
     const auth = useAuthStore()
     auth.token = 'fake-token'
-    vi.stubGlobal('alert', vi.fn())
-    vi.stubGlobal('confirm', vi.fn(() => true))
   })
 
   it('已发货订单渲染时间轴节点并显示确认收货按钮', async () => {
@@ -276,8 +274,6 @@ describe('订单列表分组、检索与再次购买（T-006）', () => {
     vi.clearAllMocks()
     const auth = useAuthStore()
     auth.token = 'fake-token'
-    vi.stubGlobal('alert', vi.fn())
-    vi.stubGlobal('confirm', vi.fn(() => true))
 
     getOrdersMock.mockResolvedValue({
       data: {
@@ -384,7 +380,7 @@ describe('订单列表分组、检索与再次购买（T-006）', () => {
     await waitFor(() => expect(push).toHaveBeenCalledWith('/cart'))
   })
 
-  it('再次购买存在失效行时弹窗提示明细', async () => {
+  it('再次购买存在失效行时弹层提示明细', async () => {
     rebuyOrderMock.mockResolvedValue({
       data: {
         data: {
@@ -395,12 +391,16 @@ describe('订单列表分组、检索与再次购买（T-006）', () => {
       },
     })
 
-    await renderList()
+    const { router } = await renderList()
+    const push = vi.spyOn(router, 'push')
 
     await fireEvent.click(screen.getByTestId('order-rebuy-11'))
 
-    await waitFor(() => expect(alert).toHaveBeenCalled())
-    expect((alert as unknown as ReturnType<typeof vi.fn>).mock.calls[0][0]).toContain('商品已下架')
+    // 弹层展示逐行明细（不再使用原生 alert）
+    await waitFor(() => expect(screen.getByTestId('confirm-dialog')).toBeTruthy())
+    expect(screen.getByTestId('confirm-dialog').textContent).toContain('商品已下架')
+    // 全部失效时不跳购物车
+    expect(push).not.toHaveBeenCalledWith('/cart')
   })
 
   it('已发货订单可下单确认收货（走二次确认而非直接调用）', async () => {
