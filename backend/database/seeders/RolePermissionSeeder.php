@@ -61,14 +61,14 @@ class RolePermissionSeeder extends Seeder
         }
 
         // 角色：name 为英文标识（程序用），display_name 为中文名（展示用）
+        // 注：V1.1 用户表拆分后买家独立成表（users）且不参与 spatie 权限体系，
+        //     故不再存在 customer 角色。
         $superAdmin = Role::findOrCreate('super_admin', 'web');
         $operator = Role::findOrCreate('operator', 'web');
-        $customer = Role::findOrCreate('customer', 'web'); // 买家，无后台权限
 
         foreach ([
             [$superAdmin, '超级管理员'],
             [$operator, '运营'],
-            [$customer, '买家'],
         ] as [$role, $displayName]) {
             if ($role->display_name !== $displayName) {
                 $role->display_name = $displayName;

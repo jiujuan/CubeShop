@@ -56,7 +56,6 @@ export interface PermissionGroup {
 export const ROLE_LABELS: Record<string, string> = {
   super_admin: '超级管理员',
   operator: '运营',
-  customer: '买家',
 }
 
 /** 账号列表 */

@@ -154,3 +154,17 @@ V1.0 已交付「浏览 → 加购 → 下单 → 支付 → 后台发货」完�
 ---
 
 **—— V1.1 规划总览结束 ——**
+
+---
+
+## 8. 术语约定（V1.1 用户表拆分后生效）
+
+> 权威说明见 [CubeShop_UserTable_Split_Analysis.md](../CubeShop_UserTable_Split_Analysis.md) 第八节。
+
+| 术语 | 指向 | 表 / 模型 |
+|---|---|---|
+| **用户**、**买家** | 前台注册的购买者 | `users` / `App\Models\User` |
+| **账号**、**后台账号**、**管理员** | 后台运营与超级管理员 | `sys_user` / `App\Models\SysUser` |
+
+对应后台模块：**用户管理**管买家（`/admin/users`），**账号管理**管管理员（`/admin/accounts`）。
+买家不参与 spatie 权限体系，`customer` 角色已移除。

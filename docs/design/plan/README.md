@@ -232,6 +232,11 @@ T-001 order_logs → T-002 确认收货 → T-015 评价后端 → T-016 评价�
 > **一期阶段出口（T-030）已通过**：双库 315 + web 71 + admin 44 全绿，冒烟 25/25，无 P0/P1 遗留。
 > 验收报告：`docs/testing/evidence/v1.1/T-030/phase1-acceptance.md`。
 
+> **V1.1 基础设施专项（非 T-XXX）· 用户表拆分**：`sys_user`（后台管理员）与 `users`（买家）物理隔离，三阶段全部完成——
+> 阶段 1 建表搬迁（原 ID 保留）、阶段 2 代码切换（外键/令牌/审计/通知归属对齐）、阶段 3 清理收口（僵尸数据 + `customer` 角色移除）。
+> 双库 435/435、web 83、admin 59、冒烟 32/32 全绿。
+> 方案：`docs/design/CubeShop_UserTable_Split_Analysis.md`；验收：`docs/testing/evidence/v1.1/user-split/phase{1,2,3}-acceptance.md`。
+
 ### 8.1 一期任务明细（滚动更新）
 
 | 编号 | 任务 | 状态 | 证据目录 |
