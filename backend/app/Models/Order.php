@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 
 /**
  * 订单主表（数据库设计 2.6）
@@ -81,6 +82,7 @@ class Order extends Model
     protected $fillable = [
         'order_no', 'user_id', 'status',
         'total_amount', 'freight_amount', 'pay_amount',
+        'coupon_id', 'discount_amount', 'promotion_discount', 'amount_details',
         'address_snapshot', 'remark',
         'paid_at', 'shipped_at', 'completed_at', 'cancelled_at', 'cancel_reason',
         'auto_completed',
@@ -88,9 +90,12 @@ class Order extends Model
 
     protected $casts = [
         'address_snapshot' => 'array',
+        'amount_details' => 'array',
         'total_amount' => 'decimal:2',
         'freight_amount' => 'decimal:2',
         'pay_amount' => 'decimal:2',
+        'discount_amount' => 'decimal:2',
+        'promotion_discount' => 'decimal:2',
         'paid_at' => 'datetime',
         'shipped_at' => 'datetime',
         'completed_at' => 'datetime',
@@ -106,6 +111,18 @@ class Order extends Model
     public function refunds(): HasMany
     {
         return $this->hasMany(Refund::class, 'order_id');
+    }
+
+    /** 使用的券模板（V1.1 F06） */
+    public function coupon(): BelongsTo
+    {
+        return $this->belongsTo(Coupon::class, 'coupon_id');
+    }
+
+    /** 本单核销的用户券（V1.1 F06；取消/退款时据此返还） */
+    public function usedCoupon(): HasOne
+    {
+        return $this->hasOne(UserCoupon::class, 'used_order_id');
     }
 
     public function user(): BelongsTo
