@@ -24,6 +24,7 @@ use App\Http\Controllers\Admin\RoleController as AdminRoleController;
 use App\Http\Controllers\Admin\UploadController;
 use App\Http\Controllers\Admin\UserController;
 use App\Http\Controllers\AuthController;
+use App\Http\Controllers\BalanceController;
 use App\Http\Controllers\CartController;
 use App\Http\Controllers\FavoriteController;
 use App\Http\Controllers\HealthController;
@@ -138,6 +139,12 @@ Route::middleware(['auth:sanctum', 'account.active'])->group(function () {
 
     // 线下转账凭证上传（需登录，限流 30/min）
     Route::post('/user/upload-voucher', [PaymentController::class, 'uploadVoucher'])->middleware('throttle:voucher');
+
+    // 余额与充值（收银台方案 §6.5 / Roadmap P6）
+    Route::get('/user/balance', [BalanceController::class, 'show']);
+    Route::get('/user/balance/recharges', [BalanceController::class, 'recharges']);
+    Route::post('/user/balance/recharges', [BalanceController::class, 'storeRecharge'])->middleware('throttle:recharge');
+    Route::get('/user/balance/logs', [BalanceController::class, 'logs']);
 
     // 后台管理：需要登录 + 对应权限码（API 文档 8）
     Route::prefix('admin')->group(function () {

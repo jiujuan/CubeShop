@@ -20,6 +20,9 @@ class NoGeneratorService
 
     public const PREFIX_REFUND = 'RF';
 
+    /** 余额充值单（收银台方案 §4.1(4)：RC20260916000001） */
+    public const PREFIX_RECHARGE = 'RC';
+
     public function generate(string $prefix): string
     {
         $date = now()->format('Ymd');
@@ -66,5 +69,10 @@ class NoGeneratorService
     public function generateRefundNo(): string
     {
         return $this->generate(self::PREFIX_REFUND);
+    }
+
+    public function generateRechargeNo(): string
+    {
+        return $this->generate(self::PREFIX_RECHARGE);
     }
 }

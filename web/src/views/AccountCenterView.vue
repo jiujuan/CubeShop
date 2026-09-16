@@ -6,6 +6,10 @@ import {
   ClipboardList, ShieldCheck, UserRound, Wallet,
 } from 'lucide-vue-next'
 import { changePassword, getProfile, updateProfile, uploadImage, type UserProfile } from '@/api/user'
+import {
+  getBalance, getRecharges, getBalanceLogs,
+  type BalanceAccount, type RechargeRecord, type BalanceLogItem,
+} from '@/api/balance'
 import { getUnreadCount } from '@/api/notification'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import LoadingSpinner from '@/components/LoadingSpinner.vue'
@@ -22,7 +26,7 @@ import { useAuthStore } from '@/stores/auth'
 const router = useRouter()
 const auth = useAuthStore()
 
-type Tab = 'overview' | 'profile' | 'security'
+type Tab = 'overview' | 'balance' | 'profile' | 'security'
 const tab = ref<Tab>('overview')
 
 const loading = ref(true)
@@ -30,6 +34,18 @@ const profile = ref<UserProfile | null>(null)
 const unread = ref(0)
 const tip = ref('')
 const tipType = ref<'ok' | 'err'>('ok')
+
+// 余额与流水（收银台方案 §9.4 / Roadmap P6）
+const balance = ref<BalanceAccount | null>(null)
+const recharges = ref<RechargeRecord[]>([])
+const rechargeTotal = ref(0)
+const rechargePage = ref(1)
+const rechargeLoading = ref(false)
+const logs = ref<BalanceLogItem[]>([])
+const logTotal = ref(0)
+const logPage = ref(1)
+const logLoading = ref(false)
+const balanceLoaded = ref(false)
 
 // 资料编辑
 const nickname = ref('')
@@ -45,6 +61,7 @@ const logoutConfirm = ref(false)
 
 const tabs: Array<{ key: Tab; label: string }> = [
   { key: 'overview', label: '概览' },
+  { key: 'balance', label: '余额' },
   { key: 'profile', label: '资料' },
   { key: 'security', label: '安全' },
 ]
@@ -86,6 +103,11 @@ async function load() {
     } catch {
       unread.value = 0
     }
+    try {
+      balance.value = (await getBalance()).data.data
+    } catch {
+      balance.value = null
+    }
   } finally {
     loading.value = false
   }
@@ -93,6 +115,59 @@ async function load() {
 
 function goOrders(tabKey: string) {
   router.push({ path: '/orders', query: tabKey === 'all' ? {} : { tab: tabKey } })
+}
+
+/** 切换 Tab：首次进入「余额」Tab 时按需加载充值记录与流水 */
+async function switchTab(key: Tab) {
+  tab.value = key
+  if (key === 'balance' && !balanceLoaded.value) {
+    balanceLoaded.value = true
+    await Promise.all([loadRecharges(1), loadLogs(1)])
+  }
+}
+
+async function loadRecharges(page: number) {
+  rechargeLoading.value = true
+  try {
+    const { data } = await getRecharges({ page, page_size: 5 })
+    recharges.value = data.data.list
+    rechargeTotal.value = data.data.pagination.total
+    rechargePage.value = page
+  } catch {
+    /* 忽略 */
+  } finally {
+    rechargeLoading.value = false
+  }
+}
+
+async function loadLogs(page: number) {
+  logLoading.value = true
+  try {
+    const { data } = await getBalanceLogs({ page, page_size: 5 })
+    logs.value = data.data.list
+    logTotal.value = data.data.pagination.total
+    logPage.value = page
+  } catch {
+    /* 忽略 */
+  } finally {
+    logLoading.value = false
+  }
+}
+
+function goRecharge() {
+  router.push('/balance/recharge')
+}
+
+/** 充值状态配色 */
+function rechargeStatusClass(status: string): string {
+  const map: Record<string, string> = {
+    success: 'text-[#52c41a]',
+    reviewing: 'text-[#1677ff]',
+    pending: 'text-amber-500',
+    failed: 'text-[#ff4d4f]',
+    closed: 'text-slate-400',
+  }
+  return map[status] ?? 'text-slate-400'
 }
 
 async function onAvatarPicked(e: Event) {
@@ -198,7 +273,7 @@ onMounted(() => {
             class="shrink-0 rounded-full px-4 py-1.5 text-[13px] transition-colors"
             :class="tab === t.key ? 'bg-[#1677ff] text-white' : 'border border-slate-200 bg-white text-slate-600 hover:text-[#1677ff]'"
             :data-testid="`account-tab-${t.key}`"
-            @click="tab = t.key"
+            @click="switchTab(t.key)"
           >{{ t.label }}</button>
         </div>
 
@@ -206,6 +281,23 @@ onMounted(() => {
 
         <!-- 概览 -->
         <template v-if="tab === 'overview'">
+          <!-- 我的余额（收银台方案 §9.4 / P6） -->
+          <section class="mb-4 rounded-xl border border-slate-100 bg-white p-5" data-testid="balance-card">
+            <div class="flex items-center justify-between">
+              <div>
+                <p class="flex items-center gap-1.5 text-sm font-semibold text-slate-700"><Wallet class="h-4 w-4 text-[#1677ff]" /> 我的余额</p>
+                <p class="mt-2 text-2xl font-bold text-[#ff4d4f]" data-testid="balance-value">¥{{ balance?.balance ?? '0.00' }}</p>
+                <p class="mt-1 text-xs text-slate-400">
+                  累计充值 ¥{{ balance?.total_recharge ?? '0.00' }} · 累计消费 ¥{{ balance?.total_consume ?? '0.00' }}
+                </p>
+              </div>
+              <div class="flex gap-2">
+                <button class="rounded-full border border-slate-200 px-4 py-1.5 text-[13px] text-slate-600 hover:border-[#1677ff] hover:text-[#1677ff]" data-testid="balance-detail-btn" @click="switchTab('balance')">明细</button>
+                <button class="rounded-full bg-[#1677ff] px-4 py-1.5 text-[13px] text-white hover:bg-[#4096ff]" data-testid="recharge-btn" @click="goRecharge">充值</button>
+              </div>
+            </div>
+          </section>
+
           <section class="mb-4 rounded-xl border border-slate-100 bg-white p-5">
             <h2 class="mb-3 text-sm font-semibold text-slate-700">我的订单</h2>
             <div class="grid grid-cols-4 gap-2">
@@ -236,6 +328,52 @@ onMounted(() => {
                 </span>
                 <ChevronRight class="h-3.5 w-3.5 text-slate-300" />
               </button>
+            </div>
+          </section>
+        </template>
+
+        <!-- 余额（充值记录 + 余额流水，P6） -->
+        <template v-else-if="tab === 'balance'">
+          <section class="mb-4 rounded-xl border border-slate-100 bg-white p-5" data-testid="balance-panel">
+            <h2 class="mb-3 text-sm font-semibold text-slate-700">充值记录</h2>
+            <p v-if="rechargeLoading" class="py-6 text-center text-xs text-slate-400">加载中…</p>
+            <p v-else-if="!recharges.length" class="py-6 text-center text-xs text-slate-400" data-testid="recharge-empty">暂无充值记录</p>
+            <ul v-else class="divide-y divide-slate-100">
+              <li v-for="r in recharges" :key="r.id" class="flex items-center justify-between py-3 text-[13px]" data-testid="recharge-row">
+                <div class="min-w-0">
+                  <p class="text-slate-700">
+                    {{ r.channel_label }} · ¥{{ r.amount }}
+                    <span v-if="Number(r.gift_amount) > 0" class="text-amber-500">（赠 ¥{{ r.gift_amount }}）</span>
+                  </p>
+                  <p class="mt-0.5 truncate text-xs text-slate-400">{{ r.recharge_no }} · {{ r.created_at }}</p>
+                </div>
+                <span class="shrink-0 text-xs" :class="rechargeStatusClass(r.status)">{{ r.status_label }}</span>
+              </li>
+            </ul>
+            <div v-if="rechargeTotal > 5" class="mt-3 flex items-center justify-center gap-3 text-xs text-slate-500">
+              <button class="rounded border border-slate-200 px-3 py-1 disabled:opacity-40" :disabled="rechargePage <= 1" data-testid="recharge-prev" @click="loadRecharges(rechargePage - 1)">上一页</button>
+              <span>{{ rechargePage }} / {{ Math.ceil(rechargeTotal / 5) }}</span>
+              <button class="rounded border border-slate-200 px-3 py-1 disabled:opacity-40" :disabled="rechargePage >= Math.ceil(rechargeTotal / 5)" data-testid="recharge-next" @click="loadRecharges(rechargePage + 1)">下一页</button>
+            </div>
+          </section>
+
+          <section class="rounded-xl border border-slate-100 bg-white p-5" data-testid="balance-logs-panel">
+            <h2 class="mb-3 text-sm font-semibold text-slate-700">余额流水</h2>
+            <p v-if="logLoading" class="py-6 text-center text-xs text-slate-400">加载中…</p>
+            <p v-else-if="!logs.length" class="py-6 text-center text-xs text-slate-400" data-testid="log-empty">暂无余额流水</p>
+            <ul v-else class="divide-y divide-slate-100">
+              <li v-for="l in logs" :key="l.id" class="flex items-center justify-between py-3 text-[13px]" data-testid="log-row">
+                <div class="min-w-0">
+                  <p class="text-slate-700">{{ l.type_label }}<span v-if="l.remark" class="text-slate-400"> · {{ l.remark }}</span></p>
+                  <p class="mt-0.5 text-xs text-slate-400">{{ l.created_at }} · 余额 ¥{{ l.balance_after }}</p>
+                </div>
+                <span class="shrink-0 font-medium" :class="Number(l.amount) >= 0 ? 'text-[#52c41a]' : 'text-[#ff4d4f]'">{{ Number(l.amount) >= 0 ? '+' : '' }}{{ l.amount }}</span>
+              </li>
+            </ul>
+            <div v-if="logTotal > 5" class="mt-3 flex items-center justify-center gap-3 text-xs text-slate-500">
+              <button class="rounded border border-slate-200 px-3 py-1 disabled:opacity-40" :disabled="logPage <= 1" data-testid="log-prev" @click="loadLogs(logPage - 1)">上一页</button>
+              <span>{{ logPage }} / {{ Math.ceil(logTotal / 5) }}</span>
+              <button class="rounded border border-slate-200 px-3 py-1 disabled:opacity-40" :disabled="logPage >= Math.ceil(logTotal / 5)" data-testid="log-next" @click="loadLogs(logPage + 1)">下一页</button>
             </div>
           </section>
         </template>
