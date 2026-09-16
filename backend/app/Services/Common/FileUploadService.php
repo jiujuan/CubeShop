@@ -41,4 +41,39 @@ class FileUploadService
 
         return Storage::disk('public')->url($path);
     }
+
+    /**
+     * 上传线下转账凭证（§5.4）：仅前台、登录用户、按用户分日存储
+     *
+     * 限制：jpg/jpeg/png/webp，≤ 3MB，单用户单日 ≤ 20 张。
+     *
+     * @throws BusinessException
+     */
+    public function uploadVoucher(UploadedFile $file, int $userId): string
+    {
+        if (! $file->isValid()) {
+            throw BusinessException::badRequest('上传文件无效');
+        }
+
+        if ($file->getSize() > 3072 * 1024) {
+            throw BusinessException::badRequest('凭证图片大小超过 3MB 限制');
+        }
+
+        $ext = strtolower($file->getClientOriginalExtension());
+        if (! in_array($ext, ['jpg', 'jpeg', 'png', 'webp'], true)) {
+            throw BusinessException::badRequest('凭证仅支持 jpg/jpeg/png/webp 格式');
+        }
+
+        $today = now()->format('Ymd');
+        $dir = "vouchers/{$userId}/{$today}";
+
+        // 单用户单日上限 20 张（按当日目录文件数判定的轻量限流）
+        if (count(Storage::disk('public')->files($dir)) >= 20) {
+            throw BusinessException::badRequest('今日上传凭证数量已达上限（20 张）');
+        }
+
+        $path = $file->store($dir, 'public');
+
+        return Storage::disk('public')->url($path);
+    }
 }

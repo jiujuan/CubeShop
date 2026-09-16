@@ -122,7 +122,11 @@ Route::middleware(['auth:sanctum', 'account.active'])->group(function () {
 
     // 支付（API 文档 7 / Roadmap P5）
     Route::post('/payments', [PaymentController::class, 'store']);
+    // 收银台渠道列表（必须注册在 /payments/{paymentNo} 之前，避免被捕获）
+    Route::get('/payments/channels', [PaymentController::class, 'channels']);
     Route::get('/payments/{paymentNo}', [PaymentController::class, 'show']);
+    // 主动查单补偿（结果页轮询兜底，限流 10/min）
+    Route::post('/payments/{paymentNo}/sync', [PaymentController::class, 'sync'])->middleware('throttle:sync');
 
     // 收货地址（API 文档 3.3 ~ 3.7 / V1.1 E04 T-028 解析）
     Route::get('/user/addresses', [AddressController::class, 'index']);
@@ -131,6 +135,9 @@ Route::middleware(['auth:sanctum', 'account.active'])->group(function () {
     Route::put('/user/addresses/{id}', [AddressController::class, 'update']);
     Route::post('/user/addresses/{id}/default', [AddressController::class, 'setDefault']);
     Route::delete('/user/addresses/{id}', [AddressController::class, 'destroy']);
+
+    // 线下转账凭证上传（需登录，限流 30/min）
+    Route::post('/user/upload-voucher', [PaymentController::class, 'uploadVoucher'])->middleware('throttle:voucher');
 
     // 后台管理：需要登录 + 对应权限码（API 文档 8）
     Route::prefix('admin')->group(function () {

@@ -4,6 +4,7 @@ namespace App\Services\Payment;
 
 use App\Models\PaymentChannel;
 use App\Services\Common\ConfigService;
+use App\Services\Payment\BalanceService;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Crypt;
 
@@ -17,7 +18,7 @@ use Illuminate\Support\Facades\Crypt;
  */
 class PaymentChannelService
 {
-    public function __construct(private readonly ConfigService $config)
+    public function __construct(private readonly ConfigService $config, private readonly BalanceService $balances)
     {
     }
 
@@ -162,6 +163,91 @@ class PaymentChannelService
                 'sandbox' => $c->sandbox,
             ])
             ->all();
+    }
+
+    /**
+     * 收银台首屏渠道数据（§6.1 / §9.1）
+     *
+     * 在 enabledChannels 基础上按场景补充：
+     * - balance 渠道附带当前用户余额（不足时前端置灰）
+     * - offline 渠道附带单收款账户（开户行/户名/账号/收款码）
+     * - recharge 场景过滤掉余额支付，并附带面额/赠送规则/限额
+     *
+     * @return array{default_channel: string, channels: array, recharge?: array}
+     */
+    public function cashierChannels(int $userId, string $scene = 'order'): array
+    {
+        $this->ensurePresets();
+
+        $channels = collect($this->enabledChannels($scene))
+            ->map(function (array $item) use ($userId) {
+                if ($item['code'] === PaymentChannel::CHANNEL_BALANCE) {
+                    $item['balance'] = $this->balances->balance($userId);
+                }
+                if ($item['code'] === PaymentChannel::CHANNEL_OFFLINE) {
+                    $item['receipt'] = $this->offlineReceipt();
+                }
+
+                return $item;
+            })
+            ->values()
+            ->all();
+
+        $result = [
+            'default_channel' => $this->defaultChannel($scene),
+            'channels' => $channels,
+        ];
+
+        if ($scene === 'recharge') {
+            $result['recharge'] = $this->rechargeConfig();
+        }
+
+        return $result;
+    }
+
+    /** 收银台默认选中渠道（配置缺失时回退微信） */
+    private function defaultChannel(string $scene): string
+    {
+        $default = $this->config->get('payment.default_channel', PaymentChannel::CHANNEL_WECHAT);
+
+        // recharge 场景禁用余额作为默认
+        if ($scene === 'recharge' && $default === PaymentChannel::CHANNEL_BALANCE) {
+            return PaymentChannel::CHANNEL_WECHAT;
+        }
+
+        return $default;
+    }
+
+    /** 充值页配置（面额 / 赠送规则 / 限额，§6.5） */
+    private function rechargeConfig(): array
+    {
+        return [
+            'enabled' => $this->config->get('payment.recharge_enabled', '1') === '1',
+            'amounts' => $this->parseAmounts($this->config->get('payment.recharge_amounts', '50,100,200,500')),
+            'min_amount' => $this->config->getDecimal('payment.recharge_min_amount', '10.00'),
+            'max_single' => $this->config->getDecimal('payment.recharge_max_single', '5000.00'),
+            'max_daily' => $this->config->getDecimal('payment.recharge_max_daily', '20000.00'),
+            'gift_rules' => $this->parseGiftRules($this->config->get('payment.recharge_gift_rules', '[]')),
+        ];
+    }
+
+    /** 固定面额：逗号分隔 → 数值字符串数组 */
+    private function parseAmounts(string $raw): array
+    {
+        return collect(explode(',', $raw))
+            ->map(fn ($v) => trim((string) $v))
+            ->filter(fn ($v) => $v !== '')
+            ->map(fn ($v) => number_format((float) $v, 2, '.', ''))
+            ->values()
+            ->all();
+    }
+
+    /** 赠送规则：JSON 数组，容错为空 */
+    private function parseGiftRules(string $raw): array
+    {
+        $data = json_decode((string) $raw, true);
+
+        return is_array($data) ? $data : [];
     }
 
     /** 线下收款账户（单账户） */

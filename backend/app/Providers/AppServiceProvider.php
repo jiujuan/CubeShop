@@ -46,6 +46,16 @@ class AppServiceProvider extends ServiceProvider
             return Limit::perMinute(10)->by('order|'.($request->user()?->id ?? $request->ip()));
         });
 
+        // 主动查单补偿（结果页轮询兜底）：同用户 10 次/分钟
+        RateLimiter::for('sync', function (Request $request) {
+            return Limit::perMinute(10)->by('sync|'.($request->user()?->id ?? $request->ip()));
+        });
+
+        // 凭证上传：同用户 30 次/分钟（另有单日 20 张业务上限）
+        RateLimiter::for('voucher', function (Request $request) {
+            return Limit::perMinute(30)->by('voucher|'.($request->user()?->id ?? $request->ip()));
+        });
+
         // V1.1 F02 / T-018：业务事件 → 通知监听器（站内信 + 邮件）
         Event::listen(\App\Events\OrderPaid::class, \App\Listeners\SendOrderPaidNotification::class);
         Event::listen(\App\Events\OrderShipped::class, \App\Listeners\SendOrderShippedNotification::class);
