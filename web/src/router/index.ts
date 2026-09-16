@@ -71,6 +71,12 @@ const router = createRouter({
       meta: { title: '收银台 · CubeShop', requiresAuth: true },
     },
     {
+      path: '/pay/result/:payment_no',
+      name: 'pay-result',
+      component: () => import('@/views/PayResultView.vue'),
+      meta: { title: '支付结果 · CubeShop', requiresAuth: true },
+    },
+    {
       path: '/account',
       name: 'account',
       component: () => import('@/views/AccountCenterView.vue'),
