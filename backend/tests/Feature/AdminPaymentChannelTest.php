@@ -1,6 +1,5 @@
 <?php
 
-use App\Models\SysUser;
 use App\Services\Common\CaptchaService;
 use App\Services\Payment\PaymentChannelService;
 use Illuminate\Foundation\Testing\RefreshDatabase;

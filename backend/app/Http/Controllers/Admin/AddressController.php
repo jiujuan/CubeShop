@@ -4,7 +4,7 @@ namespace App\Http\Controllers\Admin;
 
 use App\Exceptions\BusinessException;
 use App\Http\Controllers\Controller;
-use App\Models\SysUser;
+use App\Models\User;
 use App\Models\UserAddress;
 use App\Services\Common\OperationLogService;
 use App\Support\ApiResponse;
@@ -33,7 +33,7 @@ class AddressController extends Controller
      */
     public function userIndex(int $userId): JsonResponse
     {
-        $user = SysUser::query()->find($userId);
+        $user = User::query()->find($userId);
         if (! $user) {
             throw BusinessException::notFound('用户不存在');
         }

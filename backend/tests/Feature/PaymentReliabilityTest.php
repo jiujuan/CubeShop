@@ -4,7 +4,7 @@ use App\Models\BalanceRecharge;
 use App\Models\Order;
 use App\Models\Payment;
 use App\Models\PaymentLog;
-use App\Models\SysUser;
+use App\Models\User;
 use App\Services\Common\CaptchaService;
 use App\Services\Payment\Dto\QueryResult;
 use App\Services\Payment\Gateways\MockGateway;
@@ -41,7 +41,7 @@ beforeEach(function () {
         'code' => $cap['debug_code'],
         'captcha_id' => $cap['captcha_id'],
     ]);
-    $this->userId = SysUser::where('username', $username)->value('id');
+    $this->userId = User::where('username', $username)->value('id');
 });
 
 /** 建一笔充值单 + 关联支付单，返回 [recharge, payment] */

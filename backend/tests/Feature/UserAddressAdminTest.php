@@ -1,7 +1,7 @@
 <?php
 
 use App\Models\SysOperationLog;
-use App\Models\SysUser;
+use App\Models\User;
 use App\Models\UserAddress;
 use App\Services\Common\CaptchaService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -37,7 +37,7 @@ beforeEach(function () {
         'captcha_id' => $cap['captcha_id'],
     ])->json('data.token');
     $this->buyerAuth = ['Authorization' => 'Bearer '.$this->buyerToken];
-    $this->buyer = SysUser::where('username', $this->buyerUsername)->first();
+    $this->buyer = User::where('username', $this->buyerUsername)->first();
 
     $this->address = UserAddress::create([
         'user_id' => $this->buyer->id,

@@ -1,8 +1,13 @@
 # 用户表拆分方案分析（sys_user 保留管理员 + 新建 users 承载买家）
 
 - 日期：2026-09-16
-- 状态：**已定方向，待实施**
+- 状态：**阶段 1、阶段 2 已完成**（阶段 3 待执行）
 - 决策：`sys_user` **保持不动**，继续承载后台管理员；新建买家表拆分前台注册用户
+- 实施记录：
+  - 阶段 1 验收：`docs/testing/evidence/v1.1/user-split/phase1-acceptance.md`
+  - 阶段 2 验收：`docs/testing/evidence/v1.1/user-split/phase2-acceptance.md`
+  - 实施偏差见阶段 2 报告第二节（登录未拆独立端点、`Admin\UserController` 改为买家专表、
+    额外新增 `notifications.receiver_type`）
 
 ---
 

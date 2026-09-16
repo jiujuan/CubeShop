@@ -5,7 +5,7 @@ namespace App\Http\Controllers\Admin;
 use App\Exceptions\BusinessException;
 use App\Http\Controllers\Controller;
 use App\Models\Order;
-use App\Models\SysUser;
+use App\Models\User;
 use App\Services\Common\OperationLogService;
 use App\Support\ApiResponse;
 use Illuminate\Http\JsonResponse;
@@ -15,8 +15,12 @@ use Illuminate\Validation\Rule;
 /**
  * 后台用户管理（API 文档 8.8，权限 user.manage）
  *
- * 管理对象：前台购买商品注册的买家账号（sys_user，角色 customer），
- * 支持切换查看管理员账号。超级管理员账号受保护，不允许在此禁用/编辑。
+ * 管理对象：buyers —— 前台注册的买家（表 users）。
+ * 后台管理员账号请使用「账号管理」（Admin\AccountController，表 sys_user）。
+ *
+ * V1.1 用户表拆分后，本接口**只服务买家**：
+ * 管理员与买家已分属两张表，ID 各自独立，混列会造成 ID 撞号与操作歧义，
+ * 因此原 role=customer|admin|all 的混合视图已下线。
  */
 class UserController extends Controller
 {
@@ -35,14 +39,13 @@ class UserController extends Controller
 
     /**
      * 用户列表（多条件筛选）
-     * GET /admin/users?keyword=&status=&role=&start_time=&end_time=&page=&page_size=
+     * GET /admin/users?keyword=&status=&start_time=&end_time=&page=&page_size=
      */
     public function index(Request $request): JsonResponse
     {
         $data = $request->validate([
             'keyword' => ['nullable', 'string', 'max:64'],
             'status' => ['nullable', 'integer', 'in:0,1'],
-            'role' => ['nullable', 'string', 'in:customer,admin,all'],
             'start_time' => ['nullable', 'date'],
             'end_time' => ['nullable', 'date'],
             'page' => ['nullable', 'integer', 'min:1'],
@@ -55,7 +58,7 @@ class UserController extends Controller
             ->orderByDesc('id')
             ->paginate(min($data['page_size'] ?? 20, 100), ['*'], 'page', $data['page'] ?? 1);
 
-        $paginator->through(fn (SysUser $user) => $this->brief($user));
+        $paginator->through(fn (User $user) => $this->brief($user));
 
         return $this->paginated($paginator);
     }
@@ -66,7 +69,7 @@ class UserController extends Controller
      */
     public function show(int $id): JsonResponse
     {
-        $user = $this->withOrderStats(SysUser::query())->find($id);
+        $user = $this->withOrderStats(User::query())->find($id);
 
         if (! $user) {
             throw BusinessException::notFound('用户不存在');
@@ -83,17 +86,13 @@ class UserController extends Controller
     {
         $data = $request->validate([
             'nickname' => ['nullable', 'string', 'max:64'],
-            'phone' => ['nullable', 'string', 'max:20', Rule::unique('sys_user', 'phone')->ignore($id)],
-            'email' => ['nullable', 'email', 'max:128', Rule::unique('sys_user', 'email')->ignore($id)],
+            'phone' => ['nullable', 'string', 'max:20', Rule::unique('users', 'phone')->ignore($id)],
+            'email' => ['nullable', 'email', 'max:128', Rule::unique('users', 'email')->ignore($id)],
         ]);
 
-        $user = SysUser::query()->find($id);
+        $user = User::query()->find($id);
         if (! $user) {
             throw BusinessException::notFound('用户不存在');
-        }
-
-        if ($user->hasRole('super_admin')) {
-            throw BusinessException::forbidden('超级管理员账号不允许在此操作');
         }
 
         $changes = [];
@@ -108,7 +107,7 @@ class UserController extends Controller
         }
 
         if (! $changes) {
-            return $this->success($this->detail($this->withOrderStats(SysUser::query())->find($id)), '未修改任何内容');
+            return $this->success($this->detail($this->withOrderStats(User::query())->find($id)), '未修改任何内容');
         }
 
         $user->fill(collect($changes)->map(fn ($c) => $c['to'])->all())->save();
@@ -117,12 +116,12 @@ class UserController extends Controller
             $request->user()->id,
             'user',
             'update_user',
-            'sys_user',
+            'users',
             $user->id,
             sprintf('编辑用户 %s（#%d）：%s', $user->username, $user->id, json_encode($changes, JSON_UNESCAPED_UNICODE)),
         );
 
-        return $this->success($this->detail($this->withOrderStats(SysUser::query())->find($id)), '资料已更新');
+        return $this->success($this->detail($this->withOrderStats(User::query())->find($id)), '资料已更新');
     }
 
     /**
@@ -135,17 +134,9 @@ class UserController extends Controller
             'status' => ['required', 'integer', 'in:0,1'],
         ]);
 
-        $user = SysUser::query()->find($id);
+        $user = User::query()->find($id);
         if (! $user) {
             throw BusinessException::notFound('用户不存在');
-        }
-
-        if ($user->hasRole('super_admin')) {
-            throw BusinessException::forbidden('超级管理员账号不允许在此操作');
-        }
-
-        if ($data['status'] === 0 && $user->id === $request->user()->id) {
-            throw BusinessException::badRequest('不能禁用当前登录账号');
         }
 
         if ($user->status !== $data['status']) {
@@ -161,14 +152,14 @@ class UserController extends Controller
                 $request->user()->id,
                 'user',
                 $data['status'] === 1 ? 'enable_user' : 'disable_user',
-                'sys_user',
+                'users',
                 $user->id,
                 sprintf('%s用户 %s（#%d）', $data['status'] === 1 ? '启用' : '禁用', $user->username, $user->id),
             );
         }
 
         return $this->success(
-            $this->brief($this->withOrderStats(SysUser::query())->find($id)),
+            $this->brief($this->withOrderStats(User::query())->find($id)),
             $data['status'] === 1 ? '已启用' : '已禁用',
         );
     }
@@ -176,15 +167,7 @@ class UserController extends Controller
     /** 列表/详情共用筛选 */
     private function buildQuery(array $data)
     {
-        return SysUser::query()
-            // 角色范围：默认买家（customer）；admin=后台账号；all=不过滤
-            ->when($data['role'] ?? 'customer', function ($q, $role) {
-                if ($role === 'customer') {
-                    $q->role('customer');
-                } elseif ($role === 'admin') {
-                    $q->role(['super_admin', 'operator']);
-                }
-            })
+        return User::query()
             ->when(isset($data['status']), fn ($q) => $q->where('status', $data['status']))
             ->when($data['keyword'] ?? null, function ($q, $keyword) {
                 $q->where(function ($q) use ($keyword) {
@@ -207,7 +190,7 @@ class UserController extends Controller
     }
 
     /** 列表项结构 */
-    private function brief(SysUser $user): array
+    private function brief(User $user): array
     {
         return [
             'id' => $user->id,
@@ -217,7 +200,8 @@ class UserController extends Controller
             'phone' => $user->phone,
             'email' => $user->email,
             'status' => $user->status,
-            'roles' => $user->getRoleNames()->all(),
+            // 买家不参与 spatie 权限体系，无角色
+            'roles' => [],
             'order_count' => (int) ($user->order_count ?? 0),
             'total_paid' => (string) ($user->total_paid ?? '0'),
             'last_login_at' => $user->last_login_at?->format('Y-m-d H:i:s'),
@@ -227,7 +211,7 @@ class UserController extends Controller
     }
 
     /** 详情结构 */
-    private function detail(SysUser $user): array
+    private function detail(User $user): array
     {
         return $this->brief($user) + [
             'recent_orders' => Order::query()

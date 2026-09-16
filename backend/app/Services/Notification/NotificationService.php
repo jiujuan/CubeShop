@@ -12,6 +12,9 @@ use Illuminate\Support\Facades\DB;
  *
  * 站内信为兜底主通道（一定写库）；邮件为增强通道，按 `notify.mail_types` 配置决定是否投递。
  * 邮件投递失败不影响主流程（队列重试 + 失败记日志）。
+ *
+ * 收件人身份：notifications.user_id 是混合语义列（买家 + 后台管理员都会写入），
+ * 必须通过 receiver_type 区分来源表，否则两侧 ID 撞号会造成通知串号。
  */
 class NotificationService
 {
@@ -29,11 +32,20 @@ class NotificationService
 
     /**
      * 发送站内信（并视配置投递邮件）
+     *
+     * @param  string  $receiverType  收件人来源：customer=买家（默认）/ admin=后台管理员
      */
-    public function send(int $userId, string $type, string $title, string $content, ?string $link = null): Notification
-    {
+    public function send(
+        int $userId,
+        string $type,
+        string $title,
+        string $content,
+        ?string $link = null,
+        string $receiverType = Notification::RECEIVER_CUSTOMER,
+    ): Notification {
         $notification = Notification::create([
             'user_id' => $userId,
+            'receiver_type' => $receiverType,
             'type' => $type,
             'title' => $title,
             'content' => $content,
@@ -42,14 +54,16 @@ class NotificationService
         ]);
 
         if ($this->isMailEnabled($type)) {
-            $this->dispatchMail($userId, $title, $content);
+            $this->dispatchMail($userId, $title, $content, $receiverType);
         }
 
         return $notification;
     }
 
     /**
-     * 向拥有某角色的全部用户发送通知（如库存预警 → 运营）
+     * 向拥有某角色的后台管理员发送通知（如库存预警 → 运营）
+     *
+     * 注意：仅后台管理员参与 spatie 角色体系，买家不参与。
      */
     public function sendToRole(string $role, string $type, string $title, string $content, ?string $link = null): int
     {
@@ -59,7 +73,7 @@ class NotificationService
             ->whereHas('roles', fn ($q) => $q->where('name', $role))
             ->cursor()
             ->each(function (SysUser $user) use ($type, $title, $content, $link, &$count) {
-                $this->send($user->id, $type, $title, $content, $link);
+                $this->send($user->id, $type, $title, $content, $link, Notification::RECEIVER_ADMIN);
                 $count++;
             });
 
@@ -86,10 +100,10 @@ class NotificationService
     }
 
     /** 投递邮件作业（队列可用时异步，不可用时降级 sync 仍不阻塞主流程） */
-    private function dispatchMail(int $userId, string $title, string $content): void
+    private function dispatchMail(int $userId, string $title, string $content, string $receiverType): void
     {
         try {
-            \App\Jobs\SendNotificationMail::dispatch($userId, $title, $content)->afterCommit();
+            \App\Jobs\SendNotificationMail::dispatch($userId, $title, $content, $receiverType)->afterCommit();
         } catch (\Throwable $e) {
             // 队列/邮件通道异常不得影响业务主流程
             report($e);
@@ -98,15 +112,26 @@ class NotificationService
 
     // ---------- 查询与已读 ----------
 
-    public function unreadCount(int $userId): int
+    public function unreadCount(int $userId, string $receiverType = Notification::RECEIVER_CUSTOMER): int
     {
-        return Notification::where('user_id', $userId)->where('is_read', false)->count();
+        return Notification::query()
+            ->where('user_id', $userId)
+            ->receiver($receiverType)
+            ->where('is_read', false)
+            ->count();
     }
 
     /** 批量已读：ids 为空表示全部已读 */
-    public function markRead(int $userId, array $ids = []): int
-    {
-        $query = Notification::where('user_id', $userId)->where('is_read', false);
+    public function markRead(
+        int $userId,
+        array $ids = [],
+        string $receiverType = Notification::RECEIVER_CUSTOMER,
+    ): int {
+        $query = Notification::query()
+            ->where('user_id', $userId)
+            ->receiver($receiverType)
+            ->where('is_read', false);
+
         if ($ids !== []) {
             $query->whereIn('id', $ids);
         }

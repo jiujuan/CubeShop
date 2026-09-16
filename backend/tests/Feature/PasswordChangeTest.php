@@ -1,7 +1,6 @@
 <?php
 
 use App\Models\Notification;
-use App\Models\SysUser;
 use App\Services\Common\CaptchaService;
 use App\Services\Notification\NotificationService;
 use Illuminate\Foundation\Testing\RefreshDatabase;

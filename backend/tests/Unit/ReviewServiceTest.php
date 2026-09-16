@@ -3,7 +3,7 @@
 use App\Exceptions\BusinessException;
 use App\Models\OrderItem;
 use App\Models\Review;
-use App\Models\SysUser;
+use App\Models\User;
 use App\Services\Review\ReviewService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
@@ -14,7 +14,7 @@ uses(RefreshDatabase::class);
  *
  * 不经过 HTTP，直接驱动服务层，覆盖接口测试难以触及的边界分支。
  */
-function reviewUser(): SysUser
+function reviewUser(): User
 {
     return createTestUser('rev');
 }

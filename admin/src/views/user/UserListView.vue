@@ -26,7 +26,6 @@ const pagination = ref({ page: 1, page_size: 20, total: 0, total_pages: 1 })
 
 // 筛选条件
 const keyword = ref('')
-const roleFilter = ref<'customer' | 'admin' | 'all'>('customer')
 const statusFilter = ref<'' | 0 | 1>('')
 const startDate = ref('')
 const endDate = ref('')
@@ -46,12 +45,6 @@ const addrForm = ref({ contact_name: '', contact_phone: '', province: '', city: 
 const addrSaving = ref(false)
 const addrConfirm = ref<AdminUserAddress | null>(null)
 
-const roleOptions = [
-  { value: 'customer', label: '买家账号' },
-  { value: 'admin', label: '后台账号' },
-  { value: 'all', label: '全部角色' },
-] as const
-
 const statusTabs: Array<{ value: '' | 0 | 1; label: string }> = [
   { value: '', label: '全部' },
   { value: 1, label: '正常' },
@@ -60,7 +53,6 @@ const statusTabs: Array<{ value: '' | 0 | 1; label: string }> = [
 
 const queryParams = computed(() => ({
   keyword: keyword.value.trim() || undefined,
-  role: roleFilter.value,
   status: statusFilter.value === '' ? undefined : statusFilter.value,
   start_time: startDate.value ? `${startDate.value} 00:00:00` : undefined,
   end_time: endDate.value ? `${endDate.value} 23:59:59` : undefined,
@@ -242,9 +234,6 @@ onMounted(() => load())
         class="w-56 rounded-md border border-slate-300 px-3 py-1.5 outline-none focus:border-[#1677ff]"
         @keyup.enter="search"
       />
-      <select v-model="roleFilter" class="rounded-md border border-slate-300 px-2 py-1.5 outline-none focus:border-[#1677ff]">
-        <option v-for="opt in roleOptions" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
-      </select>
       <div class="flex items-center gap-1 rounded-md border border-slate-300 px-2 py-1.5">
         <input v-model="startDate" type="date" class="outline-none" />
         <span class="text-slate-300">–</span>

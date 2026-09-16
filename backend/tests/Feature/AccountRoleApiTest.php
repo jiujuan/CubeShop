@@ -71,12 +71,13 @@ test('TC-ACC-001 账号列表仅含后台角色并支持筛选', function () {
 });
 
 test('TC-ACC-002 买家账号不出现在管理员列表', function () {
+    // 买家独立成表（users）且不参与 spatie 权限体系
     $buyer = createTestUser('buyer');
-    $buyer->assignRole('customer');
 
     $resp = $this->getJson('/api/admin/accounts', $this->adminAuth)->json('data');
 
     expect(array_column($resp['list'], 'username'))->not->toContain($buyer->username);
+    expect($resp['pagination']['total'])->toBe(2);
 });
 
 // ---------- 新增 ----------
@@ -308,7 +309,13 @@ test('TC-ROL-004 内置角色不可删除/重命名', function () {
 
 test('TC-ROL-005 被账号引用的角色不可删除', function () {
     $role = \Spatie\Permission\Models\Role::create(['name' => 'in_use', 'guard_name' => 'web']);
-    $user = createTestUser('inuse');
+    // 角色只作用于后台管理员（sys_user）；买家不参与 spatie
+    $user = SysUser::create([
+        'username' => 'inuse'.uniqid(),
+        'password' => Hash::make('Test@1234'),
+        'nickname' => '引用角色账号',
+        'status' => 1,
+    ]);
     $user->assignRole('in_use');
 
     $resp = $this->deleteJson("/api/admin/roles/{$role->id}", [], $this->adminAuth);

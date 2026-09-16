@@ -2,7 +2,6 @@
 
 namespace App\Http\Middleware;
 
-use App\Models\SysUser;
 use Closure;
 use Illuminate\Auth\AuthenticationException;
 use Illuminate\Http\Request;
@@ -16,6 +15,7 @@ use Symfony\Component\HttpFoundation\Response;
  * - 抛出未认证异常（HTTP 401 / 业务码 40001），前端据此清理登录态。
  *
  * 挂在 `auth:sanctum` 之后，确保 $request->user() 已解析。
+ * 同时适用于买家（App\Models\User）与后台管理员（App\Models\SysUser）。
  */
 class EnsureAccountActive
 {
@@ -23,7 +23,7 @@ class EnsureAccountActive
     {
         $user = $request->user();
 
-        if ($user instanceof SysUser && (int) $user->status !== 1) {
+        if ($user && (int) $user->status !== 1) {
             $user->tokens()->delete();
 
             throw new AuthenticationException('账号已被禁用，请联系管理员');

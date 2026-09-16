@@ -3,14 +3,15 @@
 namespace App\Http\Controllers;
 
 use App\Exceptions\BusinessException;
+use App\Models\SysOperationLog;
 use App\Models\SysUser;
+use App\Models\User;
 use App\Services\Common\CaptchaService;
 use App\Services\Common\OperationLogService;
 use App\Support\ApiResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\Rules\Password;
-use Spatie\Permission\Models\Role;
 
 class AuthController extends Controller
 {
@@ -27,7 +28,7 @@ class AuthController extends Controller
      * 获取图形验证码（登录页）
      * POST /auth/captcha
      *
-     * @param scene admin=后台管理端（默认）；web=用户端（风格与管理端区分）
+     * @param  scene  admin=后台管理端（默认）；web=用户端（风格与管理端区分）
      */
     public function captcha(Request $request)
     {
@@ -39,15 +40,17 @@ class AuthController extends Controller
     /**
      * 注册（对齐 API 文档 2.1；短信验证码 V1.0 用图形验证码降级）
      * POST /auth/register
+     *
+     * 买家写入 `users` 表，不参与 spatie 权限体系（不再分配 customer 角色）。
      */
     public function register(Request $request)
     {
         $data = $request->validate([
-            'username' => ['required', 'string', 'max:64', 'unique:sys_user,username'],
+            'username' => ['required', 'string', 'max:64', 'unique:users,username', $this->notUsedByAdmin('username')],
             'password' => ['required', 'string', Password::min(6)],
             'password_confirmation' => ['required', 'same:password'],
-            'phone' => ['nullable', 'string', 'max:20', 'unique:sys_user,phone'],
-            'email' => ['nullable', 'email', 'max:128', 'unique:sys_user,email'],
+            'phone' => ['nullable', 'string', 'max:20', 'unique:users,phone', $this->notUsedByAdmin('phone')],
+            'email' => ['nullable', 'email', 'max:128', 'unique:users,email', $this->notUsedByAdmin('email')],
             'code' => ['required', 'string'],
         ]);
 
@@ -56,7 +59,7 @@ class AuthController extends Controller
             throw BusinessException::badRequest('验证码错误或已过期');
         }
 
-        $user = SysUser::create([
+        $user = User::create([
             'username' => $data['username'],
             'password' => $data['password'],
             'phone' => $data['phone'] ?? null,
@@ -64,9 +67,6 @@ class AuthController extends Controller
             'nickname' => $data['username'],
             'status' => 1,
         ]);
-
-        // 注册默认买家角色（无后台权限）
-        $user->assignRole('customer');
 
         $token = $user->createToken('api')->plainTextToken;
 
@@ -79,6 +79,10 @@ class AuthController extends Controller
     /**
      * 登录（用户名/手机号 + 密码 + 图形验证码）
      * POST /auth/login
+     *
+     * 账号来源：管理员（sys_user）优先，其次买家（users）。
+     * 管理员优先可保证后台账号永不被买家账号遮蔽；买家注册时已禁止占用后台账号的
+     * 用户名/手机号/邮箱（见 notUsedByAdmin），故两侧不会产生歧义。
      */
     public function login(Request $request)
     {
@@ -93,15 +97,13 @@ class AuthController extends Controller
             throw BusinessException::badRequest('验证码错误或已过期');
         }
 
-        $user = SysUser::where('username', $data['username'])
-            ->orWhere('phone', $data['username'])
-            ->first();
+        $user = $this->findAccount($data['username'], $data['password']);
 
-        if (! $user || ! Hash::check($data['password'], $user->password)) {
+        if (! $user) {
             throw BusinessException::badRequest('用户名或密码错误');
         }
 
-        if ($user->status !== 1) {
+        if ((int) $user->status !== 1) {
             throw BusinessException::conflict('账号已被禁用，请联系管理员');
         }
 
@@ -116,7 +118,7 @@ class AuthController extends Controller
 
         $token = $user->createToken('api')->plainTextToken;
 
-        $this->operationLog->record($user->id, 'auth', 'login');
+        $this->operationLog->record($user->id, 'auth', 'login', null, null, null, $this->actorTypeOf($user));
 
         return $this->success([
             'token' => $token,
@@ -136,8 +138,10 @@ class AuthController extends Controller
     }
 
     /**
-     * 当前登录用户信息（含角色与权限码，供动态菜单）
+     * 当前登录身份信息（含角色与权限码，供动态菜单）
      * GET /auth/me
+     *
+     * 买家无角色与权限码（不参与 spatie），返回空数组。
      */
     public function me(Request $request)
     {
@@ -187,11 +191,20 @@ class AuthController extends Controller
             '密码已变更',
             '您的账号密码已成功修改。如非本人操作，请立即联系客服并重新登录检查账号安全。',
             '/account',
+            $user instanceof SysUser
+                ? \App\Models\Notification::RECEIVER_ADMIN
+                : \App\Models\Notification::RECEIVER_CUSTOMER,
         );
 
-        $this->operationLog->record($user->id, 'auth', 'change_password', 'sys_user', $user->id, [
-            'revoked_tokens' => $revoked,
-        ]);
+        $this->operationLog->record(
+            $user->id,
+            'auth',
+            'change_password',
+            $this->actorTypeOf($user) === SysOperationLog::ACTOR_ADMIN ? 'sys_user' : 'users',
+            $user->id,
+            ['revoked_tokens' => $revoked],
+            $this->actorTypeOf($user),
+        );
 
         return $this->success(['revoked_tokens' => $revoked], '密码修改成功，其他设备已退出登录');
     }
@@ -217,7 +230,11 @@ class AuthController extends Controller
         $user = SysUser::where('username', $data['target'])
             ->orWhere('phone', $data['target'])
             ->orWhere('email', $data['target'])
-            ->first();
+            ->first()
+            ?? User::where('username', $data['target'])
+                ->orWhere('phone', $data['target'])
+                ->orWhere('email', $data['target'])
+                ->first();
 
         if (! $user) {
             throw BusinessException::notFound('账号不存在');
@@ -229,13 +246,65 @@ class AuthController extends Controller
         // 重置后吊销全部 Token，强制重新登录
         $user->tokens()->delete();
 
-        $this->operationLog->record($user->id, 'auth', 'reset_password');
+        $this->operationLog->record($user->id, 'auth', 'reset_password', null, null, null, $this->actorTypeOf($user));
 
         return $this->success(null, '密码重置成功，请重新登录');
     }
 
-    private function formatUser(SysUser $user, bool $withPermissions = false): array
+    /**
+     * 按标识（用户名或手机号）与密码查找账号
+     *
+     * 先查后台管理员（sys_user），再查买家（users）。
+     */
+    private function findAccount(string $identifier, string $password): SysUser|User|null
     {
+        $admin = SysUser::where('username', $identifier)->orWhere('phone', $identifier)->first();
+        if ($admin && Hash::check($password, $admin->password)) {
+            return $admin;
+        }
+
+        $buyer = User::where('username', $identifier)->orWhere('phone', $identifier)->first();
+        if ($buyer && Hash::check($password, $buyer->password)) {
+            return $buyer;
+        }
+
+        return null;
+    }
+
+    /** 操作人身份类型（用于操作日志归属） */
+    private function actorTypeOf(SysUser|User $user): string
+    {
+        return $user instanceof SysUser
+            ? SysOperationLog::ACTOR_ADMIN
+            : SysOperationLog::ACTOR_CUSTOMER;
+    }
+
+    /**
+     * 注册校验：该字段不得占用后台管理员的同名标识
+     *
+     * 目的是避免「买家与管理员同名」在同一登录入口产生歧义。
+     */
+    private function notUsedByAdmin(string $column): \Closure
+    {
+        return function (string $attribute, mixed $value, \Closure $fail) use ($column): void {
+            if ($value === null || $value === '') {
+                return;
+            }
+
+            if (SysUser::withTrashed()->where($column, $value)->exists()) {
+                $fail(match ($column) {
+                    'phone' => '该手机号已被占用',
+                    'email' => '该邮箱已被占用',
+                    default => '该用户名已被占用',
+                });
+            }
+        };
+    }
+
+    private function formatUser(SysUser|User $user, bool $withPermissions = false): array
+    {
+        $isAdmin = $user instanceof SysUser;
+
         $data = [
             'id' => $user->id,
             'username' => $user->username,
@@ -243,11 +312,12 @@ class AuthController extends Controller
             'avatar' => $user->avatar,
             'phone' => $user->phone,
             'email' => $user->email,
-            'roles' => $user->getRoleNames(),
+            // 买家不参与 spatie 权限体系，角色与权限码为空
+            'roles' => $isAdmin ? $user->getRoleNames() : [],
         ];
 
         if ($withPermissions) {
-            $data['permissions'] = $user->getAllPermissions()->pluck('name');
+            $data['permissions'] = $isAdmin ? $user->getAllPermissions()->pluck('name') : [];
         }
 
         return $data;
