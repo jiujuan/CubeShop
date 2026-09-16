@@ -8,6 +8,7 @@ use App\Http\Controllers\Admin\CategoryController;
 use App\Http\Controllers\Admin\AddressController as AdminAddressController;
 use App\Http\Controllers\Admin\AccountController as AdminAccountController;
 use App\Http\Controllers\Admin\ConfigController;
+use App\Http\Controllers\Admin\CouponController as AdminCouponController;
 use App\Http\Controllers\Admin\DashboardController;
 use App\Http\Controllers\Admin\OperationLogController;
 use App\Http\Controllers\Admin\OrderController as AdminOrderController;
@@ -17,6 +18,7 @@ use App\Http\Controllers\Admin\PaymentChannelController as AdminPaymentChannelCo
 use App\Http\Controllers\Admin\PaymentLogController as AdminPaymentLogController;
 use App\Http\Controllers\Admin\BalanceRechargeController as AdminBalanceRechargeController;
 use App\Http\Controllers\Admin\ProductController;
+use App\Http\Controllers\Admin\PromotionController as AdminPromotionController;
 use App\Http\Controllers\Admin\RefundController;
 use App\Http\Controllers\Admin\ReportController as AdminReportController;
 use App\Http\Controllers\Admin\ReviewController as AdminReviewController;
@@ -256,6 +258,19 @@ Route::middleware(['auth:sanctum', 'account.active'])->group(function () {
         Route::post('/reviews/{id}/reject', [AdminReviewController::class, 'reject'])->middleware('permission:review.manage');
         Route::post('/reviews/{id}/reply', [AdminReviewController::class, 'reply'])->middleware('permission:review.manage');
         Route::delete('/reviews/{id}', [AdminReviewController::class, 'destroy'])->middleware('permission:review.manage');
+
+        // 营销管理 marketing.manage（V1.1 二期 F06 / T-032）—— export 必须注册在 {id} 之前
+        Route::get('/coupons', [AdminCouponController::class, 'index'])->middleware('permission:marketing.manage');
+        Route::post('/coupons', [AdminCouponController::class, 'store'])->middleware('permission:marketing.manage');
+        Route::get('/coupons/{id}/stats', [AdminCouponController::class, 'stats'])->middleware('permission:marketing.manage');
+        Route::get('/coupons/{id}/export', [AdminCouponController::class, 'export'])->middleware('permission:marketing.manage');
+        Route::put('/coupons/{id}', [AdminCouponController::class, 'update'])->middleware('permission:marketing.manage');
+        Route::post('/coupons/{id}/stop', [AdminCouponController::class, 'stop'])->middleware('permission:marketing.manage');
+
+        Route::get('/promotions', [AdminPromotionController::class, 'index'])->middleware('permission:marketing.manage');
+        Route::post('/promotions', [AdminPromotionController::class, 'store'])->middleware('permission:marketing.manage');
+        Route::put('/promotions/{id}', [AdminPromotionController::class, 'update'])->middleware('permission:marketing.manage');
+        Route::post('/promotions/{id}/toggle', [AdminPromotionController::class, 'toggle'])->middleware('permission:marketing.manage');
 
         // 管理员账号 account.manage（V1.1 F04 / T-022）
         Route::get('/accounts', [AdminAccountController::class, 'index'])->middleware('permission:account.manage');
