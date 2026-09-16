@@ -337,7 +337,7 @@
 | id | BIGSERIAL | PK | |
 | order_no | VARCHAR(32) | UNIQUE, NOT NULL | 业务订单号 |
 | user_id | BIGINT | NOT NULL, FK → users | 买家 |
-| status | VARCHAR(32) | NOT NULL | pending_payment / paid / shipped / completed / cancelled / refunding / refunded |
+| status | VARCHAR(32) | NOT NULL | pending_payment / paid / pending_ship / shipped / completed / cancelled / refunding / refunded |
 | total_amount | DECIMAL(12,2) | NOT NULL | 商品总金额 |
 | freight_amount | DECIMAL(12,2) | NOT NULL DEFAULT 0 | 运费 |
 | pay_amount | DECIMAL(12,2) | NOT NULL | 应付金额 |
@@ -437,7 +437,7 @@
 |------|--------|------|
 | users.status / sys_user.status | 0 / 1 | 禁用 / 正常 |
 | products.status | 0 / 1 | 下架 / 上架 |
-| orders.status | pending_payment, paid, shipped, completed, cancelled, refunding, refunded | 订单状态机 |
+| orders.status | pending_payment, paid, pending_ship, shipped, completed, cancelled, refunding, refunded | 订单状态机 |
 | payments.status | pending, success, failed, closed | 支付状态 |
 | refunds.status | pending, approved, rejected, success, failed | 退款状态 |
 | inventory_logs.change_type | lock, unlock, deduct, increase, adjust | 库存变更类型 |

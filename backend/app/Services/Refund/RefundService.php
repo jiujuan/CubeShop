@@ -14,7 +14,7 @@ use Illuminate\Support\Facades\DB;
  * 退款服务（Roadmap P5）
  *
  * 流程（API 文档 6.5 / 8.4）：
- * - 用户申请：paid / shipped / completed → refunding（状态机），生成退款单 pending
+ * - 用户申请：paid / pending_ship / shipped / completed → refunding（状态机），生成退款单 pending
  * - 后台审核：approve → 沙箱退款成功 → success → 订单 refunded；reject → rejected → 订单回 paid
  * - 幂等/互斥：同一订单同时只允许一笔未完结退款
  */
@@ -55,7 +55,7 @@ class RefundService
 
         try {
             $refund = DB::transaction(function () use ($order, $userId, $reason, $amount) {
-                // 状态机：paid/shipped/completed → refunding
+                // 状态机：paid/pending_ship/shipped/completed → refunding
                 $this->orders->transitionTo($order, Order::STATUS_REFUNDING, $reason, 'order');
 
                 return Refund::create([

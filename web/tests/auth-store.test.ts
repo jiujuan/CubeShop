@@ -66,11 +66,12 @@ describe('ORDER_STATUS_LABELS 状态映射', () => {
 
     expect(ORDER_STATUS_LABELS.pending_payment).toBe('待支付')
     expect(ORDER_STATUS_LABELS.paid).toBe('已支付')
+    expect(ORDER_STATUS_LABELS.pending_ship).toBe('待发货')
     expect(ORDER_STATUS_LABELS.shipped).toBe('已发货')
     expect(ORDER_STATUS_LABELS.completed).toBe('已完成')
     expect(ORDER_STATUS_LABELS.cancelled).toBe('已取消')
     expect(ORDER_STATUS_LABELS.refunding).toBe('退款中')
     expect(ORDER_STATUS_LABELS.refunded).toBe('已退款')
-    expect(Object.keys(ORDER_STATUS_LABELS)).toHaveLength(7)
+    expect(Object.keys(ORDER_STATUS_LABELS)).toHaveLength(8)
   })
 })

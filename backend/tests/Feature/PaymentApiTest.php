@@ -41,15 +41,15 @@ test('TC-ORDER-004 发起支付返回沙箱参数', function () {
         ->and($resp->json('data.pay_params.sandbox_pay_url'))->toContain('/api/payments/sandbox/');
 });
 
-// ORDER-005 沙箱支付成功：订单 paid + 库存扣减
-test('TC-ORDER-005 沙箱支付成功后订单已支付且库存确认扣减', function () {
+// ORDER-005 沙箱支付成功：订单转待发货 + 库存扣减
+test('TC-ORDER-005 沙箱支付成功后订单进入待发货且库存确认扣减', function () {
     $pay = $this->postJson('/api/payments', ['order_no' => $this->order['order_no'], 'channel' => 'alipay'], $this->auth)->json('data');
     $payNo = $pay['payment_no'] ?? $pay['pay_params']['payment_no'];
 
     $resp = $this->postJson("/api/payments/sandbox/{$payNo}", [], $this->auth);
 
     expect($resp->json('code'))->toBe(0)
-        ->and($this->getJson('/api/orders/'.$this->order['order_id'], $this->auth)->json('data.status'))->toBe(Order::STATUS_PAID)
+        ->and($this->getJson('/api/orders/'.$this->order['order_id'], $this->auth)->json('data.status'))->toBe(Order::STATUS_PENDING_SHIP)
         ->and((int) Inventory::where('sku_id', $this->sku->id)->value('locked_stock'))->toBe(0)
         ->and((int) Inventory::where('sku_id', $this->sku->id)->value('stock'))->toBe(8);
 

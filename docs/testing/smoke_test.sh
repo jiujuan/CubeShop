@@ -94,9 +94,14 @@ SANDBOX=$(req POST "/payments/sandbox/$PAY_NO" "$TOKEN" '')
 [ "$(echo "$SANDBOX" | jpath code)" = "0" ] && ok "沙箱支付成功" || bad "沙箱支付: $(echo "$SANDBOX" | head -c 120)"
 
 STATUS=$(req GET "/orders/$ORDER_ID" "$TOKEN" '' | jpath data.status)
-[ "$STATUS" = "paid" ] && ok "订单状态 paid" || bad "订单状态: $STATUS"
+[ "$STATUS" = "pending_ship" ] && ok "支付后自动流转到待发货" || bad "订单状态: $STATUS"
 
-echo "--- 5. 管理端发货"
+echo "--- 5. 管理端受理备货（幂等）与发货"
+ACCEPT=$(req POST "/admin/orders/$ORDER_ID/accept" "$ATOK" '{"remark":"冒烟受理"}')
+[ "$(echo "$ACCEPT" | jpath code)" = "0" ] && ok "受理备货幂等返回成功" || bad "受理备货: $(echo "$ACCEPT" | head -c 120)"
+SLABEL=$(req GET "/admin/orders/$ORDER_ID" "$ATOK" '' | jpath data.status_label)
+[ "$SLABEL" = "待发货" ] && ok "后台状态标签 待发货" || bad "状态标签: $SLABEL"
+
 SHIP=$(req POST "/admin/orders/$ORDER_ID/ship" "$ATOK" '{"company":"顺丰","tracking_no":"SMOKE001"}')
 [ "$(echo "$SHIP" | jpath code)" = "0" ] && ok "发货成功" || bad "发货: $(echo "$SHIP" | head -c 120)"
 

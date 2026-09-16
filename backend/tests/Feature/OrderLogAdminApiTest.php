@@ -150,6 +150,7 @@ test('TC-OLOG-005 单笔订单时间轴按时间正序', function () {
     expect($statuses)->toBe([
         Order::STATUS_PENDING_PAYMENT,
         Order::STATUS_PAID,
+        Order::STATUS_PENDING_SHIP,
         Order::STATUS_SHIPPED,
     ]);
 

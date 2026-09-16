@@ -80,6 +80,45 @@ test('待支付订单直接发货被状态机拒绝', function () {
     expect($resp->json('code'))->toBe(40009);
 });
 
+/** 支付并让订单停在「已支付」（模拟自动流转失败 / 退款被驳回回流） */
+function makeStuckPaidOrder($test): void
+{
+    $pay = $test->postJson('/api/payments', ['order_no' => $test->order['order_no'], 'channel' => 'wechat'], $test->userAuth)->json('data');
+    $test->postJson('/api/payments/sandbox/'.($pay['payment_no'] ?? $pay['pay_params']['payment_no']), [], $test->userAuth);
+
+    // 支付成功默认会自动流转到待发货；这里回退到已支付以复用「人工兜底」场景
+    Order::whereKey($test->order['order_id'])->update(['status' => Order::STATUS_PAID]);
+}
+
+// ADMIN-005b 受理备货：已支付 → 待发货（系统自动流转之外的人工兜底）
+test('TC-ADMIN-005b 已支付订单人工受理备货后进入待发货', function () {
+    makeStuckPaidOrder($this);
+
+    $resp = $this->postJson("/api/admin/orders/{$this->order['order_id']}/accept", [
+        'remark' => '人工受理',
+    ], $this->adminAuth);
+
+    expect($resp->json('code'))->toBe(0)
+        ->and($resp->json('data.status'))->toBe(Order::STATUS_PENDING_SHIP)
+        ->and($resp->json('data.status_label'))->toBe('待发货');
+});
+
+test('待发货订单重复受理备货幂等', function () {
+    $pay = $this->postJson('/api/payments', ['order_no' => $this->order['order_no'], 'channel' => 'wechat'], $this->userAuth)->json('data');
+    $this->postJson('/api/payments/sandbox/'.($pay['payment_no'] ?? $pay['pay_params']['payment_no']), [], $this->userAuth);
+
+    $resp = $this->postJson("/api/admin/orders/{$this->order['order_id']}/accept", [], $this->adminAuth);
+
+    expect($resp->json('code'))->toBe(0)
+        ->and($resp->json('data.status'))->toBe(Order::STATUS_PENDING_SHIP);
+});
+
+test('待支付订单受理备货被状态机拒绝', function () {
+    $resp = $this->postJson("/api/admin/orders/{$this->order['order_id']}/accept", [], $this->adminAuth);
+
+    expect($resp->json('code'))->toBe(40009);
+});
+
 test('重复发货被状态机拒绝', function () {
     $pay = $this->postJson('/api/payments', ['order_no' => $this->order['order_no'], 'channel' => 'wechat'], $this->userAuth)->json('data');
     $this->postJson('/api/payments/sandbox/'.($pay['payment_no'] ?? $pay['pay_params']['payment_no']), [], $this->userAuth);

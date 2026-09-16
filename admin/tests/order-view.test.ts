@@ -8,32 +8,41 @@ import { useAuthStore } from '@/stores/auth'
 /**
  * 后台订单管理（Vitest）
  *
- * 重点：paid 状态在运营视角呈现为「待发货」，且 **Tab 行、状态下拉框、状态徽标三者同源**，
- * 避免只改一处导致筛选与展示不一致。
+ * 状态模型：待支付 → 已支付 → 待发货 → 已发货 → 已完成（`pending_ship` 为独立状态）
+ *
+ * 重点：
+ * 1. Tab 行 / 状态下拉框 / 状态徽标三者同源（都取 ORDER_STATUS_LABELS），避免筛选与展示不一致；
+ * 2. 「已支付」是真实状态，附带「受理备货」兜底操作；
+ * 3. 「待发货」（pending_ship）才是发货队列，附带「发货」操作；
+ * 4. 支持从仪表盘待办卡带 `?status=` 直达并自动应用筛选。
  */
-const { getOrdersMock, shipOrderMock, exportOrdersMock } = vi.hoisted(() => ({
+const { getOrdersMock, shipOrderMock, acceptOrderMock, exportOrdersMock } = vi.hoisted(() => ({
   getOrdersMock: vi.fn(),
   shipOrderMock: vi.fn(),
+  acceptOrderMock: vi.fn(),
   exportOrdersMock: vi.fn(),
 }))
 
 vi.mock('@/api/order', () => ({
   getOrders: getOrdersMock,
   shipOrder: shipOrderMock,
+  acceptOrder: acceptOrderMock,
   exportOrders: exportOrdersMock,
   ORDER_STATUS_CLASS: {
     pending_payment: 'bg-orange-100 text-orange-500',
     paid: 'bg-blue-100 text-blue-500',
+    pending_ship: 'bg-amber-100 text-amber-600',
     shipped: 'bg-cyan-100 text-cyan-600',
     completed: 'bg-green-100 text-green-600',
     cancelled: 'bg-slate-100 text-slate-500',
     refunding: 'bg-purple-100 text-purple-500',
     refunded: 'bg-red-100 text-red-500',
   },
-  // 与 src/api/order.ts 的 ORDER_TAB_LABELS 对齐：paid → 待发货
-  ORDER_TAB_LABELS: {
+  // 与 src/api/order.ts 的 ORDER_STATUS_LABELS 对齐（键顺序 = 履约主链路）
+  ORDER_STATUS_LABELS: {
     pending_payment: '待支付',
-    paid: '待发货',
+    paid: '已支付',
+    pending_ship: '待发货',
     shipped: '已发货',
     completed: '已完成',
     cancelled: '已取消',
@@ -58,33 +67,42 @@ function freshPinia(permissions: string[] = [], roles: string[] = ['super_admin'
 function makeRouter() {
   return createRouter({
     history: createMemoryHistory(),
-    routes: [{ path: '/', component: { template: '<div />' } }],
+    routes: [
+      { path: '/', component: { template: '<div />' } },
+      { path: '/orders', component: { template: '<div />' } },
+    ],
   })
 }
 
-const paidOrder = {
-  id: 1001,
-  order_no: 'CS20260916001',
-  user_id: 7,
-  status: 'paid' as const,
-  status_label: '已支付', // 后端原始标签（前端应按运营语义显示为「待发货」）
-  total_amount: '60.00',
-  freight_amount: '10.00',
-  pay_amount: '70.00',
-  item_count: 1,
-  items: [{ product_title: '示例商品', sku_specs: {}, price: '30.00', quantity: 2, total_amount: '60.00' }],
-  created_at: '2026-09-16 10:00:00',
+function orderFixture(status: 'paid' | 'pending_ship', label: string, id = 1001) {
+  return {
+    id,
+    order_no: 'CS20260916001',
+    user_id: 7,
+    status,
+    status_label: label,
+    total_amount: '60.00',
+    freight_amount: '10.00',
+    pay_amount: '70.00',
+    item_count: 1,
+    items: [{ product_title: '示例商品', sku_specs: {}, price: '30.00', quantity: 2, total_amount: '60.00' }],
+    created_at: '2026-09-16 10:00:00',
+  }
 }
 
-function mockOrders() {
+function mockOrders(list = [orderFixture('pending_ship', '待发货')]) {
   getOrdersMock.mockResolvedValue({
-    data: { data: { list: [paidOrder], pagination: { page: 1, page_size: 20, total: 1, total_pages: 1 } } },
+    data: { data: { list, pagination: { page: 1, page_size: 20, total: list.length, total_pages: 1 } } },
   })
 }
 
-async function mountView() {
-  mockOrders()
+async function mountView(options: { path?: string; list?: ReturnType<typeof orderFixture>[] } = {}) {
+  mockOrders(options.list)
   const router = makeRouter()
+  if (options.path) {
+    router.push(options.path)
+    await router.isReady()
+  }
   const wrapper = mount(OrderView, {
     global: { plugins: [freshPinia(), router], directives: { permission } },
   })
@@ -92,37 +110,43 @@ async function mountView() {
   return { wrapper, router }
 }
 
-describe('后台订单管理页 — 待发货 Tab', () => {
+describe('后台订单管理页 — 订单状态 Tab', () => {
   beforeEach(() => {
     getOrdersMock.mockReset()
     shipOrderMock.mockReset()
+    acceptOrderMock.mockReset()
     exportOrdersMock.mockReset()
   })
 
-  it('Tab 行含「待发货」且不再显示「已支付」', async () => {
+  it('Tab 行按履约主链路依次为 待支付/已支付/待发货/已发货/已完成', async () => {
     const { wrapper } = await mountView()
     const tabTexts = wrapper.findAll('button').map((b) => b.text())
 
-    expect(tabTexts).toContain('待发货')
-    expect(tabTexts).not.toContain('已支付')
     expect(tabTexts).toContain('全部')
+    const lifecycle = ['待支付', '已支付', '待发货', '已发货', '已完成']
+    const positions = lifecycle.map((t) => tabTexts.indexOf(t))
+
+    expect(positions.every((p) => p > 0)).toBe(true)
+    for (let i = 1; i < positions.length; i++) {
+      expect(positions[i]).toBeGreaterThan(positions[i - 1])
+    }
   })
 
-  it('状态下拉框选项与 Tab 同步：paid 显示为「待发货」', async () => {
+  it('状态下拉框选项与 Tab 同步，且含「已支付」「待发货」两项', async () => {
     const { wrapper } = await mountView()
     const options = wrapper.findAll('select option').map((o) => ({
       value: (o.element as HTMLOptionElement).value,
       text: o.text(),
     }))
 
-    expect(options).toContainEqual({ value: 'paid', text: '待发货' })
-    expect(options.some((o) => o.text === '已支付')).toBe(false)
-    // 下拉首项为占位「状态」，其余与 Tab（去掉「全部」）一一对应
     expect(options[0]).toEqual({ value: '', text: '状态' })
-    expect(options).toHaveLength(8)
+    expect(options).toContainEqual({ value: 'paid', text: '已支付' })
+    expect(options).toContainEqual({ value: 'pending_ship', text: '待发货' })
+    // 占位 + 8 个状态
+    expect(options).toHaveLength(9)
   })
 
-  it('点击「待发货」Tab 按 status=paid 拉取第一页', async () => {
+  it('点击「待发货」Tab 按 status=pending_ship 拉取第一页', async () => {
     const { wrapper } = await mountView()
     getOrdersMock.mockClear()
 
@@ -132,13 +156,54 @@ describe('后台订单管理页 — 待发货 Tab', () => {
     await flushPromises()
 
     expect(getOrdersMock).toHaveBeenCalledTimes(1)
-    expect(getOrdersMock.mock.calls[0][0]).toMatchObject({ status: 'paid', page: 1 })
+    expect(getOrdersMock.mock.calls[0][0]).toMatchObject({ status: 'pending_ship', page: 1 })
   })
 
-  it('paid 订单的状态徽标显示「待发货」而非后端的「已支付」', async () => {
+  it('pending_ship 订单徽标显示「待发货」并提供「发货」操作', async () => {
     const { wrapper } = await mountView()
     const cells = wrapper.find('tbody tr').findAll('td')
 
     expect(cells[4].text()).toBe('待发货')
+    expect(cells[6].text()).toContain('发货')
+    expect(cells[6].text()).not.toContain('受理备货')
+  })
+
+  it('paid 订单徽标显示「已支付」并提供「受理备货」而非直接发货', async () => {
+    const { wrapper } = await mountView({ list: [orderFixture('paid', '已支付')] })
+    const cells = wrapper.find('tbody tr').findAll('td')
+
+    expect(cells[4].text()).toBe('已支付')
+    expect(cells[6].text()).toContain('受理备货')
+    expect(cells[6].text()).not.toContain('发货')
+  })
+
+  it('后台「受理备货」提交后调用 accept 接口', async () => {
+    acceptOrderMock.mockResolvedValue({ data: { data: orderFixture('pending_ship', '待发货') } })
+    const { wrapper } = await mountView({ list: [orderFixture('paid', '已支付')] })
+
+    await wrapper.find('[data-testid="accept-1001"]').trigger('click')
+    await flushPromises()
+
+    const confirm = wrapper.findAll('button').find((b) => b.text() === '确认受理')
+    expect(confirm).toBeTruthy()
+    await confirm!.trigger('click')
+    await flushPromises()
+
+    expect(acceptOrderMock).toHaveBeenCalledTimes(1)
+    expect(acceptOrderMock.mock.calls[0][0]).toBe(1001)
+  })
+
+  it('支持从仪表盘待办卡带 ?status=pending_ship 直达并应用筛选', async () => {
+    await mountView({ path: '/orders?status=pending_ship' })
+
+    expect(getOrdersMock).toHaveBeenCalledTimes(1)
+    expect(getOrdersMock.mock.calls[0][0]).toMatchObject({ status: 'pending_ship' })
+  })
+
+  it('非法 query.status 被忽略，不带筛选条件', async () => {
+    await mountView({ path: '/orders?status=not_a_status' })
+
+    expect(getOrdersMock).toHaveBeenCalledTimes(1)
+    expect(getOrdersMock.mock.calls[0][0].status).toBeUndefined()
   })
 })

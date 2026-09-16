@@ -213,6 +213,7 @@ Route::middleware(['auth:sanctum', 'account.active'])->group(function () {
         Route::get('/orders/export', [AdminOrderController::class, 'export'])->middleware('permission:order.export');
         Route::get('/orders/{id}', [AdminOrderController::class, 'show'])->middleware('permission:order.view');
         Route::post('/orders/{id}/ship', [AdminOrderController::class, 'ship'])->middleware('permission:order.ship');
+        Route::post('/orders/{id}/accept', [AdminOrderController::class, 'accept'])->middleware('permission:order.ship');
 
         // 支付管理 payment.view / payment.manage（API 文档 8.11）—— export 必须注册在 {id} 之前
         Route::get('/payments', [AdminPaymentController::class, 'index'])->middleware('permission:payment.view');

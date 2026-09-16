@@ -591,7 +591,7 @@
 
 | 参数 | 说明 |
 |------|------|
-| status | pending_payment / paid / shipped / completed / cancelled / refunding / refunded |
+| status | pending_payment / paid / pending_ship / shipped / completed / cancelled / refunding / refunded |
 | page / page_size | 分页 |
 
 **成功响应**（列表项简要信息 + 分页）
@@ -1005,7 +1005,7 @@
 | product.update | 编辑/上下架商品 |
 | category.manage | 分类管理 |
 | order.view | 查看订单 |
-| order.ship | 发货 |
+| order.ship | 受理备货 / 发货 |
 | order.export | 导出订单 |
 | refund.view | 查看退款 |
 | refund.process | 处理退款 |
@@ -1027,12 +1027,18 @@
 
 ### 订单状态
 ```
-pending_payment → paid → shipped → completed
-       ↓            ↓
-   cancelled     refunding → refunded
-                   ↓
-                cancelled（部分场景）
+履约主链路：
+pending_payment → paid → pending_ship → shipped → completed
+
+分支：
+  paid / pending_ship / shipped / completed → refunding → refunded（退款通过）
+                                                       → paid（退款驳回，需人工「受理备货」回流）
+  未发货（pending_payment / paid / pending_ship）→ cancelled
 ```
+
+> **`paid` 与 `pending_ship` 的区别**：`paid` 表示货款已到账，`pending_ship` 表示订单已进入发货队列。
+> 支付成功后系统会自动完成 `paid → pending_ship`（同一事务内写两条流水），运营正常情况下只面对「待发货」；
+> `paid` 仅作为异常滞留（自动流转失败、退款驳回回流）的人工兜底入口。状态机**不允许** `paid → shipped` 直达。
 
 ### 支付状态
 `pending` → `success` / `failed` / `closed`

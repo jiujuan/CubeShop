@@ -108,7 +108,7 @@ test('核账驳回：充值单失败且必须填原因', function () {
     expect(app(BalanceService::class)->balance($this->buyer->id))->toBe('0.00');
 });
 
-test('线下订单支付核账通过：订单转已支付', function () {
+test('线下订单支付核账通过：订单转待发货', function () {
     $sku = createTestSku(stock: 5, price: '80.00');
     $order = Order::create([
         'user_id' => $this->buyer->id,
@@ -135,5 +135,5 @@ test('线下订单支付核账通过：订单转已支付', function () {
         ->assertOk()
         ->assertJsonPath('data.status', Payment::STATUS_SUCCESS);
 
-    expect($order->fresh()->status)->toBe(Order::STATUS_PAID);
+    expect($order->fresh()->status)->toBe(Order::STATUS_PENDING_SHIP);
 });

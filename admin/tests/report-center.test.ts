@@ -106,7 +106,7 @@ describe('T-021 驾驶舱 Dashboard', () => {
     await flushPromises()
 
     await wrapper.find('[data-testid="todo-ship"]').trigger('click')
-    expect(pushSpy).toHaveBeenCalledWith('/orders?status=paid')
+    expect(pushSpy).toHaveBeenCalledWith('/orders?status=pending_ship')
 
     await wrapper.find('[data-testid="todo-review"]').trigger('click')
     expect(pushSpy).toHaveBeenCalledWith('/reviews?status=pending')

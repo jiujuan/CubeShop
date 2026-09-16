@@ -25,7 +25,8 @@ interface TimelineNode {
 
 const NODES: TimelineNode[] = [
   { status: 'pending_payment', label: '提交订单', hint: '订单已创建，等待付款' },
-  { status: 'paid', label: '支付成功', hint: '已收到货款，等待发货' },
+  { status: 'paid', label: '支付成功', hint: '货款已到账' },
+  { status: 'pending_ship', label: '等待发货', hint: '商家正在备货，准备寄出' },
   { status: 'shipped', label: '商家发货', hint: '商品已寄出，请注意查收' },
   { status: 'completed', label: '交易完成', hint: '订单已完成' },
 ]

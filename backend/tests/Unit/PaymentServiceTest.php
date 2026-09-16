@@ -102,7 +102,7 @@ test('回调成功后支付与订单状态更新且库存确认扣减', function
     expect($result['ok'])->toBeTrue();
 
     $order = $order->fresh();
-    expect($order->status)->toBe(Order::STATUS_PAID)
+    expect($order->status)->toBe(Order::STATUS_PENDING_SHIP)
         ->and($order->paid_at)->not->toBeNull()
         ->and($payment->fresh()->status)->toBe(Payment::STATUS_SUCCESS);
 

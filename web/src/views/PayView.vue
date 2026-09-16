@@ -49,7 +49,7 @@ const countdown = ref('')
 let timer: number | null = null
 
 const statusDone = computed(
-  () => order.value && ['paid', 'shipped', 'completed'].includes(order.value.status),
+  () => order.value && ['paid', 'pending_ship', 'shipped', 'completed'].includes(order.value.status),
 )
 const expired = ref(false)
 

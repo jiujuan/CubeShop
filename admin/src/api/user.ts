@@ -12,7 +12,7 @@ export interface AdminUser {
   email: string | null
   status: 0 | 1
   roles: string[]
-  /** 有效订单数（已支付/已发货/已完成） */
+  /** 有效订单数（已支付/待发货/已发货/已完成） */
   order_count: number
   /** 累计实付金额 */
   total_paid: string

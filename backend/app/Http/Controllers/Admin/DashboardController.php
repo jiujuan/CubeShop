@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Inventory;
 use App\Models\Order;
 use App\Services\Common\ConfigService;
+use App\Services\Report\ReportService;
 use App\Support\ApiResponse;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -27,7 +28,8 @@ class DashboardController extends Controller
      */
     public function index(Request $request): JsonResponse
     {
-        $salesStatuses = [Order::STATUS_PAID, Order::STATUS_SHIPPED, Order::STATUS_COMPLETED, Order::STATUS_REFUNDING];
+        // 销售额口径与报表服务保持单一来源（见 ReportService::SALES_STATUSES）
+        $salesStatuses = ReportService::SALES_STATUSES;
 
         // 今日 / 昨日订单量
         $todayOrders = Order::whereBetween('created_at', [now()->startOfDay(), now()->endOfDay()])->count();
@@ -41,7 +43,7 @@ class DashboardController extends Controller
             ->whereBetween('paid_at', [now()->subDay()->startOfDay(), now()->subDay()->endOfDay()])
             ->sum('pay_amount');
 
-        $pendingShip = Order::where('status', Order::STATUS_PAID)->count();
+        $pendingShip = Order::where('status', Order::STATUS_PENDING_SHIP)->count();
         $pendingRefund = Order::where('status', Order::STATUS_REFUNDING)->count();
 
         return $this->success([
