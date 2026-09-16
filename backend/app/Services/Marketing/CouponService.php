@@ -181,6 +181,13 @@ class CouponService
                 continue;
             }
 
+            // 券模板已停发（status != active）的未用券不再可用（先移入不可用，避免列表出现「可用过期/停用券」）
+            if ($coupon->status !== Coupon::STATUS_ACTIVE) {
+                $unusable[] = $this->briefUnusable($uc, '优惠券已停止使用');
+
+                continue;
+            }
+
             // 门店上下文优先按行项目命中金额；无行项目时对全场券回退到总金额
             $base = ($ctx->lines === [] && $coupon->scope === Coupon::SCOPE_ALL)
                 ? $fallbackTotal

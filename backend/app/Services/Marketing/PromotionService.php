@@ -69,6 +69,49 @@ class PromotionService
         return $promotion;
     }
 
+    /**
+     * 满减展示数据（供详情页 / 结算页标签）
+     *
+     * 返回当前命中的最优活动及其「满 X 减 Y」标签所需信息：
+     *  - 已命中梯度 `current_tier`（{min,discount}）与实得优惠 `discount`；
+     *  - 下一梯度 `next_tier`（{min,discount}）与「再买 `gap_to_next` 元升级」提示；
+     *  - 无运行中/未命中活动返回 null（前端据此不渲染标签）。
+     */
+    public function displayFor(OrderContext $ctx): ?array
+    {
+        $promotion = $this->match($ctx);
+        if ($promotion === null) {
+            return null;
+        }
+
+        $rules = $promotion->rules ?? [];
+        $base = $ctx->scopeBaseAmount($promotion->scope, $promotion->scope_refs ?? []);
+        $currentTier = PricingCalculator::matchTier($rules, $base);
+        $discount = $currentTier === null ? 0.0 : PricingCalculator::promotionDiscount($rules, $base);
+
+        // 下一梯度（严格大于当前命中金额的最小门槛）
+        $next = null;
+        foreach ($rules as $rule) {
+            $min = (float) ($rule['min'] ?? 0);
+            $ruleDiscount = (float) ($rule['discount'] ?? 0);
+            if ($base + 0.000001 < $min && ($next === null || $min < ($next['min'] ?? INF))) {
+                $next = ['min' => $min, 'discount' => $ruleDiscount];
+            }
+        }
+
+        return [
+            'promotion_id' => $promotion->id,
+            'name' => $promotion->name,
+            'scope' => $promotion->scope,
+            'scope_refs' => $promotion->scope_refs ?? [],
+            'base_amount' => $base,
+            'current_tier' => $currentTier,
+            'discount' => round($discount, 2),
+            'next_tier' => $next,
+            'gap_to_next' => $next === null ? 0.0 : round($next['min'] - $base, 2),
+        ];
+    }
+
     /** 当前运行中的活动（启用且在时间窗口内），按 id 升序保证匹配稳定 */
     private function runningPromotions(): \Illuminate\Support\Collection
     {
