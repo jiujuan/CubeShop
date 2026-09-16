@@ -1,0 +1,13 @@
+commit 690c0aeb03b6ce3f8ca12830b8e948ff9e9f0c21
+Author: jiujuan
+Date: Wed Sep 16 23:31:23 2026 +0800
+
+feat(web): T-038 领券中心与我的优惠券页（券形卡片三态 + Tab 分页 + 详情页领券小标）
+
+- CouponCenterView：面额/门槛/范围/有效期 + 剩余量进度 + 三态按钮（可领/已领取/已抢光），领取成功刷新与 Toast，未登录提示并跳登录
+- MyCouponsView：全部/未使用/已使用/已过期 Tab + 分页，临近过期标红，失效券灰化，已用券跳订单
+- 详情页领券小标：receivableCoupons 增加 scope_refs（增量），命中本商品的在领券最多展示 3 张，失败静默
+- 入口：路由 /coupons/center|mine + 个人中心 + 顶栏用户菜单
+- 测试：Vitest 新增 18 例（101 全绿）+ 构建 vue-tsc 通过 + 后端双库回归 554×2 全绿 + agent-browser 真浏览器验收截图
+- 证据：docs/testing/evidence/v1.1/T-038/（含 T-037 commit 记录补档）
+
