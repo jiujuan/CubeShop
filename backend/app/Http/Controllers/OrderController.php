@@ -23,7 +23,7 @@ class OrderController extends Controller
     {
     }
 
-    /** 创建订单（结算） */
+    /** 创建订单（结算；V1.1 F06 / T-035 支持 user_coupon_id / promotion_id） */
     public function store(Request $request): JsonResponse
     {
         $data = $request->validate([
@@ -31,6 +31,10 @@ class OrderController extends Controller
             'cart_item_ids' => ['nullable', 'array'],
             'cart_item_ids.*' => ['integer'],
             'remark' => ['nullable', 'string', 'max:200'],
+            // 不传 = 不用券（与 V1.0 行为完全一致）；传则必须是本人未使用的券
+            'user_coupon_id' => ['nullable', 'integer', 'min:1'],
+            // 不传 = 自动匹配当前最优满减活动
+            'promotion_id' => ['nullable', 'integer', 'min:1'],
         ]);
 
         $order = $this->orders->createFromCart(
@@ -38,14 +42,20 @@ class OrderController extends Controller
             addressId: (int) $data['address_id'],
             cartItemIds: $data['cart_item_ids'] ?? null,
             remark: $data['remark'] ?? null,
+            userCouponId: isset($data['user_coupon_id']) ? (int) $data['user_coupon_id'] : null,
+            promotionId: isset($data['promotion_id']) ? (int) $data['promotion_id'] : null,
         );
 
         return $this->success([
             'order_id' => $order->id,
             'order_no' => $order->order_no,
             'total_amount' => $order->total_amount,
+            'discount_amount' => $order->discount_amount,
+            'promotion_discount' => $order->promotion_discount,
+            'coupon_id' => $order->coupon_id,
             'freight_amount' => $order->freight_amount,
             'pay_amount' => $order->pay_amount,
+            'amount_details' => $order->amount_details,
             'status' => $order->status,
         ], '下单成功');
     }
@@ -286,6 +296,10 @@ class OrderController extends Controller
             'price' => $item->price,
             'quantity' => $item->quantity,
             'total_amount' => $item->total_amount,
+            // V1.1 F06 / T-035：行级优惠分摊（退款按行实付计算，T-036 使用）
+            'coupon_share' => $item->coupon_share,
+            'promotion_share' => $item->promotion_share,
+            'payable_amount' => number_format($item->payableAmount(), 2, '.', ''),
         ])->all();
 
         // V1.1 T-004：前 3 个商品缩略预览（避免列表页传输整单明细）
@@ -304,6 +318,11 @@ class OrderController extends Controller
             'total_amount' => $order->total_amount,
             'freight_amount' => $order->freight_amount,
             'pay_amount' => $order->pay_amount,
+            // V1.1 F06 / T-035：优惠汇总与分摊快照（历史无券订单为 0 / null，前端兼容）
+            'coupon_id' => $order->coupon_id,
+            'discount_amount' => $order->discount_amount ?? '0.00',
+            'promotion_discount' => $order->promotion_discount ?? '0.00',
+            'amount_details' => $order->amount_details,
             'item_count' => (int) $order->items->sum('quantity'),
             'items_preview' => $preview,
             'items' => $items,

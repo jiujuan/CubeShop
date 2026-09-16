@@ -408,3 +408,28 @@ test('TC-PRC-034-030 CouponService::priceOrder 与纯计算器口径一致', fun
         ->and($details['user_coupon_id'])->toBe(1)
         ->and($details['coupon_id'])->toBe(1);
 });
+
+test('TC-PRC-035-001 recomputePayAmount 与 price 落库的应付一致（口径同源）', function () {
+    $ctx = t034Ctx([['price' => 66, 'quantity' => 2]], 10.0);
+    $details = PricingCalculator::price($ctx, t034Coupon(['amount' => 20.0]), null);
+
+    $recomputed = PricingCalculator::recomputePayAmount($details);
+
+    expect(number_format($recomputed, 2, '.', ''))->toBe($details['pay_amount'])
+        ->and($details['pay_amount'])->toBe('122.00'); // 132 − 20 + 10
+});
+
+test('TC-PRC-035-002 recomputePayAmount 随优惠变化，可用于回调篡改检测', function () {
+    $base = [
+        'goods_amount' => '132.00',
+        'freight_amount' => '10.00',
+        'discount_amount' => '0.00',
+    ];
+
+    expect(PricingCalculator::recomputePayAmount($base))->toBe(142.0);
+
+    // 篡改 discount_amount 后重算必然变化 → 回调校验可据此拒绝
+    $tampered = array_merge($base, ['discount_amount' => '132.00']);
+    expect(PricingCalculator::recomputePayAmount($tampered))->toBe(10.0)
+        ->and(PricingCalculator::recomputePayAmount($tampered))->not->toBe(142.0);
+});

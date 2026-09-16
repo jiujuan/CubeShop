@@ -9,21 +9,32 @@ use App\Models\OrderItem;
 use App\Models\OrderLog;
 use App\Models\ProductSku;
 use App\Models\UserAddress;
+use App\Models\UserCoupon;
 use App\Services\Common\ConfigService;
 use App\Services\Common\NoGeneratorService;
 use App\Services\Common\OperationLogService;
 use App\Services\Inventory\InventoryService;
+use App\Services\Marketing\CouponService;
+use App\Services\Marketing\PromotionService;
 use Illuminate\Support\Facades\DB;
 use Throwable;
 
 /**
- * 订单服务（Roadmap P4：订单与结算闭环）
+ * 订单服务（Roadmap P4：订单与结算闭环；V1.1 F06 / T-035：优惠金额链路）
  *
  * 职责：
  * - 创建订单：地址快照 + 商品快照 + 运费计算 + 库存锁定（事务）
+ * - 优惠：券校验 → 满减匹配 → 金额分摊（`amount_details`）→ 券核销锁定
  * - 状态机校验：禁止非法流转
- * - 取消订单：释放库存 + 记录原因
+ * - 取消订单：释放库存 + 返还券 + 记录原因
  * - 超时取消：供 Scheduler 命令调用（order.timeout_minutes）
+ *
+ * ── 券核销时机（T-035 评审口径，T-036 据此做退款回退）────────────────
+ * 下单事务内即把 `user_coupons` 由 `unused` 原子置为 `used` 并回填 `used_order_id`，
+ * 同时 `coupons.used_count + 1`。理由：
+ *  ① 一张券**同一时刻只能被一个订单占用**，条件更新天然防并发重复使用（T-041 场景 C）；
+ *  ② 未支付订单取消/超时时券**原样返还**（`releaseCoupon`，见 T-036 同源逻辑）。
+ * 即 `used_count` 语义 = 「已被订单占用（含待支付）」，取消即回退，不产生泄漏。
  */
 class OrderService
 {
@@ -33,35 +44,45 @@ class OrderService
         private ConfigService $config,
         private OperationLogService $operationLog,
         private OrderLogService $orderLog,
+        private CouponService $coupons,
+        private PromotionService $promotions,
     ) {
     }
 
     /**
-     * 从购物车创建订单（API 文档 6.1）
+     * 从购物车创建订单（API 文档 6.1；V1.1 F06 / T-035 支持券与满减）
      *
      * @param  int  $userId  下单用户
      * @param  int  $addressId  收货地址
      * @param  array<int, int>|null  $cartItemIds  要结算的购物车项；null = 全部有效项
      * @param  string|null  $remark  用户备注
+     * @param  int|null  $userCouponId  用户券 id（不传 = 不用券，行为与 V1.0 一致）
+     * @param  int|null  $promotionId  满减活动 id（不传 = 自动匹配最优满减）
      * @return Order 待支付订单
      *
-     * @throws BusinessException 地址无效 / 无有效商品 / 库存不足
+     * @throws BusinessException 地址无效 / 无有效商品 / 库存不足 / 券不可用
      */
-    public function createFromCart(int $userId, int $addressId, ?array $cartItemIds, ?string $remark): Order
-    {
+    public function createFromCart(
+        int $userId,
+        int $addressId,
+        ?array $cartItemIds,
+        ?string $remark,
+        ?int $userCouponId = null,
+        ?int $promotionId = null,
+    ): Order {
         // 1. 地址校验（本人地址）
         $address = UserAddress::where('user_id', $userId)->find($addressId);
         if (! $address) {
             throw BusinessException::notFound('收货地址不存在');
         }
 
-        // 2. 取购物车项
+        // 2. 取购物车项（含分类 id：券/满减按分类命中时需要）
         $query = CartItem::where('user_id', $userId)
-            ->with(['sku:id,product_id,specs,price,status', 'sku.product:id,title,main_image,status']);
+            ->with(['sku:id,product_id,specs,price,status', 'sku.product:id,category_id,title,main_image,status']);
         if ($cartItemIds !== null && $cartItemIds !== []) {
             $query->whereIn('id', $cartItemIds);
         }
-        $cartItems = $query->orderBy('id')->get();
+        $cartItems = $query->orderBy('id')->get()->values();
 
         if ($cartItems->isEmpty()) {
             throw BusinessException::badRequest('没有可结算的商品');
@@ -88,29 +109,89 @@ class OrderService
             }
         }
 
-        // 4. 金额计算（快照单价）+ 运费
+        // 4. 金额快照 + 运费（与 V1.0 口径一致：Σ price×qty，再按配置计运费）
+        $itemRows = [];
         $totalAmount = '0.00';
         foreach ($cartItems as $item) {
             $subtotal = bcmul((string) $item->sku->price, (string) $item->quantity, 2);
             $totalAmount = bcadd($totalAmount, $subtotal, 2);
+            $itemRows[] = [
+                'product_id' => $item->sku->product_id,
+                'sku_id' => $item->sku_id,
+                'category_id' => $item->sku->product->category_id,
+                'price' => (float) $item->sku->price,
+                'quantity' => (int) $item->quantity,
+            ];
         }
         $freightAmount = $this->calcFreight($totalAmount);
-        $payAmount = bcadd($totalAmount, $freightAmount, 2);
 
-        // 5. 事务：锁库存 → 建订单 → 快照明细 → 清理已结算购物车项
-        $order = DB::transaction(function () use ($userId, $address, $cartItems, $totalAmount, $freightAmount, $payAmount, $remark) {
+        // 5. 优惠解析：券校验（先券）→ 满减匹配（不传则自动最优）→ 分摊计算
+        $ctx = $this->coupons->buildContext($itemRows, $freightAmount);
+
+        $userCoupon = null;
+        if ($userCouponId !== null) {
+            $userCoupon = UserCoupon::with('coupon')
+                ->where('user_id', $userId)
+                ->find($userCouponId);
+            if (! $userCoupon) {
+                // 他人券与不存在的券统一按「不存在」处理，避免枚举他人券 id
+                throw BusinessException::notFound('优惠券不存在');
+            }
+            // 状态/过期/门槛/范围不满足 → 409 + 明确原因
+            $this->coupons->validateUse($userCoupon, $ctx);
+        }
+
+        $promotion = $promotionId !== null
+            ? $this->promotions->resolveUsable($promotionId, $ctx)
+            : $this->promotions->match($ctx);
+
+        // amount_details 内含商品总额、券/满减优惠、运费、应付与各行分摊（不变量自检）
+        $details = $this->coupons->priceOrder($ctx, $userCoupon, $promotion);
+
+        // 6. 事务：锁定券 → 锁库存 → 建订单（含金额字段）→ 快照明细（含分摊）→ 清购物车
+        $order = DB::transaction(function () use (
+            $userId, $address, $cartItems, $details, $userCoupon, $remark
+        ) {
+            // 6.1 原子锁定券（先券后库存）：条件更新保证一券一单，占用失败立即回滚
+            if ($userCoupon !== null) {
+                $claimed = DB::table('user_coupons')
+                    ->where('id', $userCoupon->id)
+                    ->where('user_id', $userId)
+                    ->where('status', UserCoupon::STATUS_UNUSED)
+                    ->where('expire_at', '>=', now())
+                    ->update([
+                        'status' => UserCoupon::STATUS_USED,
+                        'used_at' => now(),
+                        'updated_at' => now(),
+                    ]);
+
+                if ($claimed === 0) {
+                    throw BusinessException::conflict('优惠券已被使用或已过期，请重新选择');
+                }
+
+                DB::table('coupons')
+                    ->where('id', $userCoupon->coupon_id)
+                    ->update(['used_count' => DB::raw('used_count + 1'), 'updated_at' => now()]);
+            }
+
+            // 6.2 锁库存
             foreach ($cartItems as $item) {
                 $this->inventory->lock($item->sku_id, $item->quantity, 'order', null, '下单锁定库存');
             }
 
+            // 6.3 建订单（金额字段直接取分摊结果，杜绝二次计算口径漂移）
             /** @var Order $order */
             $order = Order::create([
                 'order_no' => $this->noGenerator->generateOrderNo(),
                 'user_id' => $userId,
                 'status' => Order::STATUS_PENDING_PAYMENT,
-                'total_amount' => $totalAmount,
-                'freight_amount' => $freightAmount,
-                'pay_amount' => $payAmount,
+                'total_amount' => $details['goods_amount'],
+                'freight_amount' => $details['freight_amount'],
+                'pay_amount' => $details['pay_amount'],
+                'coupon_id' => $userCoupon?->coupon_id,
+                'discount_amount' => $details['discount_amount'],
+                'promotion_discount' => $details['promotion_discount'],
+                'amount_details' => $details,
                 'address_snapshot' => [
                     'contact_name' => $address->contact_name,
                     'contact_phone' => $address->contact_phone,
@@ -129,7 +210,10 @@ class OrderService
                 'remark' => $remark,
             ]);
 
-            foreach ($cartItems as $item) {
+            // 6.4 行项目快照 + 分摊（index 与 amount_details.lines 一一对应）
+            foreach ($cartItems as $idx => $item) {
+                $line = $details['lines'][$idx] ?? null;
+
                 OrderItem::create([
                     'order_id' => $order->id,
                     'product_id' => $item->sku->product_id,
@@ -140,7 +224,16 @@ class OrderService
                     'price' => $item->sku->price,
                     'quantity' => $item->quantity,
                     'total_amount' => bcmul((string) $item->sku->price, (string) $item->quantity, 2),
+                    'coupon_share' => $line['coupon_share'] ?? '0.00',
+                    'promotion_share' => $line['promotion_share'] ?? '0.00',
                 ]);
+            }
+
+            // 6.5 回填券的核销订单，便于取消/退款按单返还
+            if ($userCoupon !== null) {
+                DB::table('user_coupons')
+                    ->where('id', $userCoupon->id)
+                    ->update(['used_order_id' => $order->id, 'updated_at' => now()]);
             }
 
             // 已结算的购物车项移除
@@ -156,6 +249,9 @@ class OrderService
             'order_no' => $order->order_no,
             'pay_amount' => $order->pay_amount,
             'items' => $cartItems->count(),
+            'coupon_id' => $order->coupon_id,
+            'promotion_discount' => $order->promotion_discount,
+            'discount_amount' => $order->discount_amount,
         ]);
 
         // V1.1 T-001：创建订单的初始流水
@@ -408,7 +504,7 @@ class OrderService
 
             $fromStatus = $locked->status;
 
-            // 取消待支付订单 → 释放锁定库存 + 关闭未完成支付单
+            // 取消待支付订单 → 释放锁定库存 + 返还券 + 关闭未完成支付单
             if ($target === Order::STATUS_CANCELLED && $locked->isPendingPayment()) {
                 $items = $locked->items()->get();
                 foreach ($items as $item) {
@@ -416,6 +512,10 @@ class OrderService
                         $this->inventory->release($item->sku_id, $item->quantity, $bizType, $locked->id, $reason);
                     }
                 }
+
+                // V1.1 T-035：未支付即取消，券原样返还（T-036 复用同一返还逻辑处理退款场景）
+                $this->releaseCoupon($locked);
+
                 \App\Services\Payment\PaymentService::closePendingForOrder($locked->id);
             }
 
@@ -458,6 +558,46 @@ class OrderService
 
             return $locked;
         });
+    }
+
+    /**
+     * 返还订单占用的优惠券（V1.1 T-035，T-036 退款复用）
+     *
+     * 规则（评审口径，写入 Backend_Design §3.4）：
+     *  - 仅返还本单核销中（`status=used` 且 `used_order_id=本单`）的券，幂等；
+     *  - 券在占用期间若已过 `expire_at`，则返还为 `expired`（不复活已过期券）；
+     *  - 同步回退 `coupons.used_count`（`where used_count > 0` 防负数）。
+     */
+    public function releaseCoupon(Order $order): void
+    {
+        if (! $order->coupon_id) {
+            return;
+        }
+
+        /** @var UserCoupon|null $uc */
+        $uc = UserCoupon::where('used_order_id', $order->id)
+            ->where('status', UserCoupon::STATUS_USED)
+            ->first();
+
+        if (! $uc) {
+            return;
+        }
+
+        $backStatus = $uc->isExpired() ? UserCoupon::STATUS_EXPIRED : UserCoupon::STATUS_UNUSED;
+
+        DB::table('user_coupons')
+            ->where('id', $uc->id)
+            ->update([
+                'status' => $backStatus,
+                'used_order_id' => null,
+                'used_at' => null,
+                'updated_at' => now(),
+            ]);
+
+        DB::table('coupons')
+            ->where('id', $order->coupon_id)
+            ->where('used_count', '>', 0)
+            ->update(['used_count' => DB::raw('used_count - 1'), 'updated_at' => now()]);
     }
 
     /**

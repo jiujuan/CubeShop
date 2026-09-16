@@ -398,6 +398,23 @@ CREATE TABLE inventory_check_items (
   任一行实付 ≥ 0、应付 = 商品总额 − 券 − 满减 + 运费 ≥ 0。
 - `orders.amount_details.v = 1`（口径版本号，历史订单据此兼容展示）。
 
+**下单链路与券核销时机（T-035 落地口径，代码 `OrderService` / `PaymentService`）**
+- `POST /orders` 新增可选 `user_coupon_id`、`promotion_id`：
+  - 不传 `user_coupon_id` → 不用券，**金额路径与 V1.0 完全一致**（`discount_amount=0`、`amount_details` 仅含零优惠快照）；
+  - 不传 `promotion_id` → `PromotionService::match()` **自动匹配当前最优满减**（多活动取优惠最大者，**不叠加**）；
+  - 显式传 `promotion_id` → `resolveUsable()` 校验启用 + 时间窗口 + 命中范围。
+- **参数校验顺序**：先校验券可用性（`CouponService::validateUse`）→ 再锁库存，避免「锁了库存才因券无效回滚」的无谓开销。
+- **券核销时机：下单事务内即核销（占用制）**，`UPDATE user_coupons SET status='used', used_at=now() WHERE id=? AND status='unused' AND expire_at>=now()`，
+  受影响行数 0 即冲突（**一券一单，天然防并发重复使用**）；同事务 `coupons.used_count + 1` 并回填 `used_order_id`。
+  - `used_count` 语义 = 「已被订单占用（含待支付）」；
+  - **未支付取消/超时取消** → `OrderService::releaseCoupon()` 原样返还（`status` 回 `unused`，占用期间已过期的置 `expired`），`used_count` 回退（T-036 退款复用同一方法）。
+- **支付回调金额校验**（`PaymentService::assertOrderAmountConsistent`）：由 `orders.amount_details` 经
+  `PricingCalculator::recomputePayAmount()`（应付 = 商品总额 − 优惠 + 运费，**与落库同一公式**）重算，
+  必须同时等于 `orders.pay_amount` 与支付单金额；无 `amount_details` 的 V1.0 历史单退回旧口径（支付单金额 == `pay_amount`）。
+  任一不一致 → `Log::warning` 告警 + 抛业务冲突，**拒绝入账**（防篡改订单金额后低价支付）。
+- 订单列表/详情响应补充 `discount_amount`、`promotion_discount`、`amount_details` 与行级 `coupon_share`/`promotion_share`/`payable_amount`；
+  历史无券订单返回 `0` 与 `null` 快照，前端兼容。
+
 ---
 
 ## 4. 质量保障要求（沿 V1.0 基线）
