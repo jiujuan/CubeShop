@@ -16,7 +16,12 @@ test('单号格式：前缀 + 日期 + 6 位序列', function (string $prefix) {
     '订单' => [NoGen::PREFIX_ORDER],
     '支付' => [NoGen::PREFIX_PAYMENT],
     '退款' => [NoGen::PREFIX_REFUND],
+    '充值' => [NoGen::PREFIX_RECHARGE],
 ]);
+
+test('generateRechargeNo 使用 RC 前缀', function () {
+    expect(app(NoGeneratorService::class)->generateRechargeNo())->toStartWith(NoGen::PREFIX_RECHARGE);
+});
 
 test('批量生成 500 个单号无重复', function () {
     $service = app(NoGeneratorService::class);

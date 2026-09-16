@@ -143,6 +143,28 @@ printf '%s' 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYPhfDwA
 UP=$(curl -s --noproxy '*' -X POST "$BASE/user/upload" -H "Authorization: Bearer $TOKEN" -F "file=@$TMPIMG;type=image/png")
 [ "$(echo "$UP" | jpath code)" = "0" ] && ok "头像上传" || bad "上传: $(echo "$UP" | head -c 120)"
 
+echo "--- 5h. 余额充值（收银台 P6）"
+BAL0=$(req GET /user/balance "$TOKEN" '' | jpath data.balance)
+[ -n "$BAL0" ] && ok "余额查询（初始 ¥$BAL0）" || bad "余额查询"
+
+RCH_CH=$(req GET "/payments/channels?scene=recharge" "$TOKEN" '' | jpath code)
+[ "$RCH_CH" = "0" ] && ok "充值渠道列表（scene=recharge）" || bad "充值渠道列表"
+
+RCH=$(req POST /user/balance/recharges "$TOKEN" '{"amount":"100.00","channel":"mock"}')
+RCH_PAY=$(echo "$RCH" | jpath data.payment_no)
+[ -n "$RCH_PAY" ] && ok "发起充值（$RCH_PAY）" || bad "发起充值: $(echo "$RCH" | head -c 120)"
+
+RCH_SB=$(req POST "/payments/sandbox/$RCH_PAY" '' '')
+[ "$(echo "$RCH_SB" | jpath code)" = "0" ] && ok "充值沙箱支付回调" || bad "充值沙箱: $(echo "$RCH_SB" | head -c 120)"
+
+BAL1=$(req GET /user/balance "$TOKEN" '' | jpath data.balance)
+[ "$BAL1" = "100.00" ] && ok "充值到账 ¥$BAL1" || bad "充值到账: $BAL1"
+
+RCH_LIST=$(req GET /user/balance/recharges "$TOKEN" '' | jpath code)
+[ "$RCH_LIST" = "0" ] && ok "充值记录列表" || bad "充值记录列表"
+BLOG=$(req GET /user/balance/logs "$TOKEN" '' | jpath code)
+[ "$BLOG" = "0" ] && ok "余额流水列表" || bad "余额流水列表"
+
 echo "--- 6. 退出登录"
 OUT=$(req POST /auth/logout "$TOKEN" '')
 [ "$(echo "$OUT" | jpath code)" = "0" ] && ok "退出登录" || bad "退出: $(echo "$OUT" | head -c 80)"
