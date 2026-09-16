@@ -9,6 +9,7 @@ use App\Models\Order;
 use App\Models\Payment;
 use App\Models\PaymentChannel;
 use App\Models\PaymentLog;
+use App\Services\Common\ConfigService;
 use App\Services\Common\NoGeneratorService;
 use App\Services\Inventory\InventoryService;
 use App\Services\Order\OrderService;
@@ -38,6 +39,7 @@ class PaymentService
         private readonly PaymentChannelService $channels,
         private readonly PaymentGatewayFactory $gateways,
         private readonly BalanceService $balances,
+        private readonly ConfigService $config,
     ) {
     }
 
@@ -337,6 +339,40 @@ class PaymentService
         return ['ok' => true, 'status' => $payment->fresh()->status, 'message' => 'ok'];
     }
 
+    /* ------------------------------------------------------------------ */
+    /* 主动查单调度支撑（§7.2）                                             */
+    /* ------------------------------------------------------------------ */
+
+    /** 主动查单最大尝试次数（配置 payment.query_max_attempts，默认 10） */
+    public function queryMaxAttempts(): int
+    {
+        return max(1, $this->config->getInt('payment.query_max_attempts', 10));
+    }
+
+    /** 该支付单已「主动查单」的次数（依据 payment_logs event=query） */
+    public function queryAttempts(Payment $payment): int
+    {
+        return PaymentLog::query()
+            ->where('payment_id', $payment->id)
+            ->where('event', PaymentLog::EVENT_QUERY)
+            ->count();
+    }
+
+    /** 主动查单次数耗尽：标记失败并记日志（§7.2） */
+    public function markQueryExhausted(Payment $payment): void
+    {
+        try {
+            $this->applyFailed($payment);
+        } catch (BusinessException) {
+            return; // 已被并发处理（回调先到），无需再标记
+        }
+
+        $this->log($payment->fresh(), PaymentLog::EVENT_QUERY, [
+            'reason' => 'query_max_attempts_exceeded',
+            'attempts' => $this->queryAttempts($payment),
+        ], ['ok' => false, 'message' => '主动查单超限，标记失败']);
+    }
+
     /**
      * 线下转账核账（§6.2）
      *
@@ -391,6 +427,15 @@ class PaymentService
     {
         Payment::where('order_id', $orderId)
             ->where('status', Payment::STATUS_PENDING)
+            ->update(['status' => Payment::STATUS_CLOSED, 'updated_at' => now()]);
+    }
+
+    /** 关闭充值单的全部待处理支付单（充值超时时调用，§7.3） */
+    public static function closePendingForRecharge(BalanceRecharge $recharge): void
+    {
+        Payment::where('biz_type', Payment::BIZ_TYPE_RECHARGE)
+            ->where('biz_no', $recharge->recharge_no)
+            ->whereIn('status', [Payment::STATUS_PENDING, Payment::STATUS_REVIEWING])
             ->update(['status' => Payment::STATUS_CLOSED, 'updated_at' => now()]);
     }
 
