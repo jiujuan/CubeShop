@@ -10,7 +10,8 @@ use Illuminate\Console\Command;
 /**
  * 订单超时自动取消（Roadmap P4）
  *
- * 调度：每分钟执行（routes/console.php）
+ * 调度：由 `payments:cancel-timeout` 每分钟调用（收银台方案 §7.3 起，本命令作为订单分支的实现，
+ *       亦可单独手动执行 `php artisan orders:cancel-expired`）
  * 规则：pending_payment 且 created_at 早于 now - order.timeout_minutes（默认 30）
  */
 class CancelExpiredOrders extends Command
