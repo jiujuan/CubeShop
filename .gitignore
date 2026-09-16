@@ -33,4 +33,7 @@ auth.json
 # Composer
 composer.phar
 
+# 测试临时产物
+docs/testing/.smoke-*
+
 .workbuddy
