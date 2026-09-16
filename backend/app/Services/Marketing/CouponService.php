@@ -69,6 +69,7 @@ class CouponService
                 'min_spend' => (float) $c->min_spend,
                 'scope' => $c->scope,
                 'scope_label' => Coupon::SCOPE_LABELS[$c->scope] ?? $c->scope,
+                'scope_refs' => $c->scope_refs ?? [],
                 'valid_type' => $c->valid_type,
                 'valid_to' => $c->valid_to?->format('Y-m-d H:i:s'),
                 'valid_days' => $c->valid_days,
