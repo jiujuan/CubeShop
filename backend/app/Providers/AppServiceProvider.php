@@ -61,6 +61,11 @@ class AppServiceProvider extends ServiceProvider
             return Limit::perMinute(10)->by('recharge|'.($request->user()?->id ?? $request->ip()));
         });
 
+        // 领券（V1.1 二期 T-033）：同用户 20 次/分钟（配合后端限领与原子防超发）
+        RateLimiter::for('coupon', function (Request $request) {
+            return Limit::perMinute(20)->by('coupon|'.($request->user()?->id ?? $request->ip()));
+        });
+
         // V1.1 F02 / T-018：业务事件 → 通知监听器（站内信 + 邮件）
         Event::listen(\App\Events\OrderPaid::class, \App\Listeners\SendOrderPaidNotification::class);
         Event::listen(\App\Events\OrderShipped::class, \App\Listeners\SendOrderShippedNotification::class);
