@@ -71,6 +71,18 @@ const router = createRouter({
       meta: { title: '收银台 · CubeShop', requiresAuth: true },
     },
     {
+      path: '/orders/:id/refund',
+      name: 'order-refund',
+      component: () => import('@/views/RefundApplyView.vue'),
+      meta: { title: '申请退款 · CubeShop', requiresAuth: true },
+    },
+    {
+      path: '/orders/:id/cancel',
+      name: 'order-cancel',
+      component: () => import('@/views/OrderCancelView.vue'),
+      meta: { title: '取消订单 · CubeShop', requiresAuth: true },
+    },
+    {
       path: '/pay/result/:payment_no',
       name: 'pay-result',
       component: () => import('@/views/PayResultView.vue'),

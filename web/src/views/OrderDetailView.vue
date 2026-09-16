@@ -3,8 +3,6 @@ import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { MapPin, NotebookPen, RotateCcw, Star } from 'lucide-vue-next'
 import {
-  applyRefund,
-  cancelOrder,
   confirmOrder,
   getOrder,
   rebuyOrder,
@@ -30,6 +28,7 @@ const auth = useAuthStore()
 
 const loading = ref(true)
 const tip = ref('')
+const successTip = ref('')
 const order = ref<OrderDetail | null>(null)
 
 // 确认收货二次确认
@@ -48,6 +47,13 @@ async function load() {
 }
 
 onMounted(async () => {
+  if (route.query.refund_ok) {
+    successTip.value = '退款申请已提交，等待商家审核'
+    router.replace({ query: { ...route.query, refund_ok: undefined } })
+  } else if (route.query.cancel_ok) {
+    successTip.value = '订单已取消'
+    router.replace({ query: { ...route.query, cancel_ok: undefined } })
+  }
   if (auth.token) await load()
   else loading.value = false
 })
@@ -64,34 +70,6 @@ const actions = computed(() => {
   }
   return { ...fallback, ...(order.value?.actions ?? {}) }
 })
-
-async function doCancel() {
-  if (!order.value) return
-  const reason = prompt('请输入取消原因（可留空）：')
-  if (reason === null) return
-  tip.value = ''
-  try {
-    const { data } = await cancelOrder(order.value.id, reason.trim() || undefined)
-    order.value = data.data
-  } catch (e) {
-    tip.value = e instanceof Error ? e.message : '取消失败'
-    await load()
-  }
-}
-
-async function doRefund() {
-  if (!order.value) return
-  const reason = prompt('请输入退款原因（可留空）：')
-  if (reason === null) return
-  tip.value = ''
-  try {
-    await applyRefund(order.value.id, reason.trim() || undefined)
-    alert('退款申请已提交，等待商家审核')
-    await load()
-  } catch (e) {
-    tip.value = e instanceof Error ? e.message : '申请退款失败'
-  }
-}
 
 /** 确认收货：先二次确认，成功后局部刷新详情与时间轴 */
 async function doConfirm() {
@@ -186,6 +164,7 @@ async function onReviewSubmitted() {
 
       <template v-else-if="order">
         <p v-if="tip" class="mb-3 rounded-md bg-red-50 px-3 py-2 text-xs text-red-500">{{ tip }}</p>
+        <p v-if="successTip" class="mb-3 rounded-md bg-green-50 px-3 py-2 text-xs text-green-600" data-testid="refund-success-tip">{{ successTip }}</p>
 
         <!-- 状态卡 -->
         <section class="mb-6 flex items-center justify-between rounded-xl bg-gradient-to-r from-[#e6f4ff] to-white p-5">
@@ -322,7 +301,8 @@ async function onReviewSubmitted() {
           <button
             v-if="actions.can_cancel"
             class="rounded-full border border-slate-200 px-6 py-2 text-sm text-slate-500 hover:border-red-300 hover:text-red-500"
-            @click="doCancel"
+            data-testid="apply-cancel"
+            @click="$router.push(`/orders/${order.id}/cancel`)"
           >取消订单</button>
           <button
             v-if="actions.can_confirm"
@@ -340,7 +320,8 @@ async function onReviewSubmitted() {
           <button
             v-if="actions.can_refund"
             class="rounded-full border border-orange-200 px-6 py-2 text-sm text-orange-500 hover:bg-orange-50"
-            @click="doRefund"
+            data-testid="apply-refund"
+            @click="$router.push(`/orders/${order.id}/refund`)"
           >申请退款</button>
         </div>
 
