@@ -258,7 +258,7 @@ async function doReceive() {
             </tr>
           </thead>
           <tbody>
-            <tr v-for="(row, idx) in receiveState.rows" :key="row.sku_id" class="border-b border-slate-100">
+            <tr v-for="row in receiveState.rows" :key="row.sku_id" class="border-b border-slate-100">
               <td class="px-2 py-1.5 text-black">SKU#{{ row.sku_id }}</td>
               <td class="px-2 py-1.5 text-black">{{ row.expected }}</td>
               <td class="px-2 py-1.5">
