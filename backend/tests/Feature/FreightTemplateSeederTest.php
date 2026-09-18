@@ -7,11 +7,11 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);
 
-test('种子数据：4 个模板全部入库且规则通过校验器', function () {
+test('种子数据：7 个模板全部入库且规则通过校验器', function () {
     $this->seed(FreightTemplateSeeder::class);
 
     $templates = FreightTemplate::all();
-    expect($templates->count())->toBe(4)
+    expect($templates->count())->toBe(7)
         ->and($templates->every(fn ($t) => $t->status === 1))->toBeTrue();
 
     foreach ($templates as $t) {
@@ -42,5 +42,5 @@ test('种子数据：幂等 —— 重复执行不产生重复行', function () 
     $this->seed(FreightTemplateSeeder::class);
     $this->seed(FreightTemplateSeeder::class);
 
-    expect(FreightTemplate::count())->toBe(4);
+    expect(FreightTemplate::count())->toBe(7);
 });

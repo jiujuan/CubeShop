@@ -45,6 +45,39 @@ class FreightTemplateSeeder extends Seeder
                 ],
             ],
             [
+                // 粤桂琼 5 元，其余省份 10 元
+                'name' => '华南优惠运费',
+                'mode' => 'region',
+                'rules' => [
+                    'areas' => [
+                        ['provinces' => ['440000', '450000', '460000'], 'amount' => '5.00'],
+                    ],
+                    'default' => ['amount' => '10.00'],
+                ],
+            ],
+            [
+                // 豫鄂湘 5 元，其余省份 10 元
+                'name' => '华中优惠运费',
+                'mode' => 'region',
+                'rules' => [
+                    'areas' => [
+                        ['provinces' => ['410000', '420000', '430000'], 'amount' => '5.00'],
+                    ],
+                    'default' => ['amount' => '10.00'],
+                ],
+            ],
+            [
+                // 辽吉黑 5 元，其余省份 10 元
+                'name' => '东北优惠运费',
+                'mode' => 'region',
+                'rules' => [
+                    'areas' => [
+                        ['provinces' => ['210000', '220000', '230000'], 'amount' => '5.00'],
+                    ],
+                    'default' => ['amount' => '10.00'],
+                ],
+            ],
+            [
                 // 蒙藏甘青宁新 12 元，其余省份 6 元
                 'name' => '偏远地区加价运费',
                 'mode' => 'region',
