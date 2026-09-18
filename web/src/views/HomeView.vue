@@ -6,7 +6,7 @@ import {
   Headphones, House, LayoutGrid, MessageSquare, Package, RotateCcw, ShieldCheck, Shirt,
   Sparkles, Truck, WalletMinimal,
 } from 'lucide-vue-next'
-import { getCategories, getHot, type CategoryNode, type ProductBrief } from '@/api/shop'
+import { getCategories, getHot, getRecommended, type CategoryNode, type ProductBrief } from '@/api/shop'
 import { getAnnouncements, type AnnouncementListItem } from '@/api/announcement'
 import { getBanners, type HomeBannerGroups } from '@/api/banner'
 import ProductCard from '@/components/ProductCard.vue'
@@ -27,6 +27,8 @@ const PAGE_SIZE = 12
 
 const hot = ref<ProductBrief[]>([])
 const newest = ref<ProductBrief[]>([])
+/** 产品推荐（P-HomeRecommend）：后台勾选「首页推荐」的上架商品 */
+const recommended = ref<ProductBrief[]>([])
 const categories = ref<CategoryNode[]>([])
 const loading = ref(true)
 
@@ -55,9 +57,15 @@ function goLink(link: string) {
 
 onMounted(async () => {
   try {
-    const [hotRes, catRes] = await Promise.all([getHot(PAGE_SIZE), getCategories()])
+    // 推荐栏单独 catch：接口异常只影响该栏，不拖垮整页
+    const [hotRes, catRes, recRes] = await Promise.all([
+      getHot(PAGE_SIZE),
+      getCategories(),
+      getRecommended(PAGE_SIZE).catch(() => null),
+    ])
     hot.value = hotRes.data.data.hot
     newest.value = hotRes.data.data.newest
+    recommended.value = recRes?.data.data.list ?? []
     categories.value = catRes.data.data
   } catch {
     /* 单个接口异常不影响整页渲染 */
@@ -450,6 +458,31 @@ const bigPromos = [
             暂时无数据
           </div>
         </template>
+      </section>
+
+      <!-- ============ 整宽：产品推荐（后台勾选「首页推荐」的商品，一行 6 件 × 2 行） ============ -->
+      <section v-if="!loading && recommended.length" class="mt-4 pb-4" data-testid="home-recommended">
+        <div class="mb-3 flex items-center justify-between">
+          <div class="flex min-w-0 items-center gap-2">
+            <span class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[#eaf4ff]">
+              <Sparkles class="h-3.5 w-3.5 text-[#1677ff]" />
+            </span>
+            <h3 class="shrink-0 text-[15px] font-bold text-slate-800">产品推荐</h3>
+            <span class="truncate text-xs text-slate-400">按排序与上架时间展示</span>
+          </div>
+          <RouterLink
+            to="/search"
+            class="flex shrink-0 items-center text-xs text-slate-400 hover:text-[#1677ff]"
+          >查看更多 <ChevronRight class="h-3.5 w-3.5" /></RouterLink>
+        </div>
+
+        <div
+          class="grid grid-cols-2 gap-3.5 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6"
+          data-testid="home-recommended-grid"
+        >
+          <!-- ProductCard 是多根组件（三种布局分支），data-testid 会退化成透传警告，故只在容器上打标 -->
+          <ProductCard v-for="p in recommended" :key="p.id" :product="p" layout="home" />
+        </div>
       </section>
 
       <!-- ============ 整宽：底部广告图（P-HomeBanner：后台可配 2 张；未配置时回退默认大促双卡） ============ -->

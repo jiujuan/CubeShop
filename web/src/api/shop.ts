@@ -69,3 +69,10 @@ export function getHot(limit = 8) {
     params: { limit },
   })
 }
+
+/** 首页推荐（P-HomeRecommend，API 无名）：后台勾选「首页推荐」的上架商品，按排序 + 上架时间倒序 */
+export function getRecommended(limit = 12) {
+  return request.get<ApiResult<{ list: ProductBrief[] }>>('/products/recommended', {
+    params: { limit },
+  })
+}
