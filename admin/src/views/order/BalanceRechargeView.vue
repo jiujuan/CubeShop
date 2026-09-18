@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import { ChevronLeft, ChevronRight, Download, Search } from 'lucide-vue-next'
+import { Download, Search } from 'lucide-vue-next'
 import {
   exportBalanceRecharges,
   getBalanceRecharge,
@@ -16,6 +16,7 @@ import {
 } from '@/api/payment'
 import { Button } from '@/components/ui/button'
 import LoadingSpinner from '@/components/LoadingSpinner.vue'
+import TablePagination from '@/components/TablePagination.vue'
 
 /**
  * 余额充值单管理（§5.2 / §6.5，权限 balance.recharge.view；核账 payment.offline.review）
@@ -215,19 +216,7 @@ onMounted(load)
       </tbody>
     </table>
 
-    <div class="mt-4 flex items-center justify-between text-[13px] text-slate-500">
-      <span>共 {{ pagination.total }} 条记录</span>
-      <div class="flex items-center gap-1">
-        <button class="flex h-7 w-7 items-center justify-center rounded border border-slate-200 disabled:opacity-40" :disabled="pagination.page <= 1" @click="goPage(pagination.page - 1)"><ChevronLeft class="h-4 w-4" /></button>
-        <button
-          v-for="page in pagination.total_pages" :key="page"
-          class="h-7 min-w-7 rounded border px-1.5"
-          :class="page === pagination.page ? 'border-[#1677ff] bg-[#1677ff] text-white' : 'border-slate-200 hover:border-[#1677ff]'"
-          @click="goPage(page)"
-        >{{ page }}</button>
-        <button class="flex h-7 w-7 items-center justify-center rounded border border-slate-200 disabled:opacity-40" :disabled="pagination.page >= pagination.total_pages" @click="goPage(pagination.page + 1)"><ChevronRight class="h-4 w-4" /></button>
-      </div>
-    </div>
+    <TablePagination :pagination="pagination" :total-text="`共 ${pagination.total} 条记录`" @change="goPage" />
 
     <!-- 详情 -->
     <div v-if="detail || detailLoading" class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-6" @click.self="detail = null">

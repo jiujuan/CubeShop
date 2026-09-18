@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { ChevronLeft, ChevronRight, Download, Plus, RotateCcw, Search, Upload } from 'lucide-vue-next'
+import { Download, Plus, RotateCcw, Search, Upload } from 'lucide-vue-next'
 import {
   batchProducts, getCategories, getProducts, updateProductStatus,
   type AdminProduct, type CategoryNode, type Pagination,
@@ -9,6 +9,7 @@ import {
 import { Button } from '@/components/ui/button'
 import LoadingSpinner from '@/components/LoadingSpinner.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
+import TablePagination from '@/components/TablePagination.vue'
 
 /**
  * 商品列表（原型：筛选区 + 表格 + 批量操作 + 分页）
@@ -270,26 +271,7 @@ function fmtTime(dt?: string) {
     </table>
 
     <!-- 分页 -->
-    <div class="mt-4 flex items-center justify-between text-[13px] text-slate-500">
-      <span>共 {{ pagination.total }} 条记录 / 每页 {{ pagination.page_size }} 条</span>
-      <div class="flex items-center gap-1">
-        <button
-          class="flex h-7 w-7 items-center justify-center rounded border border-slate-200 disabled:opacity-40"
-          :disabled="pagination.page <= 1" @click="goPage(pagination.page - 1)"
-        ><ChevronLeft class="h-4 w-4" /></button>
-        <button
-          v-for="page in pagination.total_pages"
-          :key="page"
-          class="h-7 min-w-7 rounded border px-1.5"
-          :class="page === pagination.page ? 'border-[#1677ff] bg-[#1677ff] text-white' : 'border-slate-200 hover:border-[#1677ff]'"
-          @click="goPage(page)"
-        >{{ page }}</button>
-        <button
-          class="flex h-7 w-7 items-center justify-center rounded border border-slate-200 disabled:opacity-40"
-          :disabled="pagination.page >= pagination.total_pages" @click="goPage(pagination.page + 1)"
-        ><ChevronRight class="h-4 w-4" /></button>
-      </div>
-    </div>
+    <TablePagination :pagination="pagination" @change="goPage" />
 
     <!-- 下架/删除确认弹层 -->
     <ConfirmDialog

@@ -158,19 +158,7 @@ async function saveValues() {
   <div class="rounded-lg bg-white p-5 shadow-sm">
     <div class="mb-4 flex items-center justify-between">
       <h2 class="text-lg font-semibold text-slate-800">属性库</h2>
-      <Button v-permission="'product.update'" class="bg-[#1677ff] hover:bg-[#4096ff]" @click="openCreate">
-        <Plus class="mr-0.5 h-4 w-4" /> 新建属性
-      </Button>
-    </div>
-
-    <div class="mb-3 flex flex-wrap items-center gap-2 text-[13px]">
-      <input v-model="keyword" type="text" placeholder="属性名称" class="w-40 rounded-md border border-slate-300 px-3 py-1.5 outline-none focus:border-[#1677ff]" @keyup.enter="load" />
-      <select v-model="typeFilter" class="rounded-md border border-slate-300 px-2 py-1.5 outline-none focus:border-[#1677ff]">
-        <option value="">全部类型</option>
-        <option value="spec">规格</option>
-        <option value="param">参数</option>
-      </select>
-      <Button variant="outline" @click="load">刷新</Button>
+      <span class="text-xs text-slate-400">左：属性列表　右：属性值管理</span>
     </div>
 
     <p v-if="actionError" class="mb-3 rounded-md bg-red-50 px-3 py-2 text-[13px] text-red-500">{{ actionError }}</p>
@@ -199,40 +187,57 @@ async function saveValues() {
         <div v-if="!list.length && !loading" class="px-3 py-10 text-center text-[13px] text-slate-400">暂无属性</div>
       </div>
 
-      <!-- 右：属性值管理 -->
+      <!-- 右：属性值管理（顶部吸附：搜索 / 新建 / 添加 / 保存 / 值展示 全部在右侧面板内、吸顶） -->
       <div class="min-w-0 flex-1">
-        <template v-if="active">
-          <div class="mb-2 text-[13px] font-medium text-slate-700">
-            「{{ active.name }}」属性值
-            <span class="ml-1 text-xs font-normal text-slate-400">（保存为覆盖语义，被引用的值不会被删除）</span>
-          </div>
-
-          <div class="mb-3 flex flex-wrap gap-2">
-            <span
-              v-for="(v, i) in valueDraft" :key="v"
-              class="flex items-center gap-1 rounded-full border border-slate-200 px-2.5 py-1 text-[13px] text-slate-600"
-            >
-              {{ v }}
-              <button class="text-slate-400 hover:text-red-500" @click="removeDraft(i)"><X class="h-3 w-3" /></button>
-            </span>
-            <span v-if="!valueDraft.length" class="text-[13px] text-slate-400">暂无属性值</span>
-          </div>
-
-          <div class="mb-3 flex items-center gap-2 text-[13px]">
-            <input
-              v-model="newValue" type="text" placeholder="输入属性值后回车添加"
-              class="w-56 rounded-md border border-slate-300 px-3 py-1.5 outline-none focus:border-[#1677ff]"
-              @keyup.enter="addDraft"
-            />
-            <Button variant="outline" @click="addDraft"><Plus class="h-4 w-4" /> 添加</Button>
-            <Button v-permission="'product.update'" class="bg-[#1677ff] hover:bg-[#4096ff]" :disabled="savingValues" @click="saveValues">
-              <Check class="h-4 w-4" /> {{ savingValues ? '保存中...' : '保存属性值' }}
+        <div data-testid="attr-toolbar" class="sticky top-0 z-20 mb-3 rounded-md border border-slate-100 bg-white pb-3">
+          <div class="flex flex-wrap items-center gap-2 p-3 pb-2 text-[13px]">
+            <Button data-testid="attr-new-btn" v-permission="'product.update'" class="bg-[#1677ff] hover:bg-[#4096ff]" @click="openCreate">
+              <Plus class="mr-0.5 h-4 w-4" /> 新建属性
             </Button>
+            <div class="ml-auto flex flex-wrap items-center gap-2">
+              <input v-model="keyword" type="text" placeholder="属性名称" class="w-40 rounded-md border border-slate-300 px-3 py-1.5 outline-none focus:border-[#1677ff]" @keyup.enter="load" />
+              <select v-model="typeFilter" class="rounded-md border border-slate-300 px-2 py-1.5 outline-none focus:border-[#1677ff]">
+                <option value="">全部类型</option>
+                <option value="spec">规格</option>
+                <option value="param">参数</option>
+              </select>
+              <Button data-testid="attr-search-btn" class="bg-[#1677ff] hover:bg-[#4096ff]" @click="load">搜索</Button>
+            </div>
           </div>
 
-          <p v-if="message" class="rounded-md bg-[#e6f4ff] px-3 py-2 text-[13px] text-[#1677ff]">{{ message }}</p>
-        </template>
-        <div v-else class="flex h-40 items-center justify-center text-[13px] text-slate-400">请选择左侧属性</div>
+          <template v-if="active">
+            <div class="border-t border-slate-100 px-3 pb-2 pt-2 text-[13px] font-medium text-slate-700">
+              「{{ active.name }}」属性值
+              <span class="ml-1 text-xs font-normal text-slate-400">（保存为覆盖语义，被引用的值不会被删除）</span>
+            </div>
+
+            <div class="flex flex-wrap gap-2 px-3 pb-2">
+              <span
+                v-for="(v, i) in valueDraft" :key="v"
+                class="flex items-center gap-1 rounded-full border border-slate-200 px-2.5 py-1 text-[13px] text-slate-600"
+              >
+                {{ v }}
+                <button class="text-slate-400 hover:text-red-500" @click="removeDraft(i)"><X class="h-3 w-3" /></button>
+              </span>
+              <span v-if="!valueDraft.length" class="text-[13px] text-slate-400">暂无属性值</span>
+            </div>
+
+            <div class="flex items-center gap-2 px-3 pb-1 pt-1 text-[13px]">
+              <input
+                v-model="newValue" type="text" placeholder="输入属性值后回车添加"
+                class="w-56 rounded-md border border-slate-300 px-3 py-1.5 outline-none focus:border-[#1677ff]"
+                @keyup.enter="addDraft"
+              />
+              <Button variant="outline" @click="addDraft"><Plus class="h-4 w-4" /> 添加</Button>
+              <Button v-permission="'product.update'" class="bg-[#1677ff] hover:bg-[#4096ff]" :disabled="savingValues" @click="saveValues">
+                <Check class="h-4 w-4" /> {{ savingValues ? '保存中...' : '保存属性值' }}
+              </Button>
+            </div>
+
+            <p v-if="message" class="mx-3 rounded-md bg-[#e6f4ff] px-3 py-2 text-[13px] text-[#1677ff]">{{ message }}</p>
+          </template>
+          <div v-else class="px-3 py-3 text-[13px] text-slate-400">请选择左侧属性</div>
+        </div>
       </div>
     </div>
 
