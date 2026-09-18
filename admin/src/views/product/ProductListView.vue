@@ -229,7 +229,13 @@ function fmtTime(dt?: string) {
                 <span v-else class="text-lg text-slate-300">📦</span>
               </div>
               <div class="min-w-0">
-                <div class="truncate font-medium text-black">{{ p.title }}</div>
+                <div class="truncate font-medium text-black">
+                  {{ p.title }}
+                  <span
+                    v-if="p.is_home_recommended"
+                    class="ml-1 rounded bg-[#fff1f0] px-1.5 py-0.5 text-[10px] font-normal text-[#ff4d4f]"
+                  >首页推荐</span>
+                </div>
                 <div class="truncate text-xs text-slate-400">{{ p.subtitle || '-' }}</div>
               </div>
             </div>

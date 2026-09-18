@@ -48,6 +48,8 @@ export interface AdminProduct {
   video_url?: string | null
   keywords?: string | null
   sort?: number
+  /** 首页推荐（P-HomeRecommend）：勾选后在前台首页「产品推荐」栏展示 */
+  is_home_recommended?: boolean
   attribute_values?: Array<{ attribute_id: number; attribute_name?: string | null; value: string }>
   specs_selection?: Array<{ attribute_id: number | null; name: string; value_names: string[] }>
 }
@@ -62,6 +64,8 @@ export interface ProductPayload {
   description_md?: string
   status: number
   sort?: number
+  /** 首页推荐（P-HomeRecommend）：true = 在前台首页「产品推荐」栏展示 */
+  is_home_recommended?: boolean
   /** V1.1 E01 新增 */
   brand_id?: number | null
   weight?: number

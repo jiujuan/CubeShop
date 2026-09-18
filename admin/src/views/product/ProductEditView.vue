@@ -49,6 +49,8 @@ const form = ref({
   video_url: '',
   status: 0,
   sort: 100,
+  /** 首页推荐（P-HomeRecommend）：勾选后前台首页「产品推荐」栏展示 */
+  is_home_recommended: false,
   description_md: '',
 })
 
@@ -337,6 +339,7 @@ onMounted(async () => {
       video_url: p.video_url ?? '',
       status: p.status,
       sort: p.sort ?? 100,
+      is_home_recommended: p.is_home_recommended ?? false,
       description_md: p.description_md ?? '',
     }
     mainImage.value = p.main_image ?? ''
@@ -460,6 +463,7 @@ function buildPayload(): ProductPayload {
     description_md: form.value.description_md,
     status: form.value.status,
     sort: form.value.sort,
+    is_home_recommended: form.value.is_home_recommended,
     brand_id: form.value.brand_id,
     weight: Number(form.value.weight) || 0,
     freight_template_id: form.value.freight_template_id,
@@ -660,6 +664,21 @@ function cancel() {
           <div class="flex items-start">
             <label class="w-28 shrink-0 pt-2 text-slate-600">排序</label>
             <input v-model.number="form.sort" type="number" class="w-28 rounded-md border border-slate-300 px-3 py-2 outline-none focus:border-[#1677ff]" />
+          </div>
+          <div class="flex items-center">
+            <label class="w-28 shrink-0 text-slate-600">首页推荐</label>
+            <div class="flex-1">
+              <label class="flex items-center gap-2">
+                <input
+                  v-model="form.is_home_recommended"
+                  type="checkbox"
+                  data-testid="home-recommended-checkbox"
+                  class="h-4 w-4 rounded border-slate-300 text-[#1677ff] focus:ring-[#1677ff]"
+                />
+                <span class="text-slate-700">勾选后在首页「产品推荐」栏展示</span>
+              </label>
+              <p class="mt-1 text-xs text-slate-400">需同时为「上架」状态才会露出；展示顺序按排序值优先、其次上架时间</p>
+            </div>
           </div>
         </div>
       </section>
