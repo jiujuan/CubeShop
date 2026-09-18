@@ -14,11 +14,15 @@ use Illuminate\Support\Facades\Log;
  * OrderService（下单）与 freight-preview（结算页实时预览）共用本服务，
  * 保证「预估与实付同一套逻辑」（设计文档核心要求）。
  *
- * 全局默认规则（未绑定模板的商品行走此口径）：
- *  - 配置 order.freight_template_id 指向启用中的模板 → 用该模板；
- *  - 否则回退旧口径：fixed（order.freight_default）+ order.free_shipping_threshold 包邮。
+ * 未绑定模板商品行的规则解析（2026-09-19 四级优先级，运营口径）：
+ *  1. 商品绑定模板（lines.template_id，引擎直接按模板分组）；
+ *  2. 地区匹配：启用中的 region 模板 areas 命中收货省 code → 取运费最低者（同价取先建）；
+ *  3. 全局默认：配置 order.freight_template_id 指向的启用模板；
+ *  4. 旧口径：fixed（order.freight_default）。
+ * 注：第 3 级若为 region 模板且该省未命中（第 2 级也没命中）→ not_support 拒单，
+ *     不静默回退第 4 级（运营显式限制的地区不可配送）。
  *
- * 商品绑定的模板缺失/停用 → 降级为全局默认规则并记 warning（方案 3.3 降级策略）。
+ * 商品绑定的模板缺失/停用 → 降级为上述默认规则并记 warning（方案 3.3 降级策略）。
  */
 class FreightService
 {
@@ -45,7 +49,7 @@ class FreightService
         return FreightCalculator::calculate(
             lines: $lines,
             templates: $templates,
-            defaultRules: $this->defaultRules(),
+            defaultRules: $this->resolveDefaultRules($provinceCode),
             freeShippingThreshold: $this->config->getDecimal('order.free_shipping_threshold', '0.00'),
             provinceCode: $provinceCode,
         );
@@ -82,11 +86,64 @@ class FreightService
     }
 
     /**
-     * 全局默认规则：配置指向的启用模板，或旧「固定运费」口径。
+     * 未绑定模板行的默认规则：地区匹配 → 全局默认 → 旧口径（见类注释四级优先级）。
      *
      * @return array{mode: string, rules: array}
      */
-    private function defaultRules(): array
+    private function resolveDefaultRules(?string $provinceCode): array
+    {
+        if ($provinceCode !== null) {
+            $regionMatched = $this->matchRegionTemplate($provinceCode);
+            if ($regionMatched !== null) {
+                return $regionMatched;
+            }
+        }
+
+        return $this->globalDefaultRules();
+    }
+
+    /**
+     * 优先级 2：在启用中的 region 模板里找 areas 命中收货省的模板。
+     * 命中多个取运费最低（amount 型比较 amount；weight 型比较 first_fee），同价取先建（id 小者）。
+     *
+     * @return array{mode: string, rules: array}|null
+     */
+    private function matchRegionTemplate(string $provinceCode): ?array
+    {
+        $candidates = FreightTemplate::query()
+            ->enabled()
+            ->where('mode', 'region')
+            ->orderBy('id')
+            ->get(['id', 'rules']);
+
+        $best = null;
+        $bestFee = null;
+        foreach ($candidates as $template) {
+            $rules = (array) $template->rules;
+            foreach ($rules['areas'] ?? [] as $area) {
+                if (in_array($provinceCode, array_map('strval', $area['provinces'] ?? []), true)) {
+                    $fee = array_key_exists('amount', $area)
+                        ? (float) $area['amount']
+                        : (float) ($area['first_fee'] ?? 0);
+
+                    if ($bestFee === null || $fee < $bestFee) {
+                        $bestFee = $fee;
+                        $best = ['mode' => 'region', 'rules' => $rules];
+                    }
+                    break; // 同一模板只取第一个命中段
+                }
+            }
+        }
+
+        return $best;
+    }
+
+    /**
+     * 优先级 3/4：配置指向的启用模板，否则旧「固定运费」口径。
+     *
+     * @return array{mode: string, rules: array}
+     */
+    private function globalDefaultRules(): array
     {
         $globalId = $this->config->getInt('order.freight_template_id', 0);
         if ($globalId > 0) {

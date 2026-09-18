@@ -184,3 +184,102 @@ test('模板删除：仍有商品绑定时拒绝删除', function () {
     expect($body['code'])->toBe(40009)
         ->and(FreightTemplate::find($tpl->id))->not->toBeNull();
 });
+
+// ---------- 2026-09-19 四级优先级：商品绑定 > 地区匹配 > 全局默认 > 旧口径 fixed ----------
+
+test('优先级2：商品未绑定、全局默认未设时，地区命中的 region 模板生效', function () {
+    FreightTemplate::create([
+        'name' => '华南优惠', 'mode' => 'region', 'status' => 1,
+        'rules' => ['areas' => [['provinces' => ['440000'], 'amount' => '8.00']]],
+    ]);
+
+    $body = $this->postJson('/api/orders/freight-preview', [
+        'items' => [['sku_id' => $this->sku->id, 'quantity' => 1]],
+        'address_id' => $this->addressId, // 广东省
+    ], $this->auth)->json('data');
+
+    expect($body['freight_amount'])->toBe('8.00')
+        ->and($body['detail'][0]['source'])->toBe('region_area');
+});
+
+test('优先级1 > 2：商品绑定模板胜过地区命中模板', function () {
+    FreightTemplate::create([
+        'name' => '华南优惠', 'mode' => 'region', 'status' => 1,
+        'rules' => ['areas' => [['provinces' => ['440000'], 'amount' => '8.00']]],
+    ]);
+    $bound = FreightTemplate::create(['name' => '商品专属', 'mode' => 'fixed', 'status' => 1, 'rules' => ['amount' => '3.00']]);
+    $this->sku->product->update(['freight_template_id' => $bound->id]);
+
+    $body = $this->postJson('/api/orders/freight-preview', [
+        'items' => [['sku_id' => $this->sku->id, 'quantity' => 1]],
+        'address_id' => $this->addressId,
+    ], $this->auth)->json('data');
+
+    expect($body['freight_amount'])->toBe('3.00')
+        ->and($body['detail'][0]['source'])->toBe('fixed');
+});
+
+test('优先级2 > 3：地区命中模板胜过全局默认', function () {
+    FreightTemplate::create([
+        'name' => '华南优惠', 'mode' => 'region', 'status' => 1,
+        'rules' => ['areas' => [['provinces' => ['440000'], 'amount' => '8.00']]],
+    ]);
+    $global = FreightTemplate::create(['name' => '全局兜底', 'mode' => 'fixed', 'status' => 1, 'rules' => ['amount' => '2.00']]);
+    app(ConfigService::class)->set('order.freight_template_id', (string) $global->id);
+
+    $body = $this->postJson('/api/orders/freight-preview', [
+        'items' => [['sku_id' => $this->sku->id, 'quantity' => 1]],
+        'address_id' => $this->addressId,
+    ], $this->auth)->json('data');
+
+    expect($body['freight_amount'])->toBe('8.00');
+});
+
+test('优先级3：地区未命中时回落全局默认模板', function () {
+    FreightTemplate::create([
+        'name' => '仅北京', 'mode' => 'region', 'status' => 1,
+        'rules' => ['areas' => [['provinces' => ['110000'], 'amount' => '8.00']]],
+    ]);
+    $global = FreightTemplate::create(['name' => '全局重量', 'mode' => 'weight', 'status' => 1,
+        'rules' => ['first_weight_g' => 1000, 'first_fee' => '5.00', 'step_weight_g' => 1000, 'step_fee' => '2.00']]);
+    app(ConfigService::class)->set('order.freight_template_id', (string) $global->id);
+    $this->sku->product->update(['weight' => 800]);
+
+    $body = $this->postJson('/api/orders/freight-preview', [
+        'items' => [['sku_id' => $this->sku->id, 'quantity' => 1]],
+        'address_id' => $this->addressId, // 广东不在「仅北京」范围
+    ], $this->auth)->json('data');
+
+    expect($body['freight_amount'])->toBe('5.00')
+        ->and($body['detail'][0]['source'])->toBe('weight');
+});
+
+test('优先级2：多个地区模板命中同省取运费最低者', function () {
+    FreightTemplate::create(['name' => '华南A', 'mode' => 'region', 'status' => 1,
+        'rules' => ['areas' => [['provinces' => ['440000'], 'amount' => '9.00']]]]);
+    FreightTemplate::create(['name' => '华南B', 'mode' => 'region', 'status' => 1,
+        'rules' => ['areas' => [['provinces' => ['440000'], 'amount' => '7.00']]]]);
+    FreightTemplate::create(['name' => '华南C', 'mode' => 'region', 'status' => 1,
+        'rules' => ['areas' => [['provinces' => ['440000'], 'amount' => '8.00']]]]);
+
+    $body = $this->postJson('/api/orders/freight-preview', [
+        'items' => [['sku_id' => $this->sku->id, 'quantity' => 1]],
+        'address_id' => $this->addressId,
+    ], $this->auth)->json('data');
+
+    expect($body['freight_amount'])->toBe('7.00');
+});
+
+test('全局默认为 region 且地区未命中（优先级2也无命中）→ not_support，不静默回退旧口径', function () {
+    $global = FreightTemplate::create(['name' => '仅北京全局', 'mode' => 'region', 'status' => 1,
+        'rules' => ['areas' => [['provinces' => ['110000'], 'amount' => '8.00']]]]);
+    app(ConfigService::class)->set('order.freight_template_id', (string) $global->id);
+
+    $body = $this->postJson('/api/orders/freight-preview', [
+        'items' => [['sku_id' => $this->sku->id, 'quantity' => 1]],
+        'address_id' => $this->addressId, // 广东
+    ], $this->auth)->json('data');
+
+    expect($body['not_support'])->toBeTrue()
+        ->and($body['freight_amount'])->toBe('0.00');
+});

@@ -348,9 +348,14 @@ onMounted(async () => {
       {{ formError }}
     </div>
 
-    <p class="mb-3 text-xs text-slate-400">
-      模板生效方式二选一：① 设为「全局默认」（对所有未单独绑定模板的商品生效）；② 在商品编辑页单独绑定。两者都未配置时，结算页按系统配置的固定运费口径计算。
-    </p>
+    <div data-testid="tpl-rule-note" class="mb-3 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-[13px] leading-6 text-red-600">
+      <span class="font-semibold">运费模板生效规则（按优先级依次匹配，命中即止）：</span>
+      ① 商品编辑页单独绑定了模板 → 首先用绑定的模板；
+      ② 未绑定 → 按收货地区匹配启用中的「按地区」模板（多个命中取运费最低者）；
+      ③ 地区也未命中 → 用「全局默认」模板；
+      ④ 未设全局默认 → 按系统固定运费口径（order.freight_default）。
+      注意：全局默认若是「按地区」模板且收货地区不在其范围（②③均未命中）→ 该地区不可配送，下单将被拒绝。
+    </div>
 
     <!-- 筛选 -->
     <div class="mb-4 flex flex-wrap items-center gap-2 text-[13px]">
