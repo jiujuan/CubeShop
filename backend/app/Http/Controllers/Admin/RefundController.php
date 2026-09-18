@@ -68,6 +68,35 @@ class RefundController extends Controller
         return $this->success($this->row($refund->fresh()), '处理成功');
     }
 
+    /**
+     * 确认收货（退货退款专用）：POST /admin/refunds/{id}/receive {received_details, exception_reason}
+     * 等效菜鸟回传收货；按实收正品回库存 → 退款完成。
+     */
+    public function receive(Request $request, int $id): JsonResponse
+    {
+        $data = $request->validate([
+            'received_details' => ['required', 'array', 'min:1'],
+            'received_details.*.sku_id' => ['required'],
+            'received_details.*.quantity' => ['required', 'integer', 'min:0'],
+            'received_details.*.condition' => ['required', 'string', 'in:good,defective'],
+            'exception_reason' => ['nullable', 'string', 'max:500'],
+        ]);
+
+        $refund = Refund::find($id);
+        if (! $refund) {
+            throw BusinessException::notFound('退款单不存在');
+        }
+
+        $refund = $this->refunds->receiveReturn(
+            refund: $refund,
+            adminId: $request->user()->id,
+            receivedDetails: $data['received_details'],
+            exceptionReason: $data['exception_reason'] ?? null,
+        );
+
+        return $this->success($this->row($refund->fresh()), '已确认收货，退款已完成');
+    }
+
     private function row(Refund $refund): array
     {
         return [
@@ -76,9 +105,17 @@ class RefundController extends Controller
             'order_id' => $refund->order_id,
             'order_no' => $refund->order_no,
             'user_id' => $refund->user_id,
+            'type' => $refund->type,
             'amount' => (string) $refund->amount,
             'reason' => $refund->reason,
             'status' => $refund->status,
+            'return_status' => $refund->return_status,
+            'return_tracking_no' => $refund->return_tracking_no,
+            'return_express_company' => $refund->return_express_company,
+            'return_details' => $refund->return_details,
+            'return_received_details' => $refund->return_received_details,
+            'return_received_at' => $refund->return_received_at?->format('Y-m-d H:i:s'),
+            'return_exception_reason' => $refund->return_exception_reason,
             'admin_remark' => $refund->admin_remark,
             'processed_at' => $refund->processed_at?->format('Y-m-d H:i:s'),
             'created_at' => $refund->created_at?->format('Y-m-d H:i:s'),

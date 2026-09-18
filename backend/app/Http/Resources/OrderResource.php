@@ -54,9 +54,15 @@ class OrderResource extends JsonResource
                 return $this->refunds->sortByDesc('id')->map(fn ($r) => [
                     'id' => $r->public_id,
                     'refund_no' => $r->refund_no,
+                    'type' => $r->type,
                     'amount' => (string) $r->amount,
                     'reason' => $r->reason,
                     'status' => $r->status,
+                    'return_status' => $r->return_status,
+                    'return_details' => $r->return_details,
+                    'return_tracking_no' => $r->return_tracking_no,
+                    'return_express_company' => $r->return_express_company,
+                    'return_received_at' => $r->return_received_at?->format('Y-m-d H:i:s'),
                     'admin_remark' => $r->admin_remark,
                     'created_at' => $r->created_at?->format('Y-m-d H:i:s'),
                 ])->values()->all();

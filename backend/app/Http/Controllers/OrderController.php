@@ -6,6 +6,7 @@ use App\Exceptions\BusinessException;
 use App\Http\Resources\OrderResource;
 use App\Models\Order;
 use App\Models\ProductSku;
+use App\Models\Refund;
 use App\Models\UserAddress;
 use App\Services\Order\OrderService;
 use App\Services\Refund\RefundService;
@@ -378,6 +379,14 @@ class OrderController extends Controller
         $data = $request->validate([
             'reason' => ['nullable', 'string', 'max:200'],
             'amount' => ['nullable', 'numeric', 'min:0.01'],
+            'type' => ['nullable', 'string', 'in:refund,return_refund'],
+            'return_details' => ['nullable', 'array'],
+            'return_details.*.sku_id' => ['required'],
+            'return_details.*.quantity' => ['required', 'integer', 'min:1'],
+            'return_details.*.product_title' => ['nullable', 'string'],
+            'return_details.*.sku_specs' => ['nullable', 'array'],
+            'return_tracking_no' => ['nullable', 'string', 'max:64'],
+            'return_express_company' => ['nullable', 'string', 'max:64'],
         ]);
 
         $order = $this->ownOrder($request, $id);
@@ -387,13 +396,21 @@ class OrderController extends Controller
             userId: $request->user()->id,
             reason: $data['reason'] ?? null,
             amount: $data['amount'] ?? null,
+            opts: [
+                'type' => $data['type'] ?? Refund::TYPE_REFUND,
+                'return_details' => $data['return_details'] ?? null,
+                'return_tracking_no' => $data['return_tracking_no'] ?? null,
+                'return_express_company' => $data['return_express_company'] ?? null,
+            ],
         );
 
         return $this->success([
             'refund_id' => $refund->public_id,
             'refund_no' => $refund->refund_no,
+            'type' => $refund->type,
             'amount' => (string) $refund->amount,
             'status' => $refund->status,
+            'return_status' => $refund->return_status,
         ], '退款申请已提交，等待审核');
     }
 }
