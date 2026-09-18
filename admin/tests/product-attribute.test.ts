@@ -144,6 +144,37 @@ describe('属性库页（T-011）', () => {
 
     expect(batchSaveAttributeValuesMock).toHaveBeenCalledWith(11, ['黑', '白', '蓝'])
   })
+
+  it('T-011b 工具条：刷新→搜索(蓝色)、新建属性与搜索同行、吸附顶部', async () => {
+    const wrapper = mount(AttributeView, { global: globalCfg(freshPinia()) })
+    await flushPromises()
+
+    // 「刷新」按钮已更名为蓝色「搜索」
+    const searchBtn = wrapper.find('[data-testid="attr-search-btn"]')
+    expect(searchBtn.exists()).toBe(true)
+    expect(searchBtn.text()).toContain('搜索')
+    expect(searchBtn.classes()).toContain('bg-[#1677ff]')
+    expect(wrapper.findAll('button').some((b) => b.text().trim() === '刷新')).toBe(false)
+
+    // 工具条吸附顶部（sticky）
+    const toolbar = wrapper.find('[data-testid="attr-toolbar"]')
+    expect(toolbar.exists()).toBe(true)
+    expect(toolbar.classes()).toContain('sticky')
+
+    // 「新建属性」与「搜索」在同一行（共用 flex 行容器，搜索在右侧 ml-auto 组内）
+    const newBtn = wrapper.find('[data-testid="attr-new-btn"]')
+    expect(newBtn.exists()).toBe(true)
+    const row = searchBtn.element.parentElement!.parentElement!
+    expect(row.className).toContain('flex')
+    expect(newBtn.element.parentElement).toBe(row)
+
+    // 右侧吸附工具条内还包含：点击属性显示的属性值、添加、保存属性值（全部在右侧面板内、吸顶）
+    expect(toolbar.text()).toContain('黑') // 默认选中「颜色」，值「黑」展示在吸附区内
+    const addBtn = wrapper.findAll('button').find((b) => b.text().includes('添加'))!
+    const saveBtn = wrapper.findAll('button').find((b) => b.text().includes('保存属性值'))!
+    expect(toolbar.element.contains(addBtn.element)).toBe(true)
+    expect(toolbar.element.contains(saveBtn.element)).toBe(true)
+  })
 })
 
 // ---------- T-011 分类模板 ----------
