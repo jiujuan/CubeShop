@@ -10,7 +10,11 @@
         "laravel/framework": "v13.12.0",
         "laravel/sanctum": "^4.3",
         "laravel/tinker": "^3.0",
-        "spatie/laravel-permission": "^8.3"
+        "league/commonmark": "^2.10",
+        "league/html-to-markdown": "^5.1",
+        "phpoffice/phpspreadsheet": "^5.9",
+        "spatie/laravel-permission": "^8.3",
+        "sqids/sqids": "^0.5.0"
     },
     "require-dev": {
         "fakerphp/faker": "^1.23",
