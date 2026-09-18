@@ -50,6 +50,7 @@
 - 表：`refunds`（`refund_no, order_id, order_no, user_id, amount, reason, status, admin_remark, processed_by, processed_at, refund_details`）
 - 服务：`RefundService::apply()/maxRefundableAmount()/process(approve|reject)`
 - **现状限制**：只有「退款」没有「退货」——无退货类型、无退货物流、无退货明细、审核通过后**不回库存**。WMS 退货闭环必须先补这部分能力（见 P4）。
+- **✅ 已补（为 WMS 打基础，2026-09-19）**：扩展 `refunds` 增加 `type(refund/return_refund)`、`warehouse_id`、`return_tracking_no`、`return_express_company`、`return_status`、`return_details`、`return_received_details`、`return_received_at`、`return_exception_reason`；`RefundService` 支持退货退款申请（`apply` opts）、审核分叉（退货退款 approve 停在 `approved`+`waiting_return`、**不立即放款**）、后台 `receiveReturn()` 确认收货按实收正品回库存并推进退款完成（残次不回、差异记录、幂等）。storefront 申请、web 申请页/详情展示、admin 审核+确认收货均已打通。**未做**：WMS 推送/回调/`return_inbound_orders` 表（真正接菜鸟时 P4 Step4-6 的事）。
 
 ### 2.4 基础设施
 - 队列：`config/queue.php` 默认 `database`，`jobs` 表迁移已存在（无独立 worker 脚本，需自行保障 `queue:work`）
@@ -87,7 +88,7 @@
 | [P1](stage-P1-fulfillment-core.md) | 履约发货单内核 + 与订单/库存接线（无外部依赖可跑通） | 1 周 | ⬜ 未开始 |
 | [P2](stage-P2-cainiao-adapter.md) | 菜鸟 Adapter：签名/网关/创建出库/取消出库 + Mock 模式下check | 1.5 周 | ⬜ 未开始 |
 | [P3](stage-P3-callback.md) | 回调入口：验签/幂等 + 发货回传 + 出库状态回传 | 1 周 | ⬜ 未开始 |
-| [P4](stage-P4-return-inbound.md) | **退货入库闭环**（含退款扩展、库存恢复） | 1.5 周 | ⬜ 未开始 |
+| [P4](stage-P4-return-inbound.md) | **退货入库闭环**（含退款扩展、库存恢复） | 1.5 周 | 🟨 进行中（退款领域能力已扩展，WMS 推送/回调/`return_inbound_orders` 待接入） |
 | [P5](stage-P5-inventory-sync.md) | 库存查询/同步 + 对账任务 + 降级开关与监控 | 0.5 周 | ⬜ 未开始 |
 | [P6](stage-P6-admin-console.md) | 后台运营页面：发货单/退货入库单/日志/重推 | 1 周 | ⬜ 未开始 |
 | [P7](stage-P7-uat-and-delivery.md) | 沙箱联调、异常演练、性能、交付与验收 | 1 周 | ⬜ 未开始 |

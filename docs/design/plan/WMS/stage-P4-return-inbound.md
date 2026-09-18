@@ -1,10 +1,16 @@
 # Stage P4：退货入库闭环（含退款扩展、收货回传、库存恢复）—— 菜鸟完整闭环收口
 
-**状态**：⬜ 未开始
+**状态**：🟨 进行中（退款领域能力已扩展，WMS 推送/回调待接入）
 **工期**：约 1.5 周（7～8 人日）
 **对应设计文档**：§2.4（退货入库单状态机）、§4.1（`return_inbound_order*`）、§5.3（退货入库流程）、§7.4（`returnorder.create`）、§7.5（`returnorder.confirm`）
 
 > 本阶段是菜鸟闭环的最后一块拼图：**售后审核 → 退货入库单 → WMS → 收货回传 → 库存恢复 → 退款完成**。
+
+### 0. 当前进度（2026-09-19）
+- ✅ **F1（退款支持退货类型）已完成**：迁移 `2026_09_19_000071` 扩展 `refunds`（`type`/`warehouse_id`/`return_*`）、`Refund` 模型常量、`RefundService::apply`/`process` 分叉、storefront `OrderController::refund`、admin `RefundController::receive` + 路由、web 申请页/详情展示、`OrderResource` 字段补齐。后端 17 例单测 + 4 例 Feature 全通过。
+- ✅ **F2（审核分叉）已完成**：退货退款 approve 停在 `approved`+`waiting_return`，不立即放款，订单保持 `refunding`。
+- ✅ **F6/F7（库存恢复/差异）已完成**：`RefundService::receiveReturn()` 按实收正品回库存、残次不回、差异记 `return_exception_reason`、幂等。
+- ⬜ **F3/F4/F5（退货入库单表 + 菜鸟推送 + 收货回传）未做**：这是真正接菜鸟时的事，复用 `receiveReturn()` 作为回传入口即可，不新建退货售后表（D3 决策）。
 
 ---
 
