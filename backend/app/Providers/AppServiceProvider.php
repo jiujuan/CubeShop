@@ -17,7 +17,40 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        //
+        // 物流轨迹渠道适配器（V1.1 T-045）：按配置切换，留空 = NullChannel 降级
+        $this->app->bind(\App\Support\Shipping\ShippingChannelInterface::class, function () {
+            return match (config('services.shipping.channel')) {
+                'mock' => new \App\Support\Shipping\MockChannel(),
+                // 'kuaidi100' => new \App\Support\Shipping\Kuaidi100Channel(...),  // 渠道账号就绪后接入
+                default => new \App\Support\Shipping\NullChannel(),
+            };
+        });
+    }
+
+    /**
+     * 支付安全配置启动自检（SEC-01 / SEC-02）
+     *
+     * 目标：把「生产误配导致的 0 元购与伪造回调」从线上事故前移到启动阶段。
+     * 原则：只做 fail-fast 与留痕告警，不改变任何业务行为。
+     */
+    private function assertPaymentSecurityConfig(): void
+    {
+        // SEC-02：空密钥 → HMAC 退化为可预测，任何人都能构造合法 sign 伪造「支付成功」回调
+        if (blank(config('payments.secret'))) {
+            logger()->critical('[SEC-02] PAY_SIGN_SECRET 未配置：支付回调验签形同虚设，攻击者可伪造支付成功回调。'
+                .' 生成方式：php -r "echo bin2hex(random_bytes(32));"');
+
+            // local/testing 与 artisan 命令不中断（保留本地开发与线上修复通道），其余环境直接 500
+            if (! $this->app->environment('local', 'testing') && ! $this->app->runningInConsole()) {
+                abort(500, '支付签名密钥未配置（PAY_SIGN_SECRET），请联系管理员');
+            }
+        }
+
+        // SEC-01：生产误开沙箱（路由层按环境注册、服务层已断言，此处仅留痕告警便于发现误配）
+        if (! $this->app->environment('local', 'testing', 'staging') && config('payments.sandbox')) {
+            logger()->critical('[SEC-01] 生产环境 PAYMENT_SANDBOX=true：沙箱路由虽已按环境注销，'
+                .'仍请立即置为 false，避免其他链路误用。');
+        }
     }
 
     /**
@@ -25,6 +58,8 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        $this->assertPaymentSecurityConfig();
+
         // 超级管理员绕过全部权限校验：角色定义上超管即拥有所有权限，
         // 避免后续新增权限码时因未同步授权而导致超管被误判为无权限（V1.1 reports 403 问题）
         Gate::before(function ($user) {

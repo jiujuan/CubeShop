@@ -20,3 +20,6 @@ Schedule::command('orders:auto-complete')->hourly()->withoutOverlapping();
 
 // 优惠券过期收敛（V1.1 二期 T-033 / T-037）：每小时把过期未用券置 expired
 Schedule::command('coupons:expire')->hourly()->withoutOverlapping();
+
+// 物流轨迹拉取（V1.1 二期 T-045）：每 30 分钟拉取在途运单轨迹；未配置渠道时命令内部安全跳过
+Schedule::command('shipping:pull-traces')->everyThirtyMinutes()->withoutOverlapping();

@@ -35,4 +35,24 @@ return [
         ],
     ],
 
+    /*
+    |--------------------------------------------------------------------------
+    | 物流轨迹查询渠道（V1.1 T-045）
+    |--------------------------------------------------------------------------
+    |
+    | channel：留空 = 降级（NullChannel，Job 跳过）；mock = 本地演示；
+    | kuaidi100 等真实渠道实现 ShippingChannelInterface 后在此切换。
+    | 密钥仅存 .env，严禁入库/入代码库。
+    |
+    */
+    'shipping' => [
+        'channel' => env('SHIPPING_CHANNEL'),
+        'key' => env('SHIPPING_CHANNEL_KEY'),
+        'customer' => env('SHIPPING_CHANNEL_CUSTOMER'),
+        'pull_window_days' => (int) env('SHIPPING_PULL_WINDOW_DAYS', 30),
+        'batch_size' => (int) env('SHIPPING_BATCH_SIZE', 50),
+        'batch_delay_ms' => (int) env('SHIPPING_BATCH_DELAY_MS', 200),
+        'max_failures' => (int) env('SHIPPING_MAX_FAILURES', 5),
+    ],
+
 ];
