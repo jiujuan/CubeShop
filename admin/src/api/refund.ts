@@ -30,6 +30,8 @@ export interface Refund {
   type: RefundType
   amount: string
   reason: string | null
+  /** 用户申请凭证图片（URL 数组） */
+  images: string[]
   status: RefundStatus
   return_status: ReturnStatus
   return_tracking_no: string | null
@@ -39,9 +41,44 @@ export interface Refund {
   return_received_at: string | null
   return_exception_reason: string | null
   admin_remark: string | null
+  /** 后台处理说明图片（URL 数组） */
+  admin_images: string[]
+  processed_by: number | null
+  processed_by_name: string | null
   processed_at: string | null
   created_at: string
   order_status: string
+}
+
+/** 退款详情中的订单商品行（产品图 / 产品链接 / 规格 / 数量） */
+export interface RefundDetailItem {
+  product_id: number | null
+  product_public_id: string | null
+  product_title: string
+  sku_id: number | null
+  sku_public_id: string | null
+  sku_specs: Record<string, string>
+  sku_image: string | null
+  price: string
+  quantity: number
+  total_amount: string
+}
+
+/** 退款详情中的后台处理流水 */
+export interface RefundDetailLog {
+  id: number
+  actor_type: 'admin' | 'customer'
+  operator: { id: number; username: string | null; nickname: string | null } | null
+  action: string
+  content: string | null
+  created_at: string | null
+}
+
+export interface RefundDetail extends Refund {
+  user: { id: number; username: string | null; nickname: string | null; phone: string | null } | null
+  order: { order_no: string; status: string; pay_amount: string; created_at: string | null } | null
+  items: RefundDetailItem[]
+  logs: RefundDetailLog[]
 }
 
 export interface RefundListResult {
@@ -53,8 +90,18 @@ export function getRefunds(params: { refund_no?: string; order_no?: string; stat
   return request.get<ApiResult<RefundListResult>>('/admin/refunds', { params })
 }
 
-export function processRefund(id: number, action: 'approve' | 'reject', adminRemark?: string) {
-  return request.post<ApiResult<Refund>>(`/admin/refunds/${id}/process`, { action, admin_remark: adminRemark })
+/** 退款详情（含订单商品明细与后台处理流水） */
+export function getRefundDetail(id: number) {
+  return request.get<ApiResult<RefundDetail>>(`/admin/refunds/${id}`)
+}
+
+/** 审核退款：同意/拒绝均可附理由与说明图片 */
+export function processRefund(id: number, action: 'approve' | 'reject', payload: { admin_remark?: string; admin_images?: string[] } = {}) {
+  return request.post<ApiResult<Refund>>(`/admin/refunds/${id}/process`, {
+    action,
+    admin_remark: payload.admin_remark,
+    admin_images: payload.admin_images,
+  })
 }
 
 /** 确认收货（退货退款专用）：按实收明细回库存 + 完成退款 */
@@ -88,4 +135,13 @@ export const RETURN_STATUS_LABELS: Record<Exclude<ReturnStatus, null>, string> =
   shipping: '退货中',
   received: '已收货',
   exception: '异常',
+}
+
+/** 后台处理动作中文（用于处理流水） */
+export const REFUND_ACTION_LABELS: Record<string, string> = {
+  apply: '用户提交申请',
+  process_approve: '后台同意退款',
+  process_reject: '后台拒绝退款',
+  return_received: '后台确认收货',
+  coupon_returned: '返还优惠券',
 }
