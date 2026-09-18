@@ -71,3 +71,69 @@ if (! function_exists('createTestCategory')) {
         ])->id;
     }
 }
+
+/*
+ * P2-11 测试辅助：对外 public_id（ULID）↔ 内部 int 主键解析。
+ * PublicId::resolve 同时兼容历史 int 主键与 public_id，因此对任意入参包裹均安全。
+ */
+if (! function_exists('resolvePid')) {
+    /** 把对外 public_id（或历史 int）解析为内部 int 主键；解析不出返回 null */
+    function resolvePid(string $scope, $value): ?int
+    {
+        return \App\Support\PublicId::resolve($scope, $value);
+    }
+}
+
+if (! function_exists('oid')) {
+    function oid($value): ?int
+    {
+        return \App\Support\PublicId::resolve(\App\Support\PublicId::SCOPE_ORDER, $value);
+    }
+}
+
+if (! function_exists('pid')) {
+    function pid($value): ?int
+    {
+        return \App\Support\PublicId::resolve(\App\Support\PublicId::SCOPE_PRODUCT, $value);
+    }
+}
+
+if (! function_exists('rid')) {
+    function rid($value): ?int
+    {
+        return \App\Support\PublicId::resolve(\App\Support\PublicId::SCOPE_ORDER_ITEM, $value);
+    }
+}
+
+if (! function_exists('rfid')) {
+    /** 退款单：按 public_id / 历史 int 解析为内部 int 主键 */
+    function rfid($value): ?int
+    {
+        return \App\Support\PublicId::resolve(\App\Support\PublicId::SCOPE_REFUND, $value);
+    }
+}
+
+if (! function_exists('tid')) {
+    /** 客服工单：按 public_id / 历史 int 解析为内部 int 主键 */
+    function tid($value): ?int
+    {
+        return \App\Support\PublicId::resolve(\App\Support\PublicId::SCOPE_TICKET, $value);
+    }
+}
+
+if (! function_exists('fid')) {
+    /** 评价没有 SCOPE 常量，直接按 public_id / 历史 int 解析 */
+    function fid($value): ?int
+    {
+        if (is_int($value)) {
+            return $value > 0 ? $value : null;
+        }
+        if (! is_string($value) || $value === '') {
+            return null;
+        }
+
+        return \App\Models\Review::query()->where('public_id', $value)
+            ->when(ctype_digit($value) && strlen($value) <= 19, fn ($q) => $q->orWhere('id', (int) $value))
+            ->first()?->id;
+    }
+}

@@ -163,7 +163,7 @@ it('金额矩阵 mode/lines/refund', function (string $mode, string $lines, stri
         ->and((float) $created['data']['promotion_discount'])->toBe($exp['promo']);
 
     $orderId = $created['data']['order_id'];
-    $order = Order::find($orderId);
+    $order = Order::find(oid($orderId));
     $details = $order->amount_details;
 
     // 2) 行分摊不变量：Σ coupon_share = 券优惠、Σ promotion_share = 满减优惠、Σ payable + freight = 应付
@@ -180,7 +180,7 @@ it('金额矩阵 mode/lines/refund', function (string $mode, string $lines, stri
         $this->postJson("/api/orders/{$orderId}/cancel", ['reason' => '矩阵取消'], $auth)->assertOk();
         $order = $order->fresh();
         expect($order->status)->toBe(Order::STATUS_CANCELLED)
-            ->and(Refund::where('order_id', $orderId)->count())->toBe(0);
+            ->and(Refund::where('order_id', oid($orderId))->count())->toBe(0);
         if ($uc) {
             $ucFresh = $uc->fresh();
             expect($ucFresh->status)->toBe(UserCoupon::STATUS_UNUSED)
@@ -195,16 +195,16 @@ it('金额矩阵 mode/lines/refund', function (string $mode, string $lines, stri
     $payNo = $this->postJson('/api/payments', ['order_no' => $created['data']['order_no'], 'channel' => 'wechat'], $auth)
         ->json('data.pay_params.payment_no');
     $this->postJson("/api/payments/sandbox/{$payNo}", [], $auth)->assertOk();
-    expect((string) Order::find($orderId)->pay_amount)->toBe(number_format($exp['pay'], 2, '.', ''));
+    expect((string) Order::find(oid($orderId))->pay_amount)->toBe(number_format($exp['pay'], 2, '.', ''));
 
     if ($refundState === 'full_refund') {
         $this->postJson("/api/orders/{$orderId}/refund", ['reason' => '矩阵全额退'], $auth)->assertOk();
-        $refundId = Refund::where('order_id', $orderId)->latest('id')->first()->id;
-        $this->postJson("/api/admin/refunds/{$refundId}/process", ['action' => 'approve'], $this->adminAuth)->assertOk();
+        $refundId = Refund::where('order_id', oid($orderId))->latest('id')->first()->id;
+        $this->postJson('/api/admin/refunds/'.rfid($refundId).'/process', ['action' => 'approve'], $this->adminAuth)->assertOk();
 
         // 退款金额 = 订单实付
-        expect((string) Refund::find($refundId)->amount)->toBe(number_format($exp['pay'], 2, '.', ''))
-            ->and(Order::find($orderId)->status)->toBe(Order::STATUS_REFUNDED);
+        expect((string) Refund::find(rfid($refundId))->amount)->toBe(number_format($exp['pay'], 2, '.', ''))
+            ->and(Order::find(oid($orderId))->status)->toBe(Order::STATUS_REFUNDED);
         if ($uc) {
             // 整单全额退款 → 券返还
             expect($uc->fresh()->status)->toBe(UserCoupon::STATUS_UNUSED)
@@ -216,11 +216,11 @@ it('金额矩阵 mode/lines/refund', function (string $mode, string $lines, stri
 
     // partial_refund：固定退 10.00 → 券不返还（防资损）
     $this->postJson("/api/orders/{$orderId}/refund", ['reason' => '矩阵部分退', 'amount' => '10.00'], $auth)->assertOk();
-    $refundId = Refund::where('order_id', $orderId)->latest('id')->first()->id;
-    $this->postJson("/api/admin/refunds/{$refundId}/process", ['action' => 'approve'], $this->adminAuth)->assertOk();
+    $refundId = Refund::where('order_id', oid($orderId))->latest('id')->first()->id;
+    $this->postJson('/api/admin/refunds/'.rfid($refundId).'/process', ['action' => 'approve'], $this->adminAuth)->assertOk();
 
-    expect((string) Refund::find($refundId)->amount)->toBe('10.00')
-        ->and(Order::find($orderId)->status)->toBe(Order::STATUS_REFUNDED);
+    expect((string) Refund::find(rfid($refundId))->amount)->toBe('10.00')
+        ->and(Order::find(oid($orderId))->status)->toBe(Order::STATUS_REFUNDED);
     if ($uc) {
         expect($uc->fresh()->status)->toBe(UserCoupon::STATUS_USED)
             ->and((int) $uc->fresh()->coupon->used_count)->toBe(1);
@@ -272,7 +272,7 @@ it('门槛边界 mode/lines/boundary', function (string $mode, string $lines, st
         expect($res->json('code'))->toBe(0)
             ->and((float) $res->json('data.pay_amount'))->toBe($exp['pay'])
             ->and((float) $res->json('data.discount_amount'))->toBe($exp['promo'] + $exp['coupon']);
-        $details = Order::find($res->json('data.order_id'))->amount_details;
+        $details = Order::find(oid($res->json('data.order_id')))->amount_details;
         $sumCoupon = array_sum(array_map(fn ($l) => (float) $l['coupon_share'], $details['lines']));
         $sumPromo = array_sum(array_map(fn ($l) => (float) $l['promotion_share'], $details['lines']));
         expect(round($sumCoupon, 2))->toBe($exp['coupon'])
