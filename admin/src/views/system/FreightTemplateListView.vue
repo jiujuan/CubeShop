@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
 import {
+  clearDefaultFreightTemplate,
   createFreightTemplate,
   deleteFreightTemplate,
   getFreightTemplates,
   getProvinces,
+  setDefaultFreightTemplate,
   updateFreightTemplate,
   type FreightAreaRow,
   type FreightRules,
@@ -43,6 +45,8 @@ interface AreaForm {
 const loading = ref(true)
 const list = ref<FreightTemplateRow[]>([])
 const pagination = ref({ page: 1, page_size: 15, total: 0, total_pages: 1 })
+/** 当前全局默认模板 id（0=无，走旧口径固定运费） */
+const defaultId = ref(0)
 
 const keyword = ref('')
 const modeFilter = ref<'' | Mode>('')
@@ -103,6 +107,7 @@ async function load(page = 1) {
     })
     list.value = data.data.list
     pagination.value = data.data.pagination
+    defaultId.value = data.data.default_id ?? 0
   } finally {
     loading.value = false
   }
@@ -286,9 +291,21 @@ function extractError(e: unknown, fallback: string): string {
   return resp?.message || fallback
 }
 
-// ---------- 启停 / 删除 ----------
+// ---------- 启停 / 删除 / 全局默认 ----------
 async function toggleStatus(t: FreightTemplateRow) {
   await updateFreightTemplate(t.id, { status: t.status === 1 ? 0 : 1 })
+  await load(pagination.value.page)
+}
+
+/** 设为全局默认：未绑定模板的商品行走该模板（结算页/详情页预估同步生效） */
+async function makeDefault(t: FreightTemplateRow) {
+  await setDefaultFreightTemplate(t.id)
+  await load(pagination.value.page)
+}
+
+/** 取消全局默认：回到旧口径固定运费 */
+async function unsetDefault() {
+  await clearDefaultFreightTemplate()
   await load(pagination.value.page)
 }
 
@@ -331,6 +348,10 @@ onMounted(async () => {
       {{ formError }}
     </div>
 
+    <p class="mb-3 text-xs text-slate-400">
+      模板生效方式二选一：① 设为「全局默认」（对所有未单独绑定模板的商品生效）；② 在商品编辑页单独绑定。两者都未配置时，结算页按系统配置的固定运费口径计算。
+    </p>
+
     <!-- 筛选 -->
     <div class="mb-4 flex flex-wrap items-center gap-2 text-[13px]">
       <input
@@ -361,12 +382,15 @@ onMounted(async () => {
           <th class="px-3 py-1.5">规则摘要</th>
           <th class="w-20 px-3 py-1.5">状态</th>
           <th class="w-36 px-3 py-1.5">更新时间</th>
-          <th class="w-40 px-3 py-1.5">操作</th>
+          <th class="w-52 px-3 py-1.5">操作</th>
         </tr>
       </thead>
       <tbody>
         <tr v-for="t in list" :key="t.id" class="border-b border-slate-100 hover:bg-slate-50">
-          <td class="px-3 py-1.5 text-black">{{ t.name }}</td>
+          <td class="px-3 py-1.5 text-black">
+            {{ t.name }}
+            <span v-if="t.id === defaultId" class="ml-1 rounded bg-[#1677ff]/10 px-1.5 py-0.5 text-xs text-[#1677ff]" data-testid="tpl-default-badge">全局默认</span>
+          </td>
           <td class="px-3 py-1.5">
             <span
               class="rounded px-2 py-0.5 text-xs"
@@ -386,6 +410,12 @@ onMounted(async () => {
           <td class="px-3 py-1.5 text-slate-400">{{ t.updated_at }}</td>
           <td class="px-3 py-1.5">
             <div class="flex items-center gap-2 text-[#1677ff]">
+              <button v-if="t.id !== defaultId && t.status === 1" class="flex items-center gap-0.5 hover:underline" :data-testid="`tpl-set-default-${t.id}`" title="未绑定模板的商品将按此模板计费" @click="makeDefault(t)">
+                设为默认
+              </button>
+              <button v-if="t.id === defaultId" class="flex items-center gap-0.5 text-slate-500 hover:underline" @click="unsetDefault">
+                取消默认
+              </button>
               <button class="flex items-center gap-0.5 hover:underline" :data-testid="`tpl-edit-${t.id}`" @click="openEdit(t)">
                 <Pencil class="h-3 w-3" /> 编辑
               </button>

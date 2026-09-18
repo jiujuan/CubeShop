@@ -136,3 +136,75 @@ test('status 传 0 创建为停用态', function () {
 
     expect($res->json('data.status'))->toBe(0);
 });
+
+// ============ 全局默认（Stage4 修复：模板需有引用才生效） ============
+
+test('设为全局默认后，未绑定模板的商品按该模板 region 规则计费（上海 5 元）', function () {
+    $tpl = FreightTemplate::create([
+        'name' => '江浙沪优惠', 'mode' => 'region', 'status' => 1,
+        'rules' => ['areas' => [['provinces' => ['310000', '320000', '330000', '340000'], 'amount' => '5.00']], 'default' => ['amount' => '10.00']],
+    ]);
+
+    $res = $this->withHeaders($this->adminAuth)->postJson("/api/admin/freight-templates/{$tpl->id}/set-default");
+    $res->assertOk()->assertJsonPath('data.default_id', $tpl->id);
+
+    // 复刻用户场景：登录买家 + 上海地址 → freight-preview 应命中江浙沪 area 5 元
+    $cap2 = app(CaptchaService::class)->generate();
+    $buyerAuth = ['Authorization' => 'Bearer '.$this->postJson('/api/auth/register', [
+        'username' => 'buyer_frt_'.uniqid(), 'password' => 'Test@1234', 'password_confirmation' => 'Test@1234',
+        'code' => $cap2['debug_code'], 'captcha_id' => $cap2['captcha_id'],
+    ])->json('data.token')];
+    $addrId = $this->withHeaders($buyerAuth)->postJson('/api/user/addresses', [
+        'contact_name' => '张三', 'contact_phone' => '13800138000',
+        'province' => '上海市', 'city' => '上海市', 'district' => '黄浦区', 'detail_address' => '南京东路 1 号',
+        'is_default' => true,
+    ])->json('data.id');
+
+    $sku = createTestSku(price: '50.00');
+    $body = $this->withHeaders($buyerAuth)->postJson('/api/orders/freight-preview', [
+        'items' => [['sku_id' => $sku->id, 'quantity' => 1]],
+        'address_id' => $addrId,
+    ])->json('data');
+
+    expect($body['freight_amount'])->toBe('5.00')
+        ->and($body['detail'][0]['source'])->toBe('region_area');
+
+    // 游客无地址 → 无法按省匹配 → 落模板 default 10 元（合理降级，非 bug）
+    $guest = $this->postJson('/api/freight/estimate', [
+        'items' => [['sku_id' => $sku->id, 'quantity' => 1]],
+    ])->json('data');
+    expect($guest['freight_amount'])->toBe('10.00')
+        ->and($guest['detail'][0]['source'])->toBe('region_default');
+
+    // 列表返回 default_id
+    $this->withHeaders($this->adminAuth)->getJson('/api/admin/freight-templates')
+        ->assertJsonPath('data.default_id', $tpl->id);
+});
+
+test('停用的模板不能设为全局默认', function () {
+    $tpl = FreightTemplate::create(['name' => '停用模板', 'mode' => 'fixed', 'status' => 0, 'rules' => ['amount' => '5.00']]);
+
+    $res = $this->withHeaders($this->adminAuth)->postJson("/api/admin/freight-templates/{$tpl->id}/set-default");
+
+    $res->assertStatus(400);
+    // 迁移 000057 预置空串行：未设默认 = ''（getInt 归一为 0）
+    expect(app(\App\Services\Common\ConfigService::class)->get('order.freight_template_id'))->toBe('');
+});
+
+test('取消全局默认后回到旧口径固定运费', function () {
+    $tpl = FreightTemplate::create([
+        'name' => '区域模板', 'mode' => 'region', 'status' => 1,
+        'rules' => ['areas' => [['provinces' => ['310000'], 'amount' => '5.00']], 'default' => ['amount' => '10.00']],
+    ]);
+    app(\App\Services\Common\ConfigService::class)->set('order.freight_template_id', (string) $tpl->id);
+
+    $res = $this->withHeaders($this->adminAuth)->postJson('/api/admin/freight-templates/clear-default');
+    $res->assertOk()->assertJsonPath('data.default_id', 0);
+
+    $sku = createTestSku(price: '50.00');
+    $body = $this->postJson('/api/freight/estimate', [
+        'items' => [['sku_id' => $sku->id, 'quantity' => 1]],
+    ])->json('data');
+
+    expect($body['freight_amount'])->toBe('10.00'); // 旧口径 freight_default
+});
