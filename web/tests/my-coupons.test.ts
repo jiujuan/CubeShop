@@ -195,14 +195,14 @@ describe('我的优惠券 MyCouponsView', () => {
     })
     await renderMine()
 
-    expect(screen.getByTestId('mycoupon-prev').hasAttribute('disabled')).toBe(true)
-    await fireEvent.click(screen.getByTestId('mycoupon-next'))
+    expect(screen.getByTestId('pager-prev').hasAttribute('disabled')).toBe(true)
+    await fireEvent.click(screen.getByTestId('pager-next'))
 
     await waitFor(() => {
       const last = getMyCouponsMock.mock.calls.at(-1)![0]
       expect(last.page).toBe(2)
     })
-    await waitFor(() => expect(screen.getByTestId('mycoupon-next').hasAttribute('disabled')).toBe(true))
+    await waitFor(() => expect(screen.getByTestId('pager-next').hasAttribute('disabled')).toBe(true))
   })
 
   it('无券时展示空态', async () => {

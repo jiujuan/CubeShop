@@ -6,6 +6,7 @@ import { getProduct } from '@/api/shop'
 import { addToCart } from '@/api/user'
 import { useAuthStore } from '@/stores/auth'
 import type { ProductBrief } from '@/api/types'
+import { hashIndex } from '@/utils/id'
 
 /**
  * 商品卡片（三种布局）
@@ -85,10 +86,10 @@ const emojiByIndex = ['👕', '🎧', '🥤', '⌨️', '👟', '🧴', '💻', 
       :class="tag === 'hot' ? 'bg-[#ff7a45]' : 'bg-[#1677ff]'"
     >{{ tag === 'hot' ? '热卖' : '新品' }}</span>
 
-    <!-- 图（3 栏大图：随卡片宽度等比放大） -->
-    <div class="flex aspect-square items-center justify-center overflow-hidden bg-gradient-to-br from-[#f5faff] to-[#eaf4ff]">
-      <img v-if="product.main_image" :src="product.main_image" class="h-full w-full object-cover" alt="" />
-      <span v-else class="text-6xl transition-transform group-hover:scale-105">{{ emojiByIndex[product.id % emojiByIndex.length] }}</span>
+    <!-- 图（3 栏大图：固定等比方形，图片铺满居中裁切，保证每张尺寸一致、不变形） -->
+    <div class="relative aspect-square overflow-hidden bg-gradient-to-br from-[#f5faff] to-[#eaf4ff]">
+      <img v-if="product.main_image" :src="product.main_image" class="absolute inset-0 h-full w-full object-cover object-center" alt="" />
+      <span v-else class="absolute inset-0 flex items-center justify-center text-6xl transition-transform group-hover:scale-105">{{ emojiByIndex[hashIndex(product.id, emojiByIndex.length)] }}</span>
     </div>
 
     <!-- 信息 -->
@@ -135,10 +136,10 @@ const emojiByIndex = ['👕', '🎧', '🥤', '⌨️', '👟', '🧴', '💻', 
       class="absolute left-0 top-0 z-10 rounded-br-lg bg-[#1677ff] px-2 py-1 text-[11px] font-medium leading-none text-white"
     >{{ tag === 'hot' ? '热销' : '新品' }}</span>
 
-    <!-- 图 -->
-    <div class="flex aspect-square items-center justify-center bg-gradient-to-br from-[#f5faff] to-[#e6f4ff]">
-      <img v-if="product.main_image" :src="product.main_image" class="h-full w-full object-cover" alt="" />
-      <span v-else class="text-6xl transition-transform group-hover:scale-105">{{ emojiByIndex[product.id % emojiByIndex.length] }}</span>
+    <!-- 图（固定等比方形，图片铺满居中裁切，保证每张尺寸一致、不变形） -->
+    <div class="relative aspect-square overflow-hidden bg-gradient-to-br from-[#f5faff] to-[#e6f4ff]">
+      <img v-if="product.main_image" :src="product.main_image" class="absolute inset-0 h-full w-full object-cover object-center" alt="" />
+      <span v-else class="absolute inset-0 flex items-center justify-center text-6xl transition-transform group-hover:scale-105">{{ emojiByIndex[hashIndex(product.id, emojiByIndex.length)] }}</span>
     </div>
 
     <!-- 信息 -->
@@ -188,9 +189,9 @@ const emojiByIndex = ['👕', '🎧', '🥤', '⌨️', '👟', '🧴', '💻', 
       :class="tag === 'hot' ? 'bg-[#ff4d4f]' : 'bg-[#1677ff]'"
     >{{ tag === 'hot' ? '热销' : '新品' }}</span>
 
-    <div class="flex h-24 w-24 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-[#f0f7ff] to-[#e6f4ff] text-4xl">
-      <img v-if="product.main_image" :src="product.main_image" class="h-full w-full rounded-lg object-cover" alt="" />
-      <span v-else>{{ emojiByIndex[product.id % emojiByIndex.length] }}</span>
+    <div class="relative h-24 w-24 shrink-0 overflow-hidden rounded-lg bg-gradient-to-br from-[#f0f7ff] to-[#e6f4ff] text-4xl">
+      <img v-if="product.main_image" :src="product.main_image" class="absolute inset-0 h-full w-full rounded-lg object-cover object-center" alt="" />
+      <span v-else class="absolute inset-0 flex items-center justify-center">{{ emojiByIndex[hashIndex(product.id, emojiByIndex.length)] }}</span>
     </div>
 
     <div class="flex min-w-0 flex-1 flex-col">
