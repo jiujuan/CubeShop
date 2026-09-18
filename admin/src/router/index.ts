@@ -201,6 +201,24 @@ const router = createRouter({
           meta: { title: '首页广告位', menu: true, icon: 'Images', permission: 'home.manage' },
         },
         {
+          path: 'wms/warehouses',
+          name: 'wms-warehouses',
+          component: () => import('@/views/wms/WarehouseListView.vue'),
+          meta: { title: '仓库与物流 / WMS 对接', menu: true, icon: 'Warehouse', permission: 'wms.config.manage' },
+        },
+        {
+          path: 'wms/warehouses/:id/config',
+          name: 'wms-warehouse-config',
+          component: () => import('@/views/wms/WmsConfigView.vue'),
+          meta: { title: '仓库与物流 / WMS 对接配置', permission: 'wms.config.manage' },
+        },
+        {
+          path: 'wms/warehouses/:id/mappings',
+          name: 'wms-warehouse-mappings',
+          component: () => import('@/views/wms/WmsSkuMappingView.vue'),
+          meta: { title: '仓库与物流 / SKU 映射', permission: 'wms.config.manage' },
+        },
+        {
           path: 'cs/tickets',
           name: 'cs-tickets',
           component: () => import('@/views/cs/CsTicketView.vue'),

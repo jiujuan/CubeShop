@@ -2,7 +2,7 @@
 import { computed, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import {
-  BarChart3, BookOpen, Box, Calculator, ChevronDown, ChevronRight, ChevronsLeft, ChevronsRight, ClipboardList, CreditCard, FileClock, FolderTree, History, Images, LayoutDashboard, LayoutList, LifeBuoy, ListTree, LogOut, MapPinned, MessageSquare, Megaphone, Package, RotateCcw, ScrollText, Settings, ShieldCheck, SquareUser, Tags, Truck, UploadCloud, UserCog, UserRound, Users, Wallet, Ticket,
+  BarChart3, BookOpen, Box, Calculator, ChevronDown, ChevronRight, ChevronsLeft, ChevronsRight, ClipboardList, CreditCard, FileClock, FolderTree, History, Images, LayoutDashboard, LayoutList, LifeBuoy, ListTree, LogOut, MapPinned, MessageSquare, Megaphone, Package, RotateCcw, ScrollText, Settings, ShieldCheck,   SquareUser, Tags, Truck, UploadCloud, UserCog, UserRound, Users, Wallet, Warehouse, Ticket,
 } from 'lucide-vue-next'
 import { useAuthStore } from '@/stores/auth'
 
@@ -57,6 +57,7 @@ const icons: Record<string, unknown> = {
   BookOpen,
   Megaphone,
   Images,
+  Warehouse,
 }
 
 interface MenuItem {
@@ -118,6 +119,13 @@ const menuGroups = computed<MenuGroup[]>(() => {
         { path: '/cs/tickets', title: '服务工单', icon: 'LifeBuoy', permission: 'cs.ticket.view' },
         { path: '/cs/faq', title: '帮助中心', icon: 'BookOpen', permission: 'cs.faq.manage' },
         { path: '/cs/quick-replies', title: '回复模板管理', icon: 'MessageSquare', permission: 'cs.faq.manage' },
+      ],
+    },
+    {
+      title: '仓库与物流',
+      items: [
+        // WMS 对接（WMS 计划 P0）：仓库档案 / 配置 / SKU 映射入口
+        { path: '/wms/warehouses', title: 'WMS 对接', icon: 'Warehouse', permission: 'wms.config.manage' },
       ],
     },
     {
