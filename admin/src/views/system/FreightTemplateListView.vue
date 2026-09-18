@@ -13,6 +13,7 @@ import {
   type FreightTemplateRow,
   type ProvinceRow,
 } from '@/api/shipping'
+import { listProvinces } from '@/lib/region'
 import { Pencil, Plus, Search, Trash2 } from 'lucide-vue-next'
 import { Button } from '@/components/ui/button'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
@@ -327,10 +328,15 @@ async function doDelete() {
 
 onMounted(async () => {
   load()
-  // 省份字典加载失败不阻塞列表（region 编辑器降级为「暂无省份」并提示）
-  getProvinces()
-    .then(({ data }) => (provinces.value = data.data.provinces))
-    .catch(() => {})
+  // 省份字典：优先本地公共字典（零网络往返，与下单/结算页同源）；
+  // 本地不可用（文件缺失/解析失败）时回退到服务端接口，双失败则 region 编辑器降级提示
+  try {
+    provinces.value = await listProvinces()
+  } catch {
+    getProvinces()
+      .then(({ data }) => (provinces.value = data.data.provinces))
+      .catch(() => {})
+  }
 })
 </script>
 

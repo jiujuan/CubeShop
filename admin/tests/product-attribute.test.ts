@@ -34,6 +34,11 @@ vi.mock('@/api/product', () => ({
   updateProduct: updateProductMock, updateProductStatus: updateProductStatusMock, uploadImage: uploadImageMock,
 }))
 
+/** 运费模板下拉（Stage3 起商品表单依赖），模板列表为空即退化为「全局默认」 */
+vi.mock('@/api/shipping', () => ({
+  getFreightTemplates: vi.fn().mockResolvedValue({ data: { data: { list: [] } } }),
+}))
+
 import BrandView from '@/views/product/BrandView.vue'
 import AttributeView from '@/views/product/AttributeView.vue'
 import CategoryAttributeView from '@/views/product/CategoryAttributeView.vue'

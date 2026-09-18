@@ -4,7 +4,6 @@ import { createMemoryHistory, createRouter } from 'vue-router'
 import { createPinia, setActivePinia } from 'pinia'
 
 const {
-  getRegionsMock,
   parseAddressMock,
   createAddressMock,
   deleteAddressMock,
@@ -24,7 +23,6 @@ const {
 }))
 
 vi.mock('@/api/user', () => ({
-  getRegions: getRegionsMock,
   parseAddress: parseAddressMock,
   createAddress: createAddressMock,
   updateAddress: vi.fn(),
@@ -66,22 +64,8 @@ import AddressView from '@/views/AddressView.vue'
 import CheckoutView from '@/views/CheckoutView.vue'
 import { useAuthStore } from '@/stores/auth'
 
-const regions = {
-  regions: [
-    {
-      code: '440000', name: '广东省', children: [
-        { code: '440300', name: '深圳市', children: [{ code: '440305', name: '南山区' }, { code: '440304', name: '福田区' }] },
-        { code: '440100', name: '广州市', children: [{ code: '440106', name: '天河区' }] },
-      ],
-    },
-    {
-      code: '110000', name: '北京市', children: [
-        { code: '110100', name: '北京市', children: [{ code: '110105', name: '朝阳区' }, { code: '110108', name: '海淀区' }] },
-      ],
-    },
-  ],
-}
-
+// 省市区选项统一来自公共地区字典（@/lib/region → src/data/regions.tree.json），
+// 测试直接使用真实字典，保证与生产同源，不再 mock 接口返回。
 function makeRouter() {
   return createRouter({
     history: createMemoryHistory(),
@@ -115,32 +99,74 @@ describe('地址表单（AddressForm / T-029）', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
     vi.clearAllMocks()
-    getRegionsMock.mockResolvedValue({ data: { data: regions } })
   })
 
-  it('级联选择：选省后市/区联动，切换手输模式出现自由输入框', async () => {
+  it('省市区只能从地区字典下拉选择：阳光氛围三级联动且不存在手输入口', async () => {
     render(AddressForm, { global: { plugins: [] } })
     await waitFor(() => expect(screen.getByTestId('address-province')).toBeTruthy())
-    // 等待级联数据加载完成（省选项就位）
+    // 等待字典加载完成（省选项就位，值为 GB/T 2260 编码）
     await waitFor(() =>
       expect(
         Array.from((screen.getByTestId('address-province') as HTMLSelectElement).options).map((o) => o.value),
-      ).toContain('广东省'),
+      ).toContain('440000'),
     )
 
     // 选择省份后城市选项出现
-    await fireEvent.update(screen.getByTestId('address-province'), '广东省')
-    await waitFor(() => expect(screen.getByTestId('address-city')).toBeTruthy())
+    await fireEvent.update(screen.getByTestId('address-province'), '440000')
     await waitFor(() =>
       expect(
         Array.from((screen.getByTestId('address-city') as HTMLSelectElement).options).map((o) => o.value),
-      ).toContain('深圳市'),
+      ).toContain('440300'),
     )
 
-    // 切换到手动输入
-    await fireEvent.click(screen.getByTestId('address-toggle-manual'))
-    await waitFor(() => expect(screen.getByTestId('address-province-manual')).toBeTruthy())
-    expect(screen.getByTestId('address-city-manual')).toBeTruthy()
+    // 选择城市后区县选项出现
+    await fireEvent.update(screen.getByTestId('address-city'), '440300')
+    await waitFor(() =>
+      expect(
+        Array.from((screen.getByTestId('address-district') as HTMLSelectElement).options).map((o) => o.value),
+      ).toContain('440305'),
+    )
+    await fireEvent.update(screen.getByTestId('address-district'), '440305')
+
+    // 已无手输模式：省市区的自由输入框与切换按钮都不存在
+    expect(screen.queryByTestId('address-toggle-manual')).toBeNull()
+    expect(screen.queryByTestId('address-province-manual')).toBeNull()
+    expect(screen.queryByTestId('address-city-manual')).toBeNull()
+    expect(screen.queryByTestId('address-district-manual')).toBeNull()
+    // 详细地址仍可手输
+    expect(screen.getByTestId('address-detail')).toBeTruthy()
+  })
+
+  it('保存时把选中的行政区划编码换算回名称提交', async () => {
+    createAddressMock.mockResolvedValue({ data: { data: addr({ id: 9 }) } })
+    render(AddressForm, { global: { plugins: [] } })
+    await waitFor(() => expect(screen.getByTestId('address-province')).toBeTruthy())
+
+    await fireEvent.update(screen.getByTestId('address-name'), '张三')
+    await fireEvent.update(screen.getByTestId('address-phone'), '13800001111')
+    await fireEvent.update(screen.getByTestId('address-province'), '440000')
+    await waitFor(() =>
+      expect(
+        Array.from((screen.getByTestId('address-city') as HTMLSelectElement).options).map((o) => o.value),
+      ).toContain('440300'),
+    )
+    await fireEvent.update(screen.getByTestId('address-city'), '440300')
+    await waitFor(() =>
+      expect(
+        Array.from((screen.getByTestId('address-district') as HTMLSelectElement).options).map((o) => o.value),
+      ).toContain('440305'),
+    )
+    await fireEvent.update(screen.getByTestId('address-district'), '440305')
+    await fireEvent.update(screen.getByTestId('address-detail'), '科技路 1 号')
+    await fireEvent.click(screen.getByTestId('address-save'))
+
+    await waitFor(() => expect(createAddressMock).toHaveBeenCalled())
+    expect(createAddressMock.mock.calls[0][0]).toMatchObject({
+      province: '广东省',
+      city: '深圳市',
+      district: '南山区',
+      detail_address: '科技路 1 号',
+    })
   })
 
   it('标签选择：点击「家」写回 label', async () => {
@@ -177,7 +203,6 @@ describe('地址列表（AddressView / T-029）', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
     vi.clearAllMocks()
-    getRegionsMock.mockResolvedValue({ data: { data: regions } })
   })
 
   it('常用地址按使用次数排序、默认地址置顶并展示标签', async () => {
@@ -222,7 +247,6 @@ describe('结算页内联新增地址（CheckoutView / T-029）', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
     vi.clearAllMocks()
-    getRegionsMock.mockResolvedValue({ data: { data: regions } })
     getCartMock.mockResolvedValue({
       data: {
         data: {
@@ -252,8 +276,19 @@ describe('结算页内联新增地址（CheckoutView / T-029）', () => {
     // 填表并保存
     await fireEvent.update(screen.getByTestId('address-name'), '王五')
     await fireEvent.update(screen.getByTestId('address-phone'), '13700003333')
-    await fireEvent.update(screen.getByTestId('address-province'), '广东省')
-    await fireEvent.update(screen.getByTestId('address-city'), '深圳市')
+    await fireEvent.update(screen.getByTestId('address-province'), '440000')
+    await waitFor(() =>
+      expect(
+        Array.from((screen.getByTestId('address-city') as HTMLSelectElement).options).map((o) => o.value),
+      ).toContain('440300'),
+    )
+    await fireEvent.update(screen.getByTestId('address-city'), '440300')
+    await waitFor(() =>
+      expect(
+        Array.from((screen.getByTestId('address-district') as HTMLSelectElement).options).map((o) => o.value),
+      ).toContain('440305'),
+    )
+    await fireEvent.update(screen.getByTestId('address-district'), '440305')
     await fireEvent.update(screen.getByTestId('address-detail'), '深南大道 100 号')
     await fireEvent.click(screen.getByTestId('address-save'))
 

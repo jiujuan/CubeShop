@@ -1,16 +1,20 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { Sparkles } from 'lucide-vue-next'
 import {
-  createAddress, getRegions, parseAddress, updateAddress,
-  type Address, type AddressPayload, type RegionNode,
+  createAddress, parseAddress, updateAddress,
+  type Address, type AddressPayload,
 } from '@/api/user'
+import {
+  listCities, listDistricts, listProvinces, type RegionNode,
+} from '@/lib/region'
 
 /**
- * 收货地址表单（V1.1 E04 / T-029，可复用）
+ * 收货地址表单（可复用：地址管理页 / 结算页）
  *
- * 能力：省市区三级级联 + 手输切换、地址标签、粘贴识别预填。
- * 保存成功后 emit('saved', address)，由父级决定后续动作（关闭弹窗 / 选中新地址）。
+ * 所在地区：省、市、区统一由公共地区字典驱动的下拉选择（数据源 shared/region-dict/regions.json），
+ * 不允许手动输入，避免脏数据影响运费按省匹配（收货省名需能被字典解析成 GB/T 2260 编码）。
+ * 详细地址保持手动输入；保存成功后 emit('saved', address)。
  */
 const props = defineProps<{
   /** 编辑时传入；新增为 null */
@@ -24,20 +28,24 @@ const emit = defineEmits<{
 
 const LABELS = ['家', '公司', '学校'] as const
 
-const regions = ref<RegionNode[]>([])
-const form = ref<AddressPayload>({
+const provinces = ref<RegionNode[]>([])
+const cities = ref<RegionNode[]>([])
+const districts = ref<RegionNode[]>([])
+const regionReady = ref(false)
+
+/** 选择态用字典 code（唯一定位，避免同名区县误判）；提交时换算回名称 */
+const provinceCode = ref('')
+const cityCode = ref('')
+const districtCode = ref('')
+
+const form = ref({
   contact_name: '',
   contact_phone: '',
-  province: '',
-  city: '',
-  district: '',
   detail_address: '',
-  label: null,
+  label: null as string | null,
   is_default: false,
 })
 
-/** 手动输入模式（关闭级联，允许自由填写省市） */
-const manualMode = ref(false)
 const saving = ref(false)
 const errorMsg = ref('')
 
@@ -46,43 +54,56 @@ const pasteText = ref('')
 const parsing = ref(false)
 const parseHint = ref('')
 
+const provinceName = computed(() => provinces.value.find((p) => p.code === provinceCode.value)?.name ?? '')
+const cityName = computed(() => cities.value.find((c) => c.code === cityCode.value)?.name ?? '')
+const districtName = computed(() => districts.value.find((d) => d.code === districtCode.value)?.name ?? '')
+
 onMounted(async () => {
-  try {
-    const { data } = await getRegions()
-    regions.value = data.data.regions
-  } catch {
-    regions.value = []
-  }
+  provinces.value = await listProvinces()
+  regionReady.value = true
   if (props.address) {
     const a = props.address
     form.value = {
       contact_name: a.contact_name,
       contact_phone: a.contact_phone_full ?? a.contact_phone,
-      province: a.province ?? '',
-      city: a.city ?? '',
-      district: a.district ?? '',
       detail_address: a.detail_address,
       label: a.label,
       is_default: a.is_default,
     }
-    // 编辑历史数据：若省市区不在级联数据中，自动切手输
-    if (a.province && !regions.value.some((p) => p.name === a.province)) manualMode.value = true
+    await selectByName(a.province ?? '', a.city ?? '', a.district ?? '')
   }
 })
 
-const cityOptions = computed(
-  () => regions.value.find((p) => p.name === form.value.province)?.children ?? [],
-)
-const districtOptions = computed(
-  () => cityOptions.value.find((c) => c.name === form.value.city)?.children ?? [],
-)
+watch(provinceCode, async (code) => {
+  cityCode.value = ''
+  districtCode.value = ''
+  districts.value = []
+  cities.value = code ? await listCities(code) : []
+})
 
-function onProvinceChange() {
-  form.value.city = ''
-  form.value.district = ''
-}
-function onCityChange() {
-  form.value.district = ''
+watch(cityCode, async (code) => {
+  districtCode.value = ''
+  districts.value = code ? await listDistricts(provinceCode.value, code) : []
+})
+
+/**
+ * 按名称回填三级选择（编辑历史地址 / 粘贴识别结果）。
+ * 名称不在字典内时忽略该级并在粘贴场景给出提示。
+ */
+async function selectByName(province: string, city: string, district: string): Promise<boolean> {
+  const p = provinces.value.find((x) => x.name === province)
+  provinceCode.value = p?.code ?? ''
+  if (province && !p) return false
+
+  cities.value = provinceCode.value ? await listCities(provinceCode.value) : []
+  const c = cities.value.find((x) => x.name === city)
+  cityCode.value = c?.code ?? ''
+
+  districts.value = cityCode.value ? await listDistricts(provinceCode.value, cityCode.value) : []
+  const d = districts.value.find((x) => x.name === district)
+  districtCode.value = d?.code ?? ''
+
+  return true
 }
 
 function pickLabel(label: string) {
@@ -100,13 +121,12 @@ async function doParse() {
     const r = data.data
     if (r.contact_name) form.value.contact_name = r.contact_name
     if (r.contact_phone) form.value.contact_phone = r.contact_phone
-    if (r.province) form.value.province = r.province
-    if (r.city) form.value.city = r.city
-    if (r.district) form.value.district = r.district
     if (r.detail_address) form.value.detail_address = r.detail_address
-    // 若解析到的省市不在级联数据中，切手输避免被清空
-    if (r.province && !regions.value.some((p) => p.name === r.province)) manualMode.value = true
-    parseHint.value = r.confidence >= 0.75 ? '识别完成，请核对后保存' : '识别信息可能不完整，请补充核对'
+
+    const matched = await selectByName(r.province ?? '', r.city ?? '', r.district ?? '')
+    parseHint.value = matched
+      ? (r.confidence >= 0.75 ? '识别完成，请核对后保存' : '识别信息可能不完整，请补充核对')
+      : '地区未匹配到字典，请从下拉列表中重新选择'
   } catch (e) {
     parseHint.value = e instanceof Error ? e.message : '识别失败，请手动填写'
   } finally {
@@ -117,8 +137,9 @@ async function doParse() {
 function validate(): string {
   if (!form.value.contact_name.trim()) return '请填写收货人姓名'
   if (!/^1[3-9]\d{9}$/.test(form.value.contact_phone)) return '请填写正确的手机号'
-  if (!manualMode.value && (!form.value.province || !form.value.city)) return '请选择所在省市'
-  if (manualMode.value && !form.value.province?.trim()) return '请填写省份'
+  if (!provinceCode.value) return '请选择省'
+  if (cities.value.length > 0 && !cityCode.value) return '请选择市'
+  if (districts.value.length > 0 && !districtCode.value) return '请选择区/县'
   if (!form.value.detail_address.trim()) return '请填写详细地址'
   return ''
 }
@@ -130,9 +151,9 @@ async function submit() {
   try {
     const payload: AddressPayload = {
       ...form.value,
-      province: form.value.province || null,
-      city: form.value.city || null,
-      district: form.value.district || null,
+      province: provinceName.value,
+      city: cityName.value,
+      district: districtName.value,
     }
     const { data } = props.address
       ? await updateAddress(props.address.id, payload)
@@ -186,46 +207,34 @@ async function submit() {
       />
     </div>
 
-    <!-- 省市区 -->
+    <!-- 所在地区：省/市/区统一走地区字典下拉，禁止手输 -->
     <div class="flex items-center justify-between text-xs text-slate-400">
       <span>所在地区</span>
-      <button type="button" class="text-[#1677ff] hover:underline" data-testid="address-toggle-manual" @click="manualMode = !manualMode">
-        {{ manualMode ? '使用级联选择' : '手动输入' }}
-      </button>
+      <span class="text-[11px]">省 / 市 / 区均从地区字典中选择</span>
     </div>
-    <div v-if="manualMode" class="flex gap-3">
-      <input v-model="form.province" type="text" placeholder="省" maxlength="20" data-testid="address-province-manual"
-        class="h-10 flex-1 rounded-lg border border-slate-200 px-3 outline-none focus:border-[#1677ff]" />
-      <input v-model="form.city" type="text" placeholder="市" maxlength="20" data-testid="address-city-manual"
-        class="h-10 flex-1 rounded-lg border border-slate-200 px-3 outline-none focus:border-[#1677ff]" />
-      <input v-model="form.district" type="text" placeholder="区" maxlength="20" data-testid="address-district-manual"
-        class="h-10 flex-1 rounded-lg border border-slate-200 px-3 outline-none focus:border-[#1677ff]" />
-    </div>
-    <div v-else class="flex gap-3">
+    <div class="flex gap-3">
       <select
-        v-model="form.province" data-testid="address-province"
+        v-model="provinceCode" data-testid="address-province"
         class="h-10 flex-1 rounded-lg border border-slate-200 px-2 outline-none focus:border-[#1677ff]"
-        @change="onProvinceChange"
       >
-        <option value="">请选择省</option>
-        <option v-for="p in regions" :key="p.name" :value="p.name">{{ p.name }}</option>
+        <option value="">{{ regionReady ? '请选择省' : '加载中…' }}</option>
+        <option v-for="p in provinces" :key="p.code" :value="p.code">{{ p.name }}</option>
       </select>
       <select
-        v-model="form.city" data-testid="address-city"
-        class="h-10 flex-1 rounded-lg border border-slate-200 px-2 outline-none focus:border-[#1677ff]"
-        :disabled="!form.province"
-        @change="onCityChange"
+        v-model="cityCode" data-testid="address-city"
+        class="h-10 flex-1 rounded-lg border border-slate-200 px-2 outline-none focus:border-[#1677ff] disabled:bg-slate-50"
+        :disabled="!provinceCode || cities.length === 0"
       >
-        <option value="">请选择市</option>
-        <option v-for="c in cityOptions" :key="c.name" :value="c.name">{{ c.name }}</option>
+        <option value="">{{ cities.length ? '请选择市' : '—' }}</option>
+        <option v-for="c in cities" :key="c.code" :value="c.code">{{ c.name }}</option>
       </select>
       <select
-        v-model="form.district" data-testid="address-district"
-        class="h-10 flex-1 rounded-lg border border-slate-200 px-2 outline-none focus:border-[#1677ff]"
-        :disabled="!form.city"
+        v-model="districtCode" data-testid="address-district"
+        class="h-10 flex-1 rounded-lg border border-slate-200 px-2 outline-none focus:border-[#1677ff] disabled:bg-slate-50"
+        :disabled="!cityCode || districts.length === 0"
       >
-        <option value="">请选择区</option>
-        <option v-for="d in districtOptions" :key="d.code" :value="d.name">{{ d.name }}</option>
+        <option value="">{{ districts.length ? '请选择区/县' : '—' }}</option>
+        <option v-for="d in districts" :key="d.code" :value="d.code">{{ d.name }}</option>
       </select>
     </div>
 
