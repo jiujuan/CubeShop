@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import { ChevronLeft, ChevronRight, MessageSquare, Search, Star, Trash2 } from 'lucide-vue-next'
+import { Eye, EyeOff, MessageSquare, Search, Star, Trash2 } from 'lucide-vue-next'
 import {
   approveReview,
   deleteReview,
@@ -10,6 +10,7 @@ import {
   REVIEW_STATUS_CLASS,
   REVIEW_STATUS_LABELS,
   setAuditMode,
+  setReviewHidden,
   type AdminReview,
   type AdminReviewStatus,
   type ReviewStats,
@@ -17,6 +18,7 @@ import {
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import LoadingSpinner from '@/components/LoadingSpinner.vue'
 import { useAuthStore } from '@/stores/auth'
+import TablePagination from '@/components/TablePagination.vue'
 
 /**
  * 评价管理（V1.1 F01 / T-017，权限 review.manage）
@@ -26,7 +28,7 @@ import { useAuthStore } from '@/stores/auth'
 const auth = useAuthStore()
 
 const list = ref<AdminReview[]>([])
-const stats = ref<ReviewStats>({ pending: 0, today: 0, total: 0, avg: 0 })
+const stats = ref<ReviewStats>({ pending: 0, today: 0, total: 0, hidden: 0, avg: 0 })
 const pagination = ref({ page: 1, page_size: 20, total: 0, total_pages: 1 })
 const loading = ref(true)
 const tip = ref('')
@@ -34,6 +36,8 @@ const tip = ref('')
 const keyword = ref('')
 const statusFilter = ref<'' | AdminReviewStatus>('')
 const ratingFilter = ref<number | 0>(0)
+/** 只看已隐藏（true）/ 全部（undefined） */
+const hiddenFilter = ref<boolean | undefined>(undefined)
 
 const auditMode = ref(false)
 const canManageConfig = computed(() => auth.hasPermission('config.manage'))
@@ -57,6 +61,7 @@ async function load() {
       keyword: keyword.value || undefined,
       status: statusFilter.value || undefined,
       rating: ratingFilter.value || undefined,
+      hidden: hiddenFilter.value,
       page: pagination.value.page,
       page_size: pagination.value.page_size,
     })
@@ -78,6 +83,12 @@ function search() {
 
 function filterStatus(s: '' | AdminReviewStatus) {
   statusFilter.value = s
+  pagination.value.page = 1
+  load()
+}
+
+function filterHidden(v: boolean | undefined) {
+  hiddenFilter.value = v
   pagination.value.page = 1
   load()
 }
@@ -169,6 +180,23 @@ async function submitReply() {
   }
 }
 
+/** 隐藏 / 显示评价：隐藏后前台不再展示该评价，也不计入商品评分，可随时恢复 */
+async function toggleHidden(r: AdminReview) {
+  tip.value = ''
+  try {
+    const next = !r.is_hidden
+    await setReviewHidden(r.id, next)
+    await load()
+    // 详情抽屉若开着，同步成刷新后的同一条
+    if (detail.value?.id === r.id) {
+      detail.value = list.value.find((x) => x.id === r.id) ?? detail.value
+      if (detail.value) detail.value.is_hidden = next
+    }
+  } catch (e) {
+    tip.value = e instanceof Error ? e.message : '操作失败'
+  }
+}
+
 async function toggleAuditMode() {
   if (!canManageConfig.value) {
     tip.value = '仅超级管理员可调整审核模式'
@@ -207,7 +235,7 @@ async function toggleAuditMode() {
     </div>
 
     <!-- 统计小卡 -->
-    <div class="mb-4 grid grid-cols-4 gap-3" data-testid="review-stats">
+    <div class="mb-4 grid grid-cols-5 gap-3" data-testid="review-stats">
       <div class="rounded-lg bg-amber-50 px-4 py-3">
         <div class="text-2xl font-bold text-amber-600">{{ stats.pending }}</div>
         <div class="text-xs text-slate-500">待审核</div>
@@ -219,6 +247,10 @@ async function toggleAuditMode() {
       <div class="rounded-lg bg-slate-50 px-4 py-3">
         <div class="text-2xl font-bold text-slate-700">{{ stats.total }}</div>
         <div class="text-xs text-slate-500">评价总数</div>
+      </div>
+      <div class="rounded-lg bg-slate-100 px-4 py-3">
+        <div class="text-2xl font-bold text-slate-500">{{ stats.hidden }}</div>
+        <div class="text-xs text-slate-500">已隐藏</div>
       </div>
       <div class="rounded-lg bg-orange-50 px-4 py-3">
         <div class="text-2xl font-bold text-[#ff6a00]">{{ stats.avg || '-' }}</div>
@@ -238,6 +270,12 @@ async function toggleAuditMode() {
         :data-testid="`status-filter-${tab[0] || 'all'}`"
         @click="filterStatus(tab[0] as AdminReviewStatus | '')"
       >{{ tab[1] }}</button>
+      <button
+        class="rounded-full px-3 py-1 text-xs transition-colors"
+        :class="hiddenFilter === true ? 'bg-slate-600 text-white' : 'border border-slate-200 text-slate-500 hover:text-[#1677ff]'"
+        data-testid="hidden-filter"
+        @click="filterHidden(hiddenFilter === true ? undefined : true)"
+      >仅看已隐藏</button>
 
       <div class="ml-auto flex items-center gap-2">
         <select
@@ -290,6 +328,7 @@ async function toggleAuditMode() {
           <td class="max-w-56 truncate px-3 py-1.5 text-black" :title="r.content || ''">{{ r.content || '-' }}</td>
           <td class="px-3 py-1.5">
             <span class="rounded px-2 py-0.5 text-xs" :class="REVIEW_STATUS_CLASS[r.status]">{{ r.status_label || REVIEW_STATUS_LABELS[r.status] }}</span>
+            <span v-if="r.is_hidden" class="mt-0.5 block rounded bg-slate-100 px-1.5 py-0.5 text-[11px] text-slate-400" :data-testid="`hidden-tag-${r.id}`">已隐藏</span>
           </td>
           <td class="px-3 py-1.5 text-black">{{ r.created_at }}</td>
           <td class="px-3 py-1.5">
@@ -303,6 +342,18 @@ async function toggleAuditMode() {
               </template>
               <span class="text-slate-200">|</span>
               <button class="text-[#1677ff] hover:underline" :data-testid="`reply-${r.id}`" @click="openReply(r)">{{ r.reply_content ? '改回复' : '回复' }}</button>
+              <span class="text-slate-200">|</span>
+              <button
+                class="flex items-center gap-0.5 hover:underline"
+                :class="r.is_hidden ? 'text-emerald-600' : 'text-slate-500 hover:text-slate-700'"
+                :data-testid="`toggle-hidden-${r.id}`"
+                :title="r.is_hidden ? '恢复该评价在前台的展示' : '隐藏该评价，前台不再展示且不计入评分'"
+                @click="toggleHidden(r)"
+              >
+                <EyeOff v-if="!r.is_hidden" class="inline h-3.5 w-3.5" />
+                <Eye v-else class="inline h-3.5 w-3.5" />
+                {{ r.is_hidden ? '显示' : '隐藏' }}
+              </button>
               <span class="text-slate-200">|</span>
               <button class="text-red-500 hover:underline" :data-testid="`delete-${r.id}`" @click="askDelete(r)"><Trash2 class="inline h-3.5 w-3.5" /></button>
             </div>
@@ -318,26 +369,7 @@ async function toggleAuditMode() {
     </table>
 
     <!-- 分页 -->
-    <div class="mt-4 flex items-center justify-between text-[13px] text-slate-500">
-      <span>共 {{ pagination.total }} 条记录 / 每页 {{ pagination.page_size }} 条</span>
-      <div class="flex items-center gap-1">
-        <button
-          class="flex h-7 w-7 items-center justify-center rounded border border-slate-200 disabled:opacity-40"
-          :disabled="pagination.page <= 1" @click="goPage(pagination.page - 1)"
-        ><ChevronLeft class="h-4 w-4" /></button>
-        <button
-          v-for="p in pagination.total_pages"
-          :key="p"
-          class="h-7 min-w-7 rounded border px-1.5"
-          :class="p === pagination.page ? 'border-[#1677ff] bg-[#1677ff] text-white' : 'border-slate-200 hover:border-[#1677ff]'"
-          @click="goPage(p)"
-        >{{ p }}</button>
-        <button
-          class="flex h-7 w-7 items-center justify-center rounded border border-slate-200 disabled:opacity-40"
-          :disabled="pagination.page >= pagination.total_pages" @click="goPage(pagination.page + 1)"
-        ><ChevronRight class="h-4 w-4" /></button>
-      </div>
-    </div>
+    <TablePagination :pagination="pagination" @change="goPage" />
 
     <!-- 详情抽屉 -->
     <div v-if="detail" class="fixed inset-0 z-40 flex justify-end bg-black/30" @click.self="detail = null">
@@ -359,7 +391,13 @@ async function toggleAuditMode() {
             </dd>
           </div>
           <div class="flex gap-3"><dt class="w-20 shrink-0 text-slate-400">订单</dt><dd class="text-slate-700">#{{ detail.order_id }}</dd></div>
-          <div class="flex gap-3"><dt class="w-20 shrink-0 text-slate-400">状态</dt><dd><span class="rounded px-2 py-0.5 text-xs" :class="REVIEW_STATUS_CLASS[detail.status]">{{ detail.status_label }}</span></dd></div>
+          <div class="flex gap-3">
+            <dt class="w-20 shrink-0 text-slate-400">状态</dt>
+            <dd>
+              <span class="rounded px-2 py-0.5 text-xs" :class="REVIEW_STATUS_CLASS[detail.status]">{{ detail.status_label }}</span>
+              <span v-if="detail.is_hidden" class="ml-1 rounded bg-slate-100 px-1.5 py-0.5 text-[11px] text-slate-400" data-testid="detail-hidden-tag">已隐藏</span>
+            </dd>
+          </div>
           <div v-if="detail.reject_reason" class="flex gap-3"><dt class="w-20 shrink-0 text-slate-400">驳回原因</dt><dd class="text-red-500">{{ detail.reject_reason }}</dd></div>
           <div class="flex gap-3"><dt class="w-20 shrink-0 text-slate-400">内容</dt><dd class="whitespace-pre-wrap text-slate-700">{{ detail.content || '（无文字）' }}</dd></div>
           <div v-if="detail.images?.length" class="flex gap-3">
@@ -378,6 +416,15 @@ async function toggleAuditMode() {
           <button v-if="detail.status === 'pending'" class="rounded-md bg-emerald-500 px-4 py-1.5 text-xs text-white hover:bg-emerald-600" @click="askApprove(detail)">通过</button>
           <button v-if="detail.status === 'pending'" class="rounded-md bg-red-500 px-4 py-1.5 text-xs text-white hover:bg-red-600" @click="askReject(detail)">驳回</button>
           <button class="rounded-md border border-[#1677ff] px-4 py-1.5 text-xs text-[#1677ff] hover:bg-[#f0f7ff]" @click="openReply(detail)">商家回复</button>
+          <button
+            class="flex items-center gap-1 rounded-md border border-slate-200 px-4 py-1.5 text-xs text-slate-500 hover:bg-slate-50"
+            :data-testid="`detail-toggle-hidden-${detail.id}`"
+            @click="toggleHidden(detail)"
+          >
+            <EyeOff v-if="!detail.is_hidden" class="h-3.5 w-3.5" />
+            <Eye v-else class="h-3.5 w-3.5" />
+            {{ detail.is_hidden ? '显示评价' : '隐藏评价' }}
+          </button>
           <button class="rounded-md border border-red-200 px-4 py-1.5 text-xs text-red-500 hover:bg-red-50" @click="askDelete(detail)">删除</button>
         </div>
       </div>

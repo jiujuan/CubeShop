@@ -108,6 +108,7 @@ class ReviewService
         return Cache::remember(self::CACHE_PREFIX.$productId, $this->summaryTtl(), function () use ($productId) {
             $rows = Review::where('product_id', $productId)
                 ->where('status', Review::STATUS_APPROVED)
+                ->where('is_hidden', false)
                 ->select('rating', DB::raw('count(*) as cnt'))
                 ->groupBy('rating')
                 ->pluck('cnt', 'rating')
@@ -138,7 +139,8 @@ class ReviewService
     {
         $q = Review::with(['user:id,username,nickname,avatar'])
             ->where('product_id', $productId)
-            ->where('status', Review::STATUS_APPROVED);
+            ->where('status', Review::STATUS_APPROVED)
+            ->where('is_hidden', false);
 
         if (! empty($filters['rating'])) {
             $q->where('rating', (int) $filters['rating']);
@@ -156,11 +158,12 @@ class ReviewService
         return $q->paginate(min((int) ($filters['page_size'] ?? 10), 50), ['*'], 'page', (int) ($filters['page'] ?? 1));
     }
 
-    /** 我的评价 */
+    /** 我的评价（被后台隐藏的同样不展示） */
     public function myReviews(int $userId, int $page = 1, int $pageSize = 10): LengthAwarePaginator
     {
         return Review::with('product:id,title,main_image')
             ->where('user_id', $userId)
+            ->where('is_hidden', false)
             ->orderByDesc('id')
             ->paginate(min($pageSize, 50), ['*'], 'page', $page);
     }
@@ -180,6 +183,9 @@ class ReviewService
         }
         if (! empty($filters['status'])) {
             $q->where('status', $filters['status']);
+        }
+        if (isset($filters['hidden'])) {
+            $q->where('is_hidden', (bool) $filters['hidden']);
         }
         if (! empty($filters['rating'])) {
             $q->where('rating', (int) $filters['rating']);
@@ -223,6 +229,22 @@ class ReviewService
         return $review;
     }
 
+    /**
+     * 隐藏 / 显示评价（V1.2：后台评价管理）
+     *
+     * 隐藏后前台列表不再展示、也不计入评分汇总；评价数据保留，可随时恢复。
+     */
+    public function setHidden(Review $review, bool $hidden): Review
+    {
+        $review->is_hidden = $hidden;
+        $review->save();
+
+        // 评分汇总需同步（隐藏的评价不计分）
+        $this->flushSummary($review->product_id);
+
+        return $review;
+    }
+
     public function delete(Review $review): void
     {
         $productId = $review->product_id;
@@ -237,7 +259,8 @@ class ReviewService
             'pending' => Review::where('status', Review::STATUS_PENDING)->count(),
             'today' => Review::whereDate('created_at', now()->toDateString())->count(),
             'total' => Review::count(),
-            'avg' => round((float) Review::where('status', Review::STATUS_APPROVED)->avg('rating'), 1),
+            'hidden' => Review::where('is_hidden', true)->count(),
+            'avg' => round((float) Review::where('status', Review::STATUS_APPROVED)->where('is_hidden', false)->avg('rating'), 1),
         ];
     }
 

@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
@@ -10,6 +11,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  */
 class Review extends Model
 {
+
     protected $table = 'reviews';
 
     public const STATUS_PENDING = 'pending';
@@ -34,12 +36,13 @@ class Review extends Model
     protected $fillable = [
         'order_id', 'order_item_id', 'user_id', 'product_id', 'sku_id',
         'rating', 'content', 'images', 'is_anonymous', 'status', 'reject_reason',
-        'reply_content', 'reply_at', 'edited_at',
+        'is_hidden', 'reply_content', 'reply_at', 'edited_at',
     ];
 
     protected $casts = [
         'images' => 'array',
         'is_anonymous' => 'boolean',
+        'is_hidden' => 'boolean',
         'rating' => 'integer',
         'reply_at' => 'datetime',
         'edited_at' => 'datetime',
@@ -68,6 +71,12 @@ class Review extends Model
     public function sku(): BelongsTo
     {
         return $this->belongsTo(ProductSku::class, 'sku_id');
+    }
+
+    /** 前台可见范围（未被后台隐藏） */
+    public function scopeVisible(Builder $query): Builder
+    {
+        return $query->where('is_hidden', false);
     }
 
     /** 是否仍在可修改窗口内 */

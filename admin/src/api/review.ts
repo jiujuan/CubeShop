@@ -20,6 +20,8 @@ export interface AdminReview {
   reject_reason: string | null
   reply_content: string | null
   reply_at: string | null
+  /** 是否已被后台隐藏（true = 前台不展示，可恢复） */
+  is_hidden: boolean
   created_at: string
 }
 
@@ -27,6 +29,7 @@ export interface ReviewStats {
   pending: number
   today: number
   total: number
+  hidden: number
   avg: number
 }
 
@@ -41,6 +44,8 @@ export function getReviews(params: {
   keyword?: string
   status?: AdminReviewStatus | ''
   rating?: number
+  /** 只看已隐藏（true）/ 只看未隐藏（false）/ 全部（不传） */
+  hidden?: boolean
   page?: number
   page_size?: number
 } = {}) {
@@ -61,6 +66,11 @@ export function rejectReview(id: number, reason: string) {
 
 export function replyReview(id: number, content: string) {
   return request.post<ApiResult<null>>(`/admin/reviews/${id}/reply`, { content })
+}
+
+/** 隐藏 / 显示评价（隐藏后前台不展示且不计入评分，记录保留可恢复） */
+export function setReviewHidden(id: number, hidden: boolean) {
+  return request.post<ApiResult<{ is_hidden: boolean }>>(`/admin/reviews/${id}/hidden`, { hidden })
 }
 
 export function deleteReview(id: number) {
