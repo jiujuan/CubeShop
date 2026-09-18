@@ -5,6 +5,7 @@ namespace App\Services\Refund;
 use App\Exceptions\BusinessException;
 use App\Models\Order;
 use App\Models\Refund;
+use App\Models\SysOperationLog;
 use App\Services\Common\NoGeneratorService;
 use App\Services\Common\OperationLogService;
 use App\Services\Inventory\InventoryService;
@@ -131,7 +132,7 @@ class RefundService
             'reason' => $reason,
             'images' => $images,
             'max_refundable' => $maxRefundable,
-        ]);
+        ], SysOperationLog::ACTOR_CUSTOMER);
 
         return $refund;
     }

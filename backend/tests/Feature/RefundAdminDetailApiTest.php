@@ -82,6 +82,10 @@ test('TC-RFD-DTL-001 申请携带凭证图片落库，详情接口返回商品�
         // 处理流水：至少有一条「用户提交申请」，且 content JSON 已解码为 content_data（供后台中文渲染）
         ->and($res->json('data.logs'))->not->toBeEmpty()
         ->and($res->json('data.logs.0.action'))->toBe('apply')
+        // 申请人必须归到买家（customer），操作人解析为买家昵称——否则后台会误显示成管理员
+        ->and($res->json('data.logs.0.actor_type'))->toBe('customer')
+        ->and($res->json('data.logs.0.operator.id'))->toBe($user->id)
+        ->and($res->json('data.logs.0.operator.nickname'))->toBe('测试用户')
         ->and($res->json('data.logs.0.content_data'))->toBeArray()
         ->and($res->json('data.logs.0.content_data.reason'))->toBe('商品破损')
         ->and($res->json('data.logs.0.content_data.images'))->toBe([

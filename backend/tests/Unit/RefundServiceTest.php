@@ -39,6 +39,23 @@ test('申请退款后订单进入退款中并生成待审退款单', function ()
         ->and($refund->refund_no)->toStartWith('RF');
 });
 
+// RF-U-01b 申请流水的操作人归属买家（customer），否则后台「处理记录」会把申请人显示成管理员
+test('申请退款的操作日志归属买家而非管理员', function () {
+    [$user, $sku, $order] = createPaidOrder();
+
+    $refund = app(RefundService::class)->apply($order, $user->id, '不想要了', null);
+
+    $log = \App\Models\SysOperationLog::where('module', 'refund')
+        ->where('action', 'apply')
+        ->where('target_id', $refund->id)
+        ->first();
+
+    expect($log)->not->toBeNull()
+        ->and($log->actor_type)->toBe(\App\Models\SysOperationLog::ACTOR_CUSTOMER)
+        ->and($log->user_id)->toBe($user->id)
+        ->and($log->customer?->id)->toBe($user->id);
+});
+
 // RF-U-02 退款金额超过可退余额（首笔退款时即订单实付）被拒绝
 test('退款金额超过可退余额被拒绝', function () {
     [$user, $sku, $order] = createPaidOrder();
