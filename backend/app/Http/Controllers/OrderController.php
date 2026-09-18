@@ -5,8 +5,11 @@ namespace App\Http\Controllers;
 use App\Exceptions\BusinessException;
 use App\Http\Resources\OrderResource;
 use App\Models\Order;
+use App\Models\ProductSku;
+use App\Models\UserAddress;
 use App\Services\Order\OrderService;
 use App\Services\Refund\RefundService;
+use App\Services\Shipping\FreightService;
 use App\Support\ApiResponse;
 use App\Support\PublicId;
 use Illuminate\Http\JsonResponse;
@@ -21,7 +24,7 @@ class OrderController extends Controller
 {
     use ApiResponse;
 
-    public function __construct(private OrderService $orders)
+    public function __construct(private OrderService $orders, private FreightService $freight)
     {
     }
 
@@ -79,6 +82,67 @@ class OrderController extends Controller
             'amount_details' => $order->amount_details,
             'status' => $order->status,
         ], '下单成功');
+    }
+
+    /**
+     * 运费实时预览（Stage 2 / T-053）：结算页选地址后调用，与下单同一套引擎（FreightService）。
+     *
+     * 入参 items [{sku_id, quantity}]；address_id 可选——传了才能按省 code 计算 region 模板。
+     * not_support 不抛错（返回标记），由前端禁用提交并提示；下单时后端仍会拒单兜底。
+     */
+    public function freightPreview(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'items' => ['required', 'array', 'min:1'],
+            'items.*.sku_id' => ['required', 'integer'],
+            'items.*.quantity' => ['required', 'integer', 'min:1'],
+            'address_id' => ['nullable', 'integer'],
+        ]);
+
+        // 按 sku_id 归并数量（前端可能传重复行）
+        $quantities = [];
+        foreach ($data['items'] as $item) {
+            $quantities[(int) $item['sku_id']] = ($quantities[(int) $item['sku_id']] ?? 0) + (int) $item['quantity'];
+        }
+
+        $skus = ProductSku::query()
+            ->whereIn('id', array_keys($quantities))
+            ->with('product:id,weight,freight_template_id,status')
+            ->get();
+
+        if ($skus->isEmpty()) {
+            throw BusinessException::badRequest('商品不存在或已失效');
+        }
+
+        $lines = [];
+        foreach ($skus as $sku) {
+            if (! $sku->product || (int) $sku->product->status !== 1 || (int) $sku->status !== 1) {
+                continue; // 失效行不参与运费预估（结算页会另行拦截）
+            }
+            $lines[] = [
+                'template_id' => $sku->product->freight_template_id !== null
+                    ? (int) $sku->product->freight_template_id
+                    : null,
+                'weight_g' => (int) ($sku->product->weight ?? 0),
+                'quantity' => $quantities[$sku->id],
+                'price' => (string) $sku->price,
+            ];
+        }
+
+        if ($lines === []) {
+            throw BusinessException::badRequest('商品不存在或已失效');
+        }
+
+        // region 模式需要省 code：user_addresses.province 存省名，由 FreightService 换算
+        $provinceName = null;
+        if (! empty($data['address_id'])) {
+            $address = UserAddress::where('user_id', $request->user()->id)->find((int) $data['address_id']);
+            if ($address) {
+                $provinceName = (string) $address->province;
+            }
+        }
+
+        return $this->success($this->freight->calculate($lines, $provinceName)->toArray());
     }
 
     /** 订单列表（V1.1 T-004：状态分组 Tab + 关键词/时间检索；仅本人） */

@@ -160,6 +160,26 @@ export interface CreateOrderResult {
   amount_details?: Record<string, unknown> | null
 }
 
+/** 运费实时预览结果（与后端 FreightResult 对齐，T-053 Stage 2） */
+export interface FreightPreview {
+  freight_amount: string
+  free_shipping: boolean
+  free_shipping_gap: string | null
+  not_support: boolean
+  detail: Array<{ template_id: number | null; mode: string; weight_g: number; amount: string; source: string }>
+}
+
+/**
+ * 运费实时预览（结算页选地址后调用，与下单同一套引擎；region 模板需传 address_id 才能按省计算）。
+ * not_support=true 表示该地区不可配送（不抛错，前端禁用提交并提示）。
+ */
+export function previewFreight(data: {
+  items: Array<{ sku_id: number; quantity: number }>
+  address_id?: number
+}) {
+  return request.post<ApiResult<FreightPreview>>('/orders/freight-preview', data)
+}
+
 /** 创建订单（cart_item_ids 不传则结算全部有效项；V1.1 T-035/T-039 支持 user_coupon_id） */
 export function createOrder(data: {
   address_id: number

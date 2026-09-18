@@ -222,3 +222,64 @@ test('指定 cartItemIds 时仅结算对应项', function () {
         // 未结算项保留
         ->and(CartItem::where('user_id', $user->id)->count())->toBe(1);
 });
+
+// ORD-U-10 运费升级 Stage 2：region 模板按省 code 命中，运费落库
+test('绑定 region 模板下单：按省 code 计费并落库', function () {
+    $tpl = \App\Models\FreightTemplate::create([
+        'name' => '区域模板', 'mode' => 'region', 'status' => 1,
+        'rules' => ['areas' => [['provinces' => ['440000'], 'amount' => '8.00']]],
+    ]);
+    [$user, $sku, $address] = prepareCartContext(qty: 1, price: '50.00');
+    $sku->product->update(['freight_template_id' => $tpl->id]);
+
+    $order = app(OrderService::class)->createFromCart($user->id, $address->id, null, null);
+
+    // 广东省(440000) 命中 → 8.00；pay = 50 + 8
+    expect($order->freight_amount)->toBe('8.00')
+        ->and($order->pay_amount)->toBe('58.00');
+});
+
+// ORD-U-11 region 模板未命中且无 default → 拒单（决策 C）
+test('收货地区不在配送范围时拒单', function () {
+    $tpl = \App\Models\FreightTemplate::create([
+        'name' => '仅北京', 'mode' => 'region', 'status' => 1,
+        'rules' => ['areas' => [['provinces' => ['110000'], 'amount' => '8.00']]],
+    ]);
+    [$user, $sku, $address] = prepareCartContext(qty: 1, price: '50.00');
+    $sku->product->update(['freight_template_id' => $tpl->id]);
+
+    app(OrderService::class)->createFromCart($user->id, $address->id, null, null);
+})->throws(App\Exceptions\BusinessException::class, '该地区暂不支持配送');
+
+// ORD-U-12 全局默认模板：未绑定商品的走 order.freight_template_id（weight 模式）
+test('全局默认 weight 模板对未绑定商品生效', function () {
+    $tpl = \App\Models\FreightTemplate::create([
+        'name' => '全局重量', 'mode' => 'weight', 'status' => 1,
+        'rules' => ['first_weight_g' => 1000, 'first_fee' => '5.00', 'step_weight_g' => 1000, 'step_fee' => '2.00'],
+    ]);
+    app(\App\Services\Common\ConfigService::class)->set('order.freight_template_id', (string) $tpl->id);
+
+    [$user, $sku, $address] = prepareCartContext(qty: 2, price: '50.00');
+    // 商品未绑定模板（freight_template_id=null），weight 1500g × 2 = 3000g
+    $sku->product->update(['weight' => 1500]);
+
+    $order = app(OrderService::class)->createFromCart($user->id, $address->id, null, null);
+
+    // 首重 5 + ceil(2000/1000) × 2 = 9.00
+    expect($order->freight_amount)->toBe('9.00')
+        ->and($order->pay_amount)->toBe('109.00');
+});
+
+// ORD-U-13 商品绑定的模板被停用 → 降级旧口径（fixed 10 元），下单不失败
+test('绑定模板停用时降级旧口径运费', function () {
+    $tpl = \App\Models\FreightTemplate::create([
+        'name' => '已停用', 'mode' => 'fixed', 'status' => 0, 'rules' => ['amount' => '5.00'],
+    ]);
+    [$user, $sku, $address] = prepareCartContext(qty: 1, price: '50.00');
+    $sku->product->update(['freight_template_id' => $tpl->id]);
+
+    $order = app(OrderService::class)->createFromCart($user->id, $address->id, null, null);
+
+    expect($order->freight_amount)->toBe('10.00')
+        ->and($order->pay_amount)->toBe('60.00');
+});

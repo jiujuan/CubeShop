@@ -299,6 +299,8 @@ class ProductController extends Controller
             // V1.1 E01 新增字段
             'brand_id' => ['nullable', 'integer', 'exists:brands,id'],
             'weight' => ['nullable', 'integer', 'min:0'],
+            // 运费升级 Stage 2（T-053）：商品绑定运费模板，null = 全局默认规则
+            'freight_template_id' => ['nullable', 'integer', 'exists:freight_templates,id'],
             'video_url' => ['nullable', 'string', 'max:512'],
             'keywords' => ['nullable', 'string', 'max:1000'],
             'attribute_values' => ['nullable', 'array'],
@@ -688,6 +690,7 @@ class ProductController extends Controller
             'brand_id' => $product->brand_id,
             'brand' => $product->brand?->only(['id', 'name']),
             'weight' => (int) $product->weight,
+            'freight_template_id' => $product->freight_template_id !== null ? (int) $product->freight_template_id : null,
             'video_url' => $product->video_url,
             'keywords' => $product->keywords,
             'attribute_values' => $product->attributeValues->map(fn (ProductAttributeValue $v) => [

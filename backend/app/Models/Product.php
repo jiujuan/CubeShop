@@ -31,12 +31,15 @@ class Product extends Model
         'price', 'status', 'sales_count', 'sort',
         // V1.1 E01
         'brand_id', 'weight', 'video_url', 'keywords',
+        // 运费升级 Stage 2（T-053）：绑定运费模板（null = 全局默认）
+        'freight_template_id',
     ];
 
     protected $casts = [
         'price' => 'decimal:2',
         'brand_id' => 'integer',
         'weight' => 'integer',
+        'freight_template_id' => 'integer',
     ];
 
     /**
