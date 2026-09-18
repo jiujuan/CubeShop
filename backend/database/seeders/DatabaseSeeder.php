@@ -21,6 +21,8 @@ class DatabaseSeeder extends Seeder
             RefundSeeder::class,
             ReviewNotifySeeder::class,
             AuthSecuritySeeder::class,
+            // WMS 对接（P0）：预置默认仓，供配置页/SKU 映射立即使用
+            WarehouseSeeder::class,
         ]);
     }
 }

@@ -27,6 +27,7 @@ use App\Http\Controllers\Admin\ReviewController as AdminReviewController;
 use App\Http\Controllers\Admin\RoleController as AdminRoleController;
 use App\Http\Controllers\Admin\UploadController;
 use App\Http\Controllers\Admin\UserController;
+use App\Http\Controllers\Admin\WmsConfigController;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\AnnouncementController;
 use App\Http\Controllers\HomeBannerController;
@@ -337,6 +338,21 @@ Route::middleware(['auth:sanctum', 'account.active'])->group(function () {
         Route::get('/refunds/{id}', [RefundController::class, 'show'])->middleware('permission:refund.view');
         Route::post('/refunds/{id}/process', [RefundController::class, 'process'])->middleware('permission:refund.process');
         Route::post('/refunds/{id}/receive', [RefundController::class, 'receive'])->middleware('permission:refund.process');
+
+        // WMS 对接配置（WMS 计划 P0 / §9.1）：仓库档案 + 按仓配置 + SKU 映射
+        // 权限码 wms.config.manage（超管 + 运营）；P6 起追加发货单/退货单页面复用 wms.order.* / wms.return.manage
+        Route::prefix('wms')->middleware('permission:wms.config.manage')->group(function () {
+            Route::get('/warehouses', [WmsConfigController::class, 'warehouses']);
+            Route::post('/warehouses', [WmsConfigController::class, 'storeWarehouse']);
+            Route::put('/warehouses/{id}', [WmsConfigController::class, 'updateWarehouse']);
+            Route::get('/warehouses/{id}/config', [WmsConfigController::class, 'showConfig']);
+            Route::put('/warehouses/{id}/config', [WmsConfigController::class, 'saveConfig']);
+            Route::post('/warehouses/{id}/config/test', [WmsConfigController::class, 'testConfig']);
+            Route::get('/warehouses/{id}/sku-mappings', [WmsConfigController::class, 'skuMappings']);
+            // batch 必须注册在 {skuId} 之前，避免被 DELETE 的 {skuId} 通配影响（不同 method，此处仅为语义清晰）
+            Route::post('/warehouses/{id}/sku-mappings/batch', [WmsConfigController::class, 'importSkuMappings']);
+            Route::delete('/warehouses/{id}/sku-mappings/{skuId}', [WmsConfigController::class, 'destroySkuMapping']);
+        });
 
         // 评价管理 review.manage（V1.1 F01 / T-017）
         Route::post('/reviews/audit-mode', [AdminReviewController::class, 'updateAuditMode'])->middleware('permission:config.manage');

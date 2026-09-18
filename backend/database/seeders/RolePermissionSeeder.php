@@ -69,6 +69,11 @@ class RolePermissionSeeder extends Seeder
         'cs.ticket.view',
         'cs.ticket.handle',
         'cs.faq.manage',
+        // WMS 对接（WMS 计划 P0 / F7）：配置管理 + 发货单/退货单/退货管理（P6 页面启用）
+        'wms.config.manage',
+        'wms.order.view',
+        'wms.order.manage',
+        'wms.return.manage',
     ];
 
     public function run(): void
@@ -122,6 +127,10 @@ class RolePermissionSeeder extends Seeder
             //    迁移 2026_09_17_000039 曾误授予 operator 这三个权限，已由
             //    2026_09_17_000040_revoke_cs_permissions_from_operator.php 回收（存量库）。
             //    新工单通知按「持有 cs.ticket.view 权限的账号」投递，不写死角色名。
+            // WMS 对接（WMS 计划 P0）：运营负责日常履约与仓储，配置页是其工作台的一部分。
+            // 若后续要把「凭证配置」收紧为超管专属，只需从下列一处移除 wms.config.manage
+            //（并同步幂等迁移 000081 的 OPERATOR_PERMISSIONS）。
+            'wms.config.manage', 'wms.order.view', 'wms.order.manage', 'wms.return.manage',
         ]);
 
         // 客服（cs_agent）：只做客服工作台与帮助中心，不含任何经营数据（CS-117 缺陷 #4）
