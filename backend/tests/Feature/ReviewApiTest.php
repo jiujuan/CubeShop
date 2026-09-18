@@ -270,6 +270,38 @@ test('TC-REV-014 我的评价列表只含本人评价', function () {
         ->and($resp['list'][0]['content'])->toBe('我的');
 });
 
+// ---------- P2-11：评价出口 public_id（修复订单详情「修改评价」定位失败） ----------
+
+test('TC-PID-052-001 我的评价 order_id/order_item_id/product_id 均为 public_id', function () {
+    [$order, $item] = seedReviewableOrder($this->buyerId, productId: $this->productId, skuId: $this->sku->id);
+    $this->postJson("/api/orders/{$order->id}/items/{$item->id}/review", ['rating' => 5, 'content' => '好'], $this->buyerAuth);
+
+    $row = $this->getJson('/api/me/reviews', $this->buyerAuth)->json('data.list.0');
+
+    expect($row['order_item_id'])->toBe($item->public_id)
+        ->and($row['order_id'])->toBe($order->public_id)
+        ->and($row['product_id'])->toBe(Product::find($this->productId)->public_id)
+        ->and($row['can_edit'])->toBeTrue();
+
+    // 与订单详情出口的 items[].id 完全一致（前端据此匹配「修改评价」行项目）
+    $detail = $this->getJson("/api/orders/{$order->public_id}", $this->buyerAuth)->json('data');
+    expect($detail['items'][0]['id'])->toBe($row['order_item_id']);
+});
+
+test('TC-PID-052-002 修改评价支持 public_id 定位', function () {
+    [$order, $item] = seedReviewableOrder($this->buyerId, productId: $this->productId, skuId: $this->sku->id);
+    $this->postJson("/api/orders/{$order->id}/items/{$item->id}/review", ['rating' => 5, 'content' => '初版'], $this->buyerAuth);
+    $review = Review::where('order_item_id', $item->id)->first();
+
+    $resp = $this->putJson("/api/reviews/{$review->public_id}", ['rating' => 2, 'content' => '改版'], $this->buyerAuth);
+
+    expect($resp->json('code'))->toBe(0)
+        ->and($resp->json('data.id'))->toBe($review->public_id);
+    $review->refresh();
+    expect($review->rating)->toBe(2)
+        ->and($review->content)->toBe('改版');
+});
+
 // ---------- T-016 修改评价 ----------
 
 test('TC-REV-015 30 天内未修改过可修改一次并置 edited_at', function () {

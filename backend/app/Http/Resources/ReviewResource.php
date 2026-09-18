@@ -40,9 +40,11 @@ class ReviewResource extends JsonResource
                 'title' => $this->product->title,
                 'main_image' => $this->product->main_image,
             ]);
-            $base['product_id'] = $this->product_id;
-            $base['order_id'] = $this->order_id;
-            $base['order_item_id'] = $this->order_item_id;
+            // P2-11：对外一律 public_id（与订单/行项目出口一致），前端据此定位行项目；
+            // 关联缺失（历史孤儿数据）时回退原始 int，避免 null 造成前端类型歧义
+            $base['product_id'] = $this->product?->public_id ?? $this->product_id;
+            $base['order_id'] = $this->order?->public_id ?? $this->order_id;
+            $base['order_item_id'] = $this->orderItem?->public_id ?? $this->order_item_id;
             $base['can_edit'] = $this->canEdit();
         }
 

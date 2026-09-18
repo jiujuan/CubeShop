@@ -161,7 +161,8 @@ class ReviewService
     /** 我的评价（被后台隐藏的同样不展示） */
     public function myReviews(int $userId, int $page = 1, int $pageSize = 10): LengthAwarePaginator
     {
-        return Review::with('product:id,title,main_image')
+        // P2-11：本人场景需回传订单/行项目 public_id（前端据此定位行项目），一并预加载避免 N+1
+        return Review::with(['product:id,title,main_image,public_id', 'order:id,public_id', 'orderItem:id,public_id'])
             ->where('user_id', $userId)
             ->where('is_hidden', false)
             ->orderByDesc('id')

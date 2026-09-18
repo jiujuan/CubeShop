@@ -29,6 +29,7 @@ class OrderItemResource extends JsonResource
                     'id' => $this->review->public_id,
                     'rating' => $this->review->rating,
                     'content' => $this->review->content,
+                    'images' => $this->review->images ?? [],
                     'status' => $this->review->status,
                     'can_edit' => $this->review->canEdit(),
                 ] : null;
