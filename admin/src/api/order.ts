@@ -19,6 +19,10 @@ export interface OrderItemView {
   price: string
   quantity: number
   total_amount: string
+  /** 该行分摊到的优惠券金额（T-035，仅详情接口返回） */
+  coupon_share?: string | null
+  /** 该行分摊到的满减金额（仅详情接口返回） */
+  promotion_share?: string | null
 }
 
 export interface AddressSnapshot {
@@ -29,6 +33,60 @@ export interface AddressSnapshot {
   district?: string | null
   detail_address?: string
   full_address?: string
+}
+
+/** 金额明细（orders.amount_details，T-035 落库；V1.0 老单为 null，展示时回退订单级字段） */
+export interface OrderAmountDetails {
+  v: number
+  goods_amount: string
+  freight_amount: string
+  promotion_discount: string
+  coupon_discount: string
+  discount_amount: string
+  pay_amount: string
+  promotion_id: number | null
+  coupon_id: number | null
+  user_coupon_id: number | null
+  /** 行分摊，index 与 order_items 一一对应 */
+  lines: Array<{
+    index: number
+    product_id: number
+    sku_id: number
+    amount: string
+    promotion_share: string
+    coupon_share: string
+    payable: string
+  }>
+}
+
+/** 订单使用的优惠券（券模板快照） */
+export interface OrderCoupon {
+  id: number
+  name: string
+  type: string
+  amount: string | null
+  percent: number | null
+  min_spend: string | null
+}
+
+/** 物流轨迹节点 */
+export interface ShippingTraceRow {
+  context: string
+  occurred_at: string | null
+}
+
+/** 订单物流（traces 按发生时间倒序，最新在前） */
+export interface OrderShipping {
+  id: number
+  company_code: string
+  company_name: string
+  tracking_no: string
+  trace_status: string
+  shipped_at: string | null
+  delivered_at: string | null
+  pull_fail_count: number
+  last_fail_message: string | null
+  traces: ShippingTraceRow[]
 }
 
 export interface AdminOrder {
@@ -42,6 +100,9 @@ export interface AdminOrder {
   pay_amount: string
   item_count: number
   items: OrderItemView[]
+  /** 物流冗余双号（T-043）：快递公司名称与运单号，未发货时为空 */
+  express_company?: string | null
+  tracking_no?: string | null
   created_at: string
   remark?: string | null
   address_snapshot?: AddressSnapshot | null
@@ -50,6 +111,15 @@ export interface AdminOrder {
   shipped_at?: string | null
   completed_at?: string | null
   cancelled_at?: string | null
+  /** 以下为详情接口专有（列表接口不返回） */
+  auto_completed?: boolean
+  trace_status?: string | null
+  /** 整单优惠合计（amount_details 缺失时的回退口径） */
+  discount_amount?: string | null
+  promotion_discount?: string | null
+  amount_details?: OrderAmountDetails | null
+  coupon?: OrderCoupon | null
+  shipping?: OrderShipping[]
 }
 
 export interface OrderListResult {
@@ -75,8 +145,17 @@ export function getOrder(id: number) {
   return request.get<ApiResult<AdminOrder>>(`/admin/orders/${id}`)
 }
 
-export function shipOrder(id: number, remark?: string) {
-  return request.post<ApiResult<AdminOrder>>(`/admin/orders/${id}/ship`, { remark })
+export interface ShipPayload {
+  /** 快递公司编码（express_companies.code，发货弹窗下拉选择） */
+  express_company_code: string
+  /** 快递单号（8~32 位，字母数字） */
+  tracking_no: string
+  /** 备注（可选） */
+  remark?: string
+}
+
+export function shipOrder(id: number, payload: ShipPayload) {
+  return request.post<ApiResult<AdminOrder>>(`/admin/orders/${id}/ship`, payload)
 }
 
 /**
@@ -213,4 +292,162 @@ export const ORDER_STATUS_CLASS: Record<OrderStatus, string> = {
   cancelled: 'bg-slate-100 text-slate-500',
   refunding: 'bg-purple-100 text-purple-500',
   refunded: 'bg-red-100 text-red-500',
+}
+
+/** 订单主流程进度（详情页进度条）；取消 / 退款为终态分支，不进主流程 */
+export const ORDER_PROGRESS_FLOW: Array<{ status: OrderStatus; label: string }> = [
+  { status: 'pending_payment', label: '提交订单' },
+  { status: 'paid', label: '支付成功' },
+  { status: 'pending_ship', label: '待发货' },
+  { status: 'shipped', label: '已发货' },
+  { status: 'completed', label: '已完成' },
+]
+
+// ---------- 物流管理（V1.1 T-044/T-045/T-047，权限 order.ship / order.view / shipping.manage） ----------
+
+/** 启用快递公司（发货弹窗下拉用；GET /admin/shipping-companies/enabled，权限 order.ship） */
+export interface EnabledShippingCompany {
+  code: string
+  name: string
+}
+
+export function getEnabledShippingCompanies() {
+  return request.get<ApiResult<EnabledShippingCompany[]>>('/admin/shipping-companies/enabled')
+}
+
+/** 快递公司字典行（管理页；GET /admin/shipping-companies，权限 shipping.manage） */
+export interface ShippingCompany {
+  id: number
+  code: string
+  name: string
+  channel_code: string | null
+  sort: number
+  status: number
+  created_at?: string
+  updated_at?: string
+}
+
+export interface ShippingCompanyPayload {
+  code?: string
+  name?: string
+  channel_code?: string | null
+  sort?: number
+  status?: number
+}
+
+export interface ShippingCompanyQuery {
+  status?: number
+  keyword?: string
+  page?: number
+  page_size?: number
+}
+
+export type PagedResult<T> = { list: T[]; pagination: { page: number; page_size: number; total: number; total_pages: number } }
+
+export function getShippingCompanies(params: ShippingCompanyQuery) {
+  return request.get<ApiResult<PagedResult<ShippingCompany>>>('/admin/shipping-companies', { params })
+}
+
+export function createShippingCompany(payload: ShippingCompanyPayload) {
+  return request.post<ApiResult<ShippingCompany>>('/admin/shipping-companies', payload)
+}
+
+export function updateShippingCompany(id: number, payload: ShippingCompanyPayload) {
+  return request.put<ApiResult<ShippingCompany>>(`/admin/shipping-companies/${id}`, payload)
+}
+
+export function deleteShippingCompany(id: number) {
+  return request.delete<ApiResult<null>>(`/admin/shipping-companies/${id}`)
+}
+
+/** 物流看板行（GET /admin/shippings，权限 order.view） */
+export interface ShippingRow {
+  id: number
+  order_id: number
+  order_no: string | null
+  company_code: string
+  company_name: string
+  tracking_no: string
+  /** pending / in_transit / delivered / failed */
+  trace_status: string
+  trace_count: number
+  shipped_at: string | null
+  delivered_at: string | null
+  pull_fail_count: number
+  last_fail_message: string | null
+  /** 异常：拉取失败 / 发货超 48h 无轨迹 / 轨迹停滞超 72h */
+  abnormal: boolean
+}
+
+export interface ShippingQuery {
+  trace_status?: string
+  keyword?: string
+  page?: number
+  page_size?: number
+}
+
+export function getShippings(params: ShippingQuery) {
+  return request.get<ApiResult<PagedResult<ShippingRow>>>('/admin/shippings', { params })
+}
+
+/** 手动重试轨迹拉取（POST /admin/shippings/{id}/pull，权限 order.ship） */
+export interface PullResult {
+  result: 'pulled' | 'failed' | 'skipped'
+  trace_status: string
+  pull_fail_count: number
+  trace_count: number
+}
+
+export function pullShipping(id: number) {
+  return request.post<ApiResult<PullResult>>(`/admin/shippings/${id}/pull`)
+}
+
+/** 批量发货结果（预校验失败时 failed 非空，success=0） */
+export interface BatchShipResult {
+  success: number
+  total: number
+  failed: Array<{ row: number; order_no: string; message: string }>
+}
+
+export function batchShipImport(file: File) {
+  const form = new FormData()
+  form.append('file', file)
+  return request.post<ApiResult<BatchShipResult>>('/admin/orders/batch-ship', form, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+    timeout: 60000,
+  })
+}
+
+/** 批量发货模板下载（xlsx） */
+export async function downloadBatchShipTemplate() {
+  const response = await request.get('/admin/orders/batch-ship/template', {
+    responseType: 'blob',
+    timeout: 60000,
+  })
+
+  let name = '批量发货模板.xlsx'
+  const disposition = String(response.headers['content-disposition'] || '')
+  const match = /filename\*?=(?:UTF-8'')?"?([^";]+)/i.exec(disposition)
+  if (match) name = decodeURIComponent(match[1])
+
+  const url = URL.createObjectURL(response.data as Blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = name
+  link.click()
+  URL.revokeObjectURL(url)
+}
+
+export const TRACE_STATUS_LABELS: Record<string, string> = {
+  pending: '待查询',
+  in_transit: '运输中',
+  delivered: '已签收',
+  failed: '查询失败',
+}
+
+export const TRACE_STATUS_CLASS: Record<string, string> = {
+  pending: 'bg-slate-100 text-slate-500',
+  in_transit: 'bg-cyan-100 text-cyan-600',
+  delivered: 'bg-green-100 text-green-600',
+  failed: 'bg-red-100 text-red-500',
 }

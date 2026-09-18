@@ -2,7 +2,7 @@
 import { computed, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import {
-  BarChart3, Box, ChevronDown, ChevronRight, ChevronsLeft, ChevronsRight, ClipboardList, CreditCard, FileClock, FolderTree, History, LayoutDashboard, LayoutList, ListTree, LogOut, MessageSquare, Package, RotateCcw, ScrollText, Settings, ShieldCheck, SquareUser, Tags, UserCog, UserRound, Users, Wallet,
+  BarChart3, BookOpen, Box, ChevronDown, ChevronRight, ChevronsLeft, ChevronsRight, ClipboardList, CreditCard, FileClock, FolderTree, History, LayoutDashboard, LayoutList, LifeBuoy, ListTree, LogOut, MapPinned, MessageSquare, Package, RotateCcw, ScrollText, Settings, ShieldCheck, SquareUser, Tags, Truck, UploadCloud, UserCog, UserRound, Users, Wallet, Ticket,
 } from 'lucide-vue-next'
 import { useAuthStore } from '@/stores/auth'
 
@@ -48,6 +48,12 @@ const icons: Record<string, unknown> = {
   ScrollText,
   History,
   Wallet,
+  UploadCloud,
+  MapPinned,
+  Truck,
+  Ticket,
+  LifeBuoy,
+  BookOpen,
 }
 
 interface MenuItem {
@@ -70,7 +76,9 @@ const menuGroups = computed<MenuGroup[]>(() => {
     {
       title: '概览',
       items: [
-        { path: '/dashboard', title: '工作台', icon: 'LayoutDashboard' },
+        // 工作台含今日销售额等经营数据（接口层 dashboard.view 校验），
+        // 菜单同步按该权限显隐：客服角色只持有 cs.*，不应看到进不去的入口
+        { path: '/dashboard', title: '工作台', icon: 'LayoutDashboard', permission: 'dashboard.view' },
         { path: '/reports', title: '报表中心', icon: 'BarChart3', permission: 'report.view' },
       ],
     },
@@ -88,6 +96,8 @@ const menuGroups = computed<MenuGroup[]>(() => {
       title: '交易',
       items: [
         { path: '/orders', title: '订单管理', icon: 'ClipboardList', permission: 'order.view' },
+        { path: '/batch-ship', title: '批量发货', icon: 'UploadCloud', permission: 'order.ship' },
+        { path: '/shipping-monitor', title: '物流监控', icon: 'MapPinned', permission: 'order.view' },
         { path: '/payments', title: '支付管理', icon: 'CreditCard', permission: 'payment.view' },
         { path: '/payment-logs', title: '支付日志', icon: 'ScrollText', permission: 'payment.view' },
         { path: '/order-logs', title: '订单流水', icon: 'History', permission: 'order.log' },
@@ -100,6 +110,9 @@ const menuGroups = computed<MenuGroup[]>(() => {
       items: [
         { path: '/reviews', title: '评价管理', icon: 'MessageSquare', permission: 'review.manage' },
         { path: '/marketing', title: '营销管理', icon: 'Ticket', permission: 'marketing.manage' },
+        { path: '/cs/tickets', title: '服务工单', icon: 'LifeBuoy', permission: 'cs.ticket.view' },
+        { path: '/cs/faq', title: '帮助中心', icon: 'BookOpen', permission: 'cs.faq.manage' },
+        { path: '/cs/quick-replies', title: '回复模板管理', icon: 'MessageSquare', permission: 'cs.faq.manage' },
       ],
     },
     {
@@ -116,6 +129,7 @@ const menuGroups = computed<MenuGroup[]>(() => {
         { path: '/accounts', title: '管理员账号', icon: 'UserCog', permission: 'account.manage' },
         { path: '/roles', title: '角色权限', icon: 'ShieldCheck', permission: 'role.manage' },
         { path: '/payment-channels', title: '支付渠道配置', icon: 'CreditCard', permission: 'payment.channel.manage' },
+        { path: '/shipping-companies', title: '快递公司字典', icon: 'Truck', permission: 'shipping.manage' },
       ],
     },
   ]

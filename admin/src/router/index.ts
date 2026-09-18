@@ -1,6 +1,28 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 
+/**
+ * 登录后的落地入口（也用于「无工作台权限时的兜底跳转」）。
+ *
+ * 各角色权限差异较大：客服（cs_agent）只持有 cs.*，**没有 dashboard.view**
+ * （工作台含今日销售额等经营数据），若一律跳 /dashboard 会直接看到 403 空页。
+ * 故按「首个有权限的入口」依次回退，顺序与 AdminLayout 的菜单分组保持一致；
+ * 新增后台角色时在此追加一行即可。
+ */
+export function landingPath(): string {
+  const auth = useAuthStore()
+
+  const candidates: Array<[permission: string, path: string]> = [
+    ['dashboard.view', '/dashboard'],
+    ['order.view', '/orders'],
+    ['product.view', '/products'],
+    ['cs.ticket.view', '/cs/tickets'],
+    ['cs.faq.manage', '/cs/faq'],
+  ]
+
+  return candidates.find(([permission]) => auth.hasPermission(permission))?.[1] ?? '/dashboard'
+}
+
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
   routes: [
@@ -21,7 +43,7 @@ const router = createRouter({
       component: () => import('@/layouts/AdminLayout.vue'),
       meta: { requiresAuth: true },
       children: [
-        { path: '', redirect: '/dashboard' },
+        { path: '', redirect: () => ({ path: landingPath() }) },
         {
           path: 'dashboard',
           name: 'dashboard',
@@ -83,6 +105,24 @@ const router = createRouter({
           meta: { title: '订单管理', menu: true, icon: 'ClipboardList', permission: 'order.view' },
         },
         {
+          path: 'orders/:id',
+          name: 'order-detail',
+          component: () => import('@/views/order/OrderDetailView.vue'),
+          meta: { title: '订单详情', permission: 'order.view' },
+        },
+        {
+          path: 'batch-ship',
+          name: 'batch-ship',
+          component: () => import('@/views/order/BatchShipView.vue'),
+          meta: { title: '批量发货', menu: true, icon: 'UploadCloud', permission: 'order.ship' },
+        },
+        {
+          path: 'shipping-monitor',
+          name: 'shipping-monitor',
+          component: () => import('@/views/order/ShippingMonitorView.vue'),
+          meta: { title: '物流监控', menu: true, icon: 'MapPinned', permission: 'order.view' },
+        },
+        {
           path: 'refunds',
           name: 'refunds',
           component: () => import('@/views/refund/RefundView.vue'),
@@ -113,6 +153,12 @@ const router = createRouter({
           meta: { title: '支付渠道配置', menu: true, icon: 'CreditCard', permission: 'payment.channel.manage' },
         },
         {
+          path: 'shipping-companies',
+          name: 'shipping-companies',
+          component: () => import('@/views/order/ExpressCompanyView.vue'),
+          meta: { title: '快递公司字典', menu: true, icon: 'Truck', permission: 'shipping.manage' },
+        },
+        {
           path: 'order-logs',
           name: 'order-logs',
           component: () => import('@/views/order/OrderLogView.vue'),
@@ -135,6 +181,24 @@ const router = createRouter({
           name: 'marketing',
           component: () => import('@/views/operation/MarketingView.vue'),
           meta: { title: '营销管理', menu: true, icon: 'Ticket', permission: 'marketing.manage' },
+        },
+        {
+          path: 'cs/tickets',
+          name: 'cs-tickets',
+          component: () => import('@/views/cs/CsTicketView.vue'),
+          meta: { title: '服务工单', menu: true, icon: 'LifeBuoy', permission: 'cs.ticket.view' },
+        },
+        {
+          path: 'cs/faq',
+          name: 'cs-faq',
+          component: () => import('@/views/cs/CsFaqView.vue'),
+          meta: { title: '帮助中心', menu: true, icon: 'BookOpen', permission: 'cs.faq.manage' },
+        },
+        {
+          path: 'cs/quick-replies',
+          name: 'cs-quick-replies',
+          component: () => import('@/views/cs/CsQuickReplyView.vue'),
+          meta: { title: '快捷回复', menu: true, icon: 'MessageSquare', permission: 'cs.faq.manage' },
         },
         {
           path: 'users',
@@ -207,8 +271,17 @@ router.beforeEach(async (to) => {
     return { name: 'not-found' }
   }
 
+  // 工作台权限未写进路由 meta（接口层 dashboard.view 校验），这里补一道兜底：
+  // 无权限时不展示空页，直接落到自己的首个可用入口（如客服 → /cs/tickets）
+  if (auth.token && to.name === 'dashboard' && !auth.hasPermission('dashboard.view')) {
+    const landing = landingPath()
+    if (landing !== to.path) {
+      return { path: landing }
+    }
+  }
+
   if (auth.token && to.name === 'login') {
-    return { path: '/dashboard' }
+    return { path: landingPath() }
   }
 
   return true
