@@ -12,6 +12,9 @@ import {
   type AdminUserAddress,
   type AdminUserDetail,
 } from '@/api/user'
+import {
+  listCities, listDistricts, listProvinces, type RegionNode,
+} from '@/lib/region'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import { Button } from '@/components/ui/button'
 import LoadingSpinner from '@/components/LoadingSpinner.vue'
@@ -42,9 +45,32 @@ const statusTarget = ref<AdminUser | null>(null)
 
 // 地址代改（设计文档 CubeShop_Address_Design_v1.0：只读查看 + 受限代改）
 const addrEditTarget = ref<AdminUserAddress | null>(null)
-const addrForm = ref({ contact_name: '', contact_phone: '', province: '', city: '', district: '', detail_address: '' })
+const addrForm = ref({ contact_name: '', contact_phone: '', detail_address: '' })
 const addrSaving = ref(false)
 const addrConfirm = ref<AdminUserAddress | null>(null)
+
+// 所在地区：统一走公共地区字典下拉，禁止手输（避免脏数据影响运费按省匹配）
+const provinces = ref<RegionNode[]>([])
+const cities = ref<RegionNode[]>([])
+const districts = ref<RegionNode[]>([])
+const addrProvinceCode = ref('')
+const addrCityCode = ref('')
+const addrDistrictCode = ref('')
+const addrProvinceName = computed(() => provinces.value.find((p) => p.code === addrProvinceCode.value)?.name ?? '')
+const addrCityName = computed(() => cities.value.find((c) => c.code === addrCityCode.value)?.name ?? '')
+const addrDistrictName = computed(() => districts.value.find((d) => d.code === addrDistrictCode.value)?.name ?? '')
+
+async function onAddrProvinceChange() {
+  addrCityCode.value = ''
+  addrDistrictCode.value = ''
+  districts.value = []
+  cities.value = addrProvinceCode.value ? await listCities(addrProvinceCode.value) : []
+}
+
+async function onAddrCityChange() {
+  addrDistrictCode.value = ''
+  districts.value = addrCityCode.value ? await listDistricts(addrProvinceCode.value, addrCityCode.value) : []
+}
 
 const statusTabs: Array<{ value: '' | 0 | 1; label: string }> = [
   { value: '', label: '全部' },
@@ -124,11 +150,22 @@ function openAddrEdit(addr: AdminUserAddress) {
   addrForm.value = {
     contact_name: addr.contact_name,
     contact_phone: addr.contact_phone_full,
-    province: addr.province ?? '',
-    city: addr.city ?? '',
-    district: addr.district ?? '',
     detail_address: addr.detail_address,
   }
+  void fillAddrRegion(addr.province ?? '', addr.city ?? '', addr.district ?? '')
+}
+
+/** 按名称回填三级选择（历史地址名称若不在字典中则留空，由管理员重选） */
+async function fillAddrRegion(province: string, city: string, district: string) {
+  if (provinces.value.length === 0) provinces.value = await listProvinces()
+  const p = provinces.value.find((x) => x.name === province)
+  addrProvinceCode.value = p?.code ?? ''
+  cities.value = addrProvinceCode.value ? await listCities(addrProvinceCode.value) : []
+  const c = cities.value.find((x) => x.name === city)
+  addrCityCode.value = c?.code ?? ''
+  districts.value = addrCityCode.value ? await listDistricts(addrProvinceCode.value, addrCityCode.value) : []
+  const d = districts.value.find((x) => x.name === district)
+  addrDistrictCode.value = d?.code ?? ''
 }
 
 function requestAddrSave() {
@@ -154,9 +191,9 @@ async function doAddrSave() {
     const { data } = await updateAdminAddress(target.id, {
       contact_name: form.contact_name.trim(),
       contact_phone: form.contact_phone.trim(),
-      province: form.province.trim() || undefined,
-      city: form.city.trim() || undefined,
-      district: form.district.trim() || undefined,
+      province: addrProvinceName.value || undefined,
+      city: addrCityName.value || undefined,
+      district: addrDistrictName.value || undefined,
       detail_address: form.detail_address.trim(),
     })
     addrConfirm.value = null
@@ -476,28 +513,35 @@ onMounted(() => load())
               class="w-full rounded-md border border-slate-300 px-3 py-1.5 outline-none focus:border-[#1677ff]"
             />
           </label>
-          <div class="grid grid-cols-3 gap-2">
-            <label class="block">
-              <span class="mb-1 block text-slate-500">省</span>
-              <input
-                v-model="addrForm.province" type="text" maxlength="64"
-                class="w-full rounded-md border border-slate-300 px-3 py-1.5 outline-none focus:border-[#1677ff]"
-              />
-            </label>
-            <label class="block">
-              <span class="mb-1 block text-slate-500">市</span>
-              <input
-                v-model="addrForm.city" type="text" maxlength="64"
-                class="w-full rounded-md border border-slate-300 px-3 py-1.5 outline-none focus:border-[#1677ff]"
-              />
-            </label>
-            <label class="block">
-              <span class="mb-1 block text-slate-500">区</span>
-              <input
-                v-model="addrForm.district" type="text" maxlength="64"
-                class="w-full rounded-md border border-slate-300 px-3 py-1.5 outline-none focus:border-[#1677ff]"
-              />
-            </label>
+          <div>
+            <span class="mb-1 block text-slate-500">所在地区（省 / 市 / 区，从地区字典选择）</span>
+            <div class="grid grid-cols-3 gap-2">
+              <select
+                v-model="addrProvinceCode" data-testid="admin-addr-province"
+                class="w-full rounded-md border border-slate-300 px-2 py-1.5 outline-none focus:border-[#1677ff]"
+                @change="onAddrProvinceChange"
+              >
+                <option value="">请选择省</option>
+                <option v-for="p in provinces" :key="p.code" :value="p.code">{{ p.name }}</option>
+              </select>
+              <select
+                v-model="addrCityCode" data-testid="admin-addr-city"
+                class="w-full rounded-md border border-slate-300 px-2 py-1.5 outline-none focus:border-[#1677ff] disabled:bg-slate-50"
+                :disabled="!addrProvinceCode || cities.length === 0"
+                @change="onAddrCityChange"
+              >
+                <option value="">{{ cities.length ? '请选择市' : '—' }}</option>
+                <option v-for="c in cities" :key="c.code" :value="c.code">{{ c.name }}</option>
+              </select>
+              <select
+                v-model="addrDistrictCode" data-testid="admin-addr-district"
+                class="w-full rounded-md border border-slate-300 px-2 py-1.5 outline-none focus:border-[#1677ff] disabled:bg-slate-50"
+                :disabled="!addrCityCode || districts.length === 0"
+              >
+                <option value="">{{ districts.length ? '请选择区' : '—' }}</option>
+                <option v-for="d in districts" :key="d.code" :value="d.code">{{ d.name }}</option>
+              </select>
+            </div>
           </div>
           <label class="block">
             <span class="mb-1 block text-slate-500">详细地址 <span class="text-red-500">*</span></span>

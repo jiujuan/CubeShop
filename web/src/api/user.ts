@@ -108,7 +108,11 @@ export function setDefaultAddress(id: number) {
   return request.post<ApiResult<null>>(`/user/addresses/${id}/default`)
 }
 
-/** 行政区划（V1.1 E04 / T-028） */
+/**
+ * 行政区划原始树（服务端字典）。
+ * 前端页面统一使用本地字典库 `@/lib/region`（同一份数据，按需 chunk 加载，零网络往返）；
+ * 本接口保留给外部服务/第三方消费。
+ */
 export function getRegions() {
   return request.get<ApiResult<RegionData>>('/regions')
 }

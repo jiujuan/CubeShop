@@ -8,11 +8,16 @@
 from __future__ import annotations
 
 import json
+import os
 import sys
 import urllib.request
 
-RAW = r"D:\codeproject\PHP\CubeShop\backend\resources\data\_pca_raw.json"
-OUT = r"D:\codeproject\PHP\CubeShop\backend\resources\data\regions.json"
+# 生成目标改为本包内的单一真源（shared/region-dict/regions.json）；
+# 生成后需执行 tools/sync.py 把产物分发给 backend / web / admin。
+
+_HERE = os.path.dirname(os.path.abspath(__file__))
+RAW = os.path.join(_HERE, "_pca_raw.json")
+OUT = os.path.join(_HERE, "..", "regions.json")
 
 URLS = [
     "https://cdn.jsdelivr.net/gh/modood/Administrative-divisions-of-China@master/dist/pca-code.json",
@@ -83,7 +88,6 @@ def main() -> None:
         json.dump(tree, fh, ensure_ascii=False, separators=(",", ":"))
 
     print(f"provinces={n_prov} cities={n_city} areas={n_area}")
-    import os
     print(f"size={os.path.getsize(OUT)} bytes")
 
 
