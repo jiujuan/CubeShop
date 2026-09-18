@@ -4,6 +4,7 @@ namespace App\Services\Refund;
 
 use App\Exceptions\BusinessException;
 use App\Models\Order;
+use App\Models\OrderLog;
 use App\Models\Refund;
 use App\Models\SysOperationLog;
 use App\Services\Common\NoGeneratorService;
@@ -99,8 +100,8 @@ class RefundService
 
         try {
             $refund = DB::transaction(function () use ($order, $userId, $reason, $amount, $type, $returnDetails, $images, $opts, $refundDetails) {
-                // 状态机：paid/pending_ship/shipped/completed → refunding
-                $this->orders->transitionTo($order, Order::STATUS_REFUNDING, $reason, 'order');
+                // 状态机：paid/pending_ship/shipped/completed → refunding（买家发起，操作人归属买家）
+                $this->orders->transitionTo($order, Order::STATUS_REFUNDING, $reason, 'order', $userId, OrderLog::OPERATOR_USER);
 
                 return Refund::create([
                     'refund_no' => $this->noGenerator->generateRefundNo(),
@@ -295,7 +296,7 @@ class RefundService
                 } else {
                     // 仅退款：沙箱直接标记渠道退款成功（生产环境对接渠道退款 API）
                     $refund->status = Refund::STATUS_SUCCESS;
-                    $this->orders->transitionTo($order, Order::STATUS_REFUNDED, '退款成功', 'order');
+                    $this->orders->transitionTo($order, Order::STATUS_REFUNDED, '退款成功', 'order', $adminId, OrderLog::OPERATOR_ADMIN);
 
                     // T-036：整单全额退款 → 原样返还券（一券一单，releaseCoupon 幂等且仅返还本单占用券）；
                     // 部分退款默认不返还已使用券（防止「退了钱又白拿券」的资损）。
@@ -310,7 +311,7 @@ class RefundService
             } else {
                 $refund->status = Refund::STATUS_REJECTED;
                 // 拒绝后订单回到已支付（状态机 refunding → paid）
-                $this->orders->transitionTo($order, Order::STATUS_PAID, '退款被拒绝', 'order');
+                $this->orders->transitionTo($order, Order::STATUS_PAID, '退款被拒绝', 'order', $adminId, OrderLog::OPERATOR_ADMIN);
             }
 
             $refund->admin_remark = $adminRemark;
@@ -428,7 +429,7 @@ class RefundService
                 // 差异单不阻断退款完成，仅记录（金额以审核金额为准）
                 $refund->save();
 
-                $this->orders->transitionTo($order, Order::STATUS_REFUNDED, '退货收货完成退款', 'order');
+                $this->orders->transitionTo($order, Order::STATUS_REFUNDED, '退货收货完成退款', 'order', $adminId, OrderLog::OPERATOR_ADMIN);
 
                 // 整单退货退款且金额等于实付：返还券（与仅退款一致）
                 if (abs((float) $refund->amount - (float) $order->pay_amount) < 0.005) {

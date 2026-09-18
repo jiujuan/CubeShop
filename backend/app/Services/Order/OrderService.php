@@ -10,6 +10,7 @@ use App\Models\OrderItem;
 use App\Models\OrderLog;
 use App\Models\ProductSku;
 use App\Models\Shipping;
+use App\Models\SysOperationLog;
 use App\Models\UserAddress;
 use App\Models\UserCoupon;
 use App\Services\Common\ConfigService;
@@ -269,7 +270,7 @@ class OrderService
             'coupon_id' => $order->coupon_id,
             'promotion_discount' => $order->promotion_discount,
             'discount_amount' => $order->discount_amount,
-        ]);
+        ], SysOperationLog::ACTOR_CUSTOMER);
 
         // V1.1 T-001：创建订单的初始流水
         $this->orderLog->recordCreated($order, OrderLog::OPERATOR_USER, $userId);
@@ -619,10 +620,24 @@ class OrderService
                 'from' => $fromStatus,
                 'to' => $target,
                 'reason' => $reason,
-            ]);
+            ], $this->actorTypeOfOperator($operatorType));
 
             return $locked;
         });
+    }
+
+    /**
+     * `order_logs.operator_type` → `sys_operation_log.actor_type` 映射
+     *
+     * `sys_operation_log.user_id` 是混合语义列（管理员与买家共写），必须显式声明归属，
+     * 否则买家操作（下单/取消/确认收货）会被默认记成管理员，后台审计显示错误。
+     * 系统动作（支付回调、超时取消）归入 admin 桶，与既有默认行为一致。
+     */
+    private function actorTypeOfOperator(string $operatorType): string
+    {
+        return $operatorType === OrderLog::OPERATOR_USER
+            ? SysOperationLog::ACTOR_CUSTOMER
+            : SysOperationLog::ACTOR_ADMIN;
     }
 
     /**
