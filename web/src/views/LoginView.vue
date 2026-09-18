@@ -3,6 +3,7 @@ import { onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { Eye, EyeOff, Lock, Package, UserRound } from 'lucide-vue-next'
 import { getCaptcha, login, type Captcha } from '@/api/auth'
+import { ApiBusinessError } from '@/api/request'
 import { useAuthStore } from '@/stores/auth'
 
 /**
@@ -22,8 +23,14 @@ const errorMsg = ref('')
 
 async function refreshCaptcha() {
   captchaCode.value = ''
-  const { data } = await getCaptcha()
-  captcha.value = data.data
+  try {
+    const { data } = await getCaptcha()
+    captcha.value = data.data
+  } catch (e) {
+    // 验证码接口失败（含 429 限流）时置空并提示，避免用户拿着空 captcha_id 提交
+    captcha.value = null
+    errorMsg.value = e instanceof Error ? e.message : '验证码加载失败，请点击图片重试'
+  }
 }
 
 onMounted(refreshCaptcha)
@@ -33,20 +40,30 @@ async function submit() {
     errorMsg.value = '请填写完整登录信息'
     return
   }
+  if (!captcha.value) {
+    errorMsg.value = '验证码未加载成功，请点击验证码图片刷新后再试'
+    return
+  }
   loading.value = true
   errorMsg.value = ''
   try {
     const { data } = await login({
       username: username.value.trim(),
       password: password.value,
-      captcha_id: captcha.value!.captcha_id,
+      captcha_id: captcha.value.captcha_id,
       captcha_code: captchaCode.value.trim().toUpperCase(),
     })
     auth.setToken(data.data.token)
     await auth.fetchUser().catch(() => null)
     router.replace((route.query.redirect as string) || '/')
   } catch (e) {
-    errorMsg.value = e instanceof Error ? e.message : '登录失败'
+    if (e instanceof ApiBusinessError) {
+      // 422 时 message 只是「参数校验失败」，真正原因在 errors 里
+      const first = Object.values(e.errors ?? {}).find((list) => list?.length)
+      errorMsg.value = first?.[0] ?? e.message
+    } else {
+      errorMsg.value = e instanceof Error ? e.message : '登录失败'
+    }
     await refreshCaptcha()
   } finally {
     loading.value = false
@@ -101,7 +118,7 @@ async function submit() {
           </button>
         </div>
 
-        <p v-if="errorMsg" class="rounded-md bg-red-50 px-3 py-2 text-xs text-red-500">{{ errorMsg }}</p>
+        <p v-if="errorMsg" data-testid="login-error" class="rounded-md bg-red-50 px-3 py-2 text-xs text-red-500">{{ errorMsg }}</p>
 
         <button
           class="h-11 w-full rounded-lg bg-[#1677ff] font-medium text-white transition-colors hover:bg-[#4096ff] disabled:opacity-60"

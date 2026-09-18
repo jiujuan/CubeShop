@@ -2,6 +2,8 @@ export interface ApiResult<T = unknown> {
   code: number
   message: string
   data: T
+  /** 422 等校验失败时的字段级明细：{ 字段名: [提示...] } */
+  errors?: Record<string, string[]>
 }
 
 export interface Pagination {

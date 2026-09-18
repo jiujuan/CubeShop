@@ -3,13 +3,23 @@ import { onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { Package } from 'lucide-vue-next'
 import { getCaptcha, register, type Captcha } from '@/api/auth'
+import { ApiBusinessError } from '@/api/request'
 import { useAuthStore } from '@/stores/auth'
 
 /**
  * 用户端注册页
+ *
+ * 密码规则与后端保持一致（SEC-05：≥8 位且同时含字母与数字 + 弱口令黑名单），
+ * 提交前先本地拦截，避免用户只看到一句「参数校验失败」却不知道错在哪个字段。
  */
 const router = useRouter()
 const auth = useAuthStore()
+
+/** ≥8 位，且同时含字母与数字 */
+const PASSWORD_RULE = /^(?=.*[A-Za-z])(?=.*\d).{8,}$/
+
+/** 后端 422 字段名 → 展示优先级（验证码相关排前，避免用户误判） */
+const ERROR_FIELD_ORDER = ['code', 'captcha_id', 'password', 'account', 'username', 'phone', 'email']
 
 const username = ref('')
 const password = ref('')
@@ -21,25 +31,47 @@ const errorMsg = ref('')
 
 async function refreshCaptcha() {
   captchaCode.value = ''
-  const { data } = await getCaptcha()
-  captcha.value = data.data
+  try {
+    const { data } = await getCaptcha()
+    captcha.value = data.data
+  } catch (e) {
+    // 验证码接口本身失败（含 429 限流）时置空并提示，避免用户拿着空 captcha_id 提交
+    captcha.value = null
+    errorMsg.value = e instanceof Error ? e.message : '验证码加载失败，请点击图片重试'
+  }
 }
 
 onMounted(refreshCaptcha)
+
+/** 取后端字段级错误的第一条（按字段优先级），没有则回退整体 message */
+function firstFieldError(errors?: Record<string, string[]>): string | null {
+  if (!errors) return null
+  for (const field of ERROR_FIELD_ORDER) {
+    const msg = errors[field]?.[0]
+    if (msg) return msg
+  }
+  const rest = Object.values(errors).find((list) => list?.length)
+  return rest?.[0] ?? null
+}
 
 async function submit() {
   if (!username.value.trim() || !password.value || !captchaCode.value) {
     errorMsg.value = '请填写完整注册信息'
     return
   }
-  if (password.value.length < 8) {
-    errorMsg.value = '密码至少 8 位'
-    return
-  }
   if (password.value !== confirm.value) {
     errorMsg.value = '两次输入的密码不一致'
     return
   }
+  if (!PASSWORD_RULE.test(password.value)) {
+    errorMsg.value = '密码至少 8 位，且需同时包含字母和数字'
+    return
+  }
+  if (!captcha.value) {
+    errorMsg.value = '验证码未加载成功，请点击验证码图片刷新后再试'
+    return
+  }
+
   loading.value = true
   errorMsg.value = ''
   try {
@@ -47,14 +79,19 @@ async function submit() {
       username: username.value.trim(),
       password: password.value,
       password_confirmation: confirm.value,
-      captcha_id: captcha.value!.captcha_id,
+      captcha_id: captcha.value.captcha_id,
       code: captchaCode.value.trim().toUpperCase(),
     })
     auth.setToken(data.data.token)
     await auth.fetchUser().catch(() => null)
     router.replace('/')
   } catch (e) {
-    errorMsg.value = e instanceof Error ? e.message : '注册失败'
+    if (e instanceof ApiBusinessError) {
+      // 422 时 message 只是「参数校验失败」，真正的字段原因在 errors 里
+      errorMsg.value = firstFieldError(e.errors) ?? e.message
+    } else {
+      errorMsg.value = e instanceof Error ? e.message : '注册失败'
+    }
     await refreshCaptcha()
   } finally {
     loading.value = false
@@ -83,7 +120,7 @@ async function submit() {
           class="h-11 w-full rounded-lg border border-slate-200 px-3 outline-none focus:border-[#1677ff]"
         />
         <input
-          v-model="password" type="password" placeholder="密码（至少 8 位）"
+          v-model="password" type="password" placeholder="密码（≥8 位，含字母和数字）"
           class="h-11 w-full rounded-lg border border-slate-200 px-3 outline-none focus:border-[#1677ff]"
         />
         <input
@@ -101,7 +138,7 @@ async function submit() {
           </button>
         </div>
 
-        <p v-if="errorMsg" class="rounded-md bg-red-50 px-3 py-2 text-xs text-red-500">{{ errorMsg }}</p>
+        <p v-if="errorMsg" data-testid="register-error" class="rounded-md bg-red-50 px-3 py-2 text-xs text-red-500">{{ errorMsg }}</p>
 
         <button
           class="h-11 w-full rounded-lg bg-[#1677ff] font-medium text-white transition-colors hover:bg-[#4096ff] disabled:opacity-60"
