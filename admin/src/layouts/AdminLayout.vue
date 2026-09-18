@@ -2,7 +2,7 @@
 import { computed, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import {
-  BarChart3, BookOpen, Box, ChevronDown, ChevronRight, ChevronsLeft, ChevronsRight, ClipboardList, CreditCard, FileClock, FolderTree, History, Images, LayoutDashboard, LayoutList, LifeBuoy, ListTree, LogOut, MapPinned, MessageSquare, Megaphone, Package, RotateCcw, ScrollText, Settings, ShieldCheck, SquareUser, Tags, Truck, UploadCloud, UserCog, UserRound, Users, Wallet, Ticket,
+  BarChart3, BookOpen, Box, Calculator, ChevronDown, ChevronRight, ChevronsLeft, ChevronsRight, ClipboardList, CreditCard, FileClock, FolderTree, History, Images, LayoutDashboard, LayoutList, LifeBuoy, ListTree, LogOut, MapPinned, MessageSquare, Megaphone, Package, RotateCcw, ScrollText, Settings, ShieldCheck, SquareUser, Tags, Truck, UploadCloud, UserCog, UserRound, Users, Wallet, Ticket,
 } from 'lucide-vue-next'
 import { useAuthStore } from '@/stores/auth'
 
@@ -51,6 +51,7 @@ const icons: Record<string, unknown> = {
   UploadCloud,
   MapPinned,
   Truck,
+  Calculator,
   Ticket,
   LifeBuoy,
   BookOpen,
@@ -134,6 +135,7 @@ const menuGroups = computed<MenuGroup[]>(() => {
         { path: '/roles', title: '角色权限', icon: 'ShieldCheck', permission: 'role.manage' },
         { path: '/payment-channels', title: '支付渠道配置', icon: 'CreditCard', permission: 'payment.channel.manage' },
         { path: '/shipping-companies', title: '快递公司字典', icon: 'Truck', permission: 'shipping.manage' },
+        { path: '/freight-templates', title: '运费模板', icon: 'Calculator', permission: 'shipping.manage' },
       ],
     },
   ]

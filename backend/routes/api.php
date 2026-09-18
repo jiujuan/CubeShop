@@ -73,6 +73,7 @@ Route::get('/brands', [StorefrontAttributeController::class, 'brands']);
 
 // 行政区划（V1.1 E04 / T-028，无需登录，可缓存）
 Route::get('/regions', [AddressController::class, 'regions']);
+Route::get('/regions/provinces', [AddressController::class, 'provinces']);
 
 // 领券中心（V1.1 二期 F06 / T-033，无需登录；登录后附带个人领取状态）
 Route::get('/coupons', [StorefrontCouponController::class, 'center']);
