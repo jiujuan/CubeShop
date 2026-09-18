@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Models\Traits\HasPublicId;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
@@ -10,6 +11,8 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  */
 class UserAddress extends Model
 {
+    use HasPublicId;
+
     protected $table = 'user_addresses';
     protected $fillable = [
         'user_id', 'contact_name', 'contact_phone',

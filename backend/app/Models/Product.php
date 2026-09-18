@@ -6,13 +6,14 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use App\Models\Traits\HasPublicId;
 
 /**
  * 商品主表
  */
 class Product extends Model
 {
-    use SoftDeletes;
+    use SoftDeletes, HasPublicId;
 
     protected $table = 'products';
     protected $fillable = [
