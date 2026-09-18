@@ -22,8 +22,8 @@ export interface ReceivableCoupon {
   min_spend: number
   scope: CouponScope
   scope_label: string
-  /** 命中范围 id（scope=all 时为空数组；T-038 详情页过滤用） */
-  scope_refs: number[]
+  /** 命中范围 id（scope=all 时为空数组；T-038 详情页过滤用，public_id 字符串） */
+  scope_refs: string[]
   valid_type: CouponValidType
   valid_to: string | null
   valid_days: number | null
@@ -133,7 +133,7 @@ export interface PromotionDisplay {
   promotion_id: number
   name: string
   scope: CouponScope
-  scope_refs: number[]
+  scope_refs: Array<string | number>
   base_amount: number
   current_tier: { min: number; discount: number } | null
   discount: number
