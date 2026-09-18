@@ -53,7 +53,7 @@ request.interceptors.response.use(
     } else {
       showBusinessError(body.code, body.message)
     }
-    return Promise.reject(new ApiBusinessError(body.code, body.message))
+    return Promise.reject(new ApiBusinessError(body.code, body.message, body.data))
   },
   (error: AxiosError<ApiResult>) => {
     const body = error.response?.data
@@ -68,17 +68,17 @@ request.interceptors.response.use(
     if (body?.code === 40000 || error.response?.status === 422) {
       const msg = body?.message || '参数校验失败，请检查表单'
       showBusinessError(40000, msg)
-      return Promise.reject(new ApiBusinessError(40000, msg))
+      return Promise.reject(new ApiBusinessError(40000, msg, body?.data))
     }
 
     // 无权限
     if (body?.code === 40003) {
       showBusinessError(40003, body?.message || '无权限执行此操作')
-      return Promise.reject(new ApiBusinessError(40003, body?.message || '无权限'))
+      return Promise.reject(new ApiBusinessError(40003, body?.message || '无权限', body?.data))
     }
 
     showBusinessError(body?.code ?? error.response?.status ?? -1, body?.message || error.message || '网络异常，请稍后重试')
-    return Promise.reject(new ApiBusinessError(body?.code ?? -1, body?.message || error.message))
+    return Promise.reject(new ApiBusinessError(body?.code ?? -1, body?.message || error.message, body?.data))
   },
 )
 
@@ -86,6 +86,8 @@ export class ApiBusinessError extends Error {
   constructor(
     public code: number,
     message: string,
+    /** 业务错误携带的附加数据（如批量发货失败明细） */
+    public data?: unknown,
   ) {
     super(message)
     this.name = 'ApiBusinessError'
