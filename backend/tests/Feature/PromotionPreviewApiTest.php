@@ -96,3 +96,27 @@ test('TC-PRV-039-004 未登录拒绝访问', function () {
     ]))->assertStatus(401);
 });
 
+// ---------- P2-11：行项目 id 为 public_id（结算页入参口径，修复 422） ----------
+
+test('TC-PRV-039-005 product_id 支持 public_id（ULID 字符串）且仍命中分类活动', function () {
+    $auth = t039Auth();
+    $categoryId = createTestCategory();
+    $product = \App\Models\Product::create([
+        'category_id' => $categoryId,
+        'title' => 'T039商品'.uniqid(),
+        'price' => '120.00',
+        'status' => 1,
+    ]);
+    t039Promo(['scope' => Promotion::SCOPE_CATEGORY, 'scope_refs' => [$categoryId]]);
+
+    // 前端结算页传的是商品 public_id 字符串（此前被 validate('integer') 拦成 422）
+    $res = $this->getJson('/api/promotions/preview?'.http_build_query([
+        'items' => [['product_id' => $product->public_id, 'price' => 120, 'quantity' => 1]],
+    ]), $auth)->assertOk();
+
+    $promo = $res->json('data.promotion');
+    expect($promo)->not->toBeNull()
+        ->and($promo['scope'])->toBe('category')
+        ->and($promo['discount'])->toBe(10);
+});
+

@@ -31,8 +31,10 @@ class PromotionController extends Controller
     {
         $data = $request->validate([
             'items' => ['required', 'array', 'min:1'],
-            'items.*.product_id' => ['nullable', 'integer', 'min:1'],
-            'items.*.category_id' => ['nullable', 'integer', 'min:1'],
+            // P2-11：product_id/category_id 为 public_id（ULID 字符串）或历史 int，
+            // 由 CouponService::buildContext 统一 resolve 回内部主键（勿在此限制 integer，否则 422）
+            'items.*.product_id' => ['nullable'],
+            'items.*.category_id' => ['nullable'],
             'items.*.price' => ['required', 'numeric', 'min:0'],
             'items.*.quantity' => ['required', 'integer', 'min:1'],
         ]);

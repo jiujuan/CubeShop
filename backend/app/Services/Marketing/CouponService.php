@@ -318,11 +318,20 @@ class CouponService
         $needLookup = [];
 
         foreach (array_values($items) as $i => $item) {
-            $pid = isset($item['product_id']) ? (int) $item['product_id'] : null;
+            // P2-11：前台出口的 product_id/sku_id/category_id 均为 public_id（ULID 字符串），
+            // 此处统一解析回内部 int 主键（兼容历史 int 与纯数字字符串）；
+            // 内部调用方（OrderService）传的本就是 int，resolve 短路返回，无额外查询。
+            $pid = isset($item['product_id'])
+                ? PublicId::resolve(PublicId::SCOPE_PRODUCT, $item['product_id'])
+                : null;
             $normalized[$i] = [
                 'product_id' => $pid,
-                'sku_id' => isset($item['sku_id']) ? (int) $item['sku_id'] : null,
-                'category_id' => isset($item['category_id']) ? (int) $item['category_id'] : null,
+                'sku_id' => isset($item['sku_id'])
+                    ? PublicId::resolve(PublicId::SCOPE_SKU, $item['sku_id'])
+                    : null,
+                'category_id' => isset($item['category_id'])
+                    ? PublicId::resolve(PublicId::SCOPE_CATEGORY, $item['category_id'])
+                    : null,
                 'price' => $item['price'] ?? 0,
                 'quantity' => $item['quantity'] ?? 0,
             ];

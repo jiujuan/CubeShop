@@ -73,8 +73,10 @@ class CouponController extends Controller
         $data = $request->validate([
             'amount' => ['required', 'numeric', 'min:0'],
             'items' => ['nullable', 'array'],
-            'items.*.product_id' => ['nullable', 'integer', 'min:1'],
-            'items.*.category_id' => ['nullable', 'integer', 'min:1'],
+            // P2-11：product_id/category_id 为 public_id（ULID 字符串）或历史 int，
+            // 由 CouponService::buildContext 统一 resolve 回内部主键（勿在此限制 integer，否则 422）
+            'items.*.product_id' => ['nullable'],
+            'items.*.category_id' => ['nullable'],
             'items.*.price' => ['required_with:items', 'numeric', 'min:0'],
             'items.*.quantity' => ['required_with:items', 'integer', 'min:1'],
         ]);

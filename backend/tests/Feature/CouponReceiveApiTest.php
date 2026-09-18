@@ -197,6 +197,25 @@ test('TC-CPN-033-011 可用券：指定商品范围按命中金额判定', funct
     expect(collect($res->json('data.usable'))->pluck('coupon_id')->all())->toBe([$hit->id]);
 });
 
+// ---------- P2-11：items 行项目 id 为 public_id（结算页入参口径，修复 422） ----------
+
+test('TC-CPN-033-015 可用券：items product_id 支持 public_id（ULID 字符串）入参', function () {
+    $sku = createTestSku(stock: 10, price: '60.00');
+    $product = $sku->product;
+    $productId = $sku->product_id;
+
+    $u = createTestUser('avail_pubid');
+    $auth = ['Authorization' => 'Bearer '.$u->createToken('t')->plainTextToken];
+
+    $hit = makeCoupon(['scope' => Coupon::SCOPE_PRODUCT, 'scope_refs' => [$productId], 'min_spend' => '50.00']);
+    UserCoupon::create(['user_id' => $u->id, 'coupon_id' => $hit->id, 'status' => UserCoupon::STATUS_UNUSED, 'expire_at' => now()->addDays(7)]);
+
+    // 前端结算页传的是商品 public_id 字符串（此前被 validate('integer') 拦成 422）
+    $res = $this->getJson("/api/coupons/available?amount=60&items[0][product_id]={$product->public_id}&items[0][price]=60&items[0][quantity]=1", $auth)->assertOk();
+
+    expect(collect($res->json('data.usable'))->pluck('coupon_id')->all())->toBe([$hit->id]);
+});
+
 test('TC-CPN-033-012 领券中心：登录后附带个人领取状态', function () {
     $coupon = makeCoupon();
     $auth = buyerAuth();
