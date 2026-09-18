@@ -11,7 +11,8 @@ import {
   type AttributeRow, type BrandRow, type CategoryTemplate,
 } from '@/api/attribute'
 import { Button } from '@/components/ui/button'
-import RichTextEditor from '@/components/RichTextEditor.vue'
+import { MdEditor } from 'md-editor-v3'
+import 'md-editor-v3/lib/style.css'
 
 /**
  * 商品新建/编辑/查看（V1.1 E01 / T-010，五步式）
@@ -44,7 +45,7 @@ const form = ref({
   video_url: '',
   status: 0,
   sort: 100,
-  description: '',
+  description_md: '',
 })
 
 // ---------- 图片 ----------
@@ -328,7 +329,7 @@ onMounted(async () => {
       video_url: p.video_url ?? '',
       status: p.status,
       sort: p.sort ?? 100,
-      description: p.description ?? '',
+      description_md: p.description_md ?? '',
     }
     mainImage.value = p.main_image ?? ''
     detailImages.value = p.images ?? []
@@ -404,6 +405,34 @@ async function onCategoryChange() {
   await loadTemplate(form.value.category_id)
 }
 
+// ---------- 详情正文（md-editor-v3，与帮助中心文章编辑器一致） ----------
+//
+// 正文的源是 Markdown（存 description_md），HTML 产物由后端 MarkdownRenderer 渲染 +
+// HtmlSanitizer 白名单净化后写入 description —— 前端不做净化，也不生成 HTML。
+// 注意：编辑器内置预览用的是它自带的 markdown-it，与后端渲染口径可能有细微差异，
+// 以用户端详情页看到的效果为准。
+
+/**
+ * md-editor-v3 的图片上传钩子：复用后台统一上传接口 `POST /api/admin/upload`，
+ * 拿到 url 后回填让编辑器插入 markdown 图片语法。
+ */
+async function onUploadImg(
+  files: File[],
+  callback: (urls: Array<{ url: string; alt: string; title: string }>) => void,
+) {
+  try {
+    const results = await Promise.all(files.map((f) => uploadImage(f)))
+    callback(results.map(({ data }, i) => ({
+      url: data.data.url,
+      alt: files[i]?.name ?? '图片',
+      title: files[i]?.name ?? '',
+    })))
+  } catch (e) {
+    callback([])
+    errorMsg.value = e instanceof Error ? e.message : '图片上传失败'
+  }
+}
+
 // ---------- 保存 ----------
 const saving = ref(false)
 const errorMsg = ref('')
@@ -420,7 +449,7 @@ function buildPayload(): ProductPayload {
     title: form.value.title.trim(),
     subtitle: form.value.subtitle,
     main_image: mainImage.value || null,
-    description: form.value.description,
+    description_md: form.value.description_md,
     status: form.value.status,
     sort: form.value.sort,
     brand_id: form.value.brand_id,
@@ -807,7 +836,14 @@ function cancel() {
               <input ref="detailFileRef" type="file" accept="image/jpeg,image/png,image/webp" class="hidden" @change="onDetailChange" />
             </div>
           </div>
-          <RichTextEditor v-model="form.description" placeholder="请输入商品详情..." />
+          <MdEditor
+            v-model="form.description_md"
+            language="zh-CN"
+            :toolbars-exclude="['github', 'save']"
+            :style="{ height: '420px' }"
+            :on-upload-img="onUploadImg"
+            data-testid="product-form-description"
+          />
         </div>
       </section>
 

@@ -137,6 +137,18 @@ const router = createRouter({
       meta: { title: '消息通知 · CubeShop', requiresAuth: true },
     },
     {
+      path: '/announcements',
+      name: 'announcements',
+      component: () => import('@/views/AnnouncementListView.vue'),
+      meta: { title: '公告 · CubeShop' },
+    },
+    {
+      path: '/announcements/:id',
+      name: 'announcement-detail',
+      component: () => import('@/views/AnnouncementDetailView.vue'),
+      meta: { title: '公告详情 · CubeShop' },
+    },
+    {
       path: '/service-center',
       name: 'service-center',
       component: () => import('@/views/ServiceCenterView.vue'),

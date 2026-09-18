@@ -57,6 +57,8 @@ class RolePermissionSeeder extends Seeder
         'inventory.manage',
         // V1.1 二期（T-032）营销管理：优惠券与满减活动
         'marketing.manage',
+        // 公告管理（P-Announcement）：运营可自助发布/管理前台公告
+        'announcement.manage',
         // 收银台与支付渠道（payment.channel.manage 仅超管，另两个运营也有）
         'payment.channel.manage',
         'payment.offline.review',
@@ -105,6 +107,8 @@ class RolePermissionSeeder extends Seeder
             'review.manage', 'report.view', 'inventory.manage',
             // 营销管理（V1.1 二期 T-032）：运营可自助发券/建满减活动
             'marketing.manage',
+            // 公告管理（P-Announcement）：运营可自助发布/管理前台公告
+            'announcement.manage',
             // 支付只读（查看支付单/支付日志）+ 订单流水；关闭支付单需超管
             'payment.view', 'order.log',
             // 收银台：线下核账 + 充值单查看（渠道配置为超管专属）

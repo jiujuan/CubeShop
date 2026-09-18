@@ -2,6 +2,9 @@
 
 namespace App\Models;
 
+use App\Models\Traits\HasPublicId;
+use App\Support\HtmlSanitizer;
+use App\Support\MarkdownRenderer;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 
@@ -12,9 +15,14 @@ use Illuminate\Database\Eloquent\Model;
  * 不做软删除（配置类数据）。
  *
  * 前台可见口径 = `status = published` 且 `published_at <= now()`（未到发布时间的定时公告不出现）。
+ *
+ * 正文：content_md 为 markdown 源（后台 md-editor-v3 编辑），content 是由模型 saving 钩子
+ * 经 MarkdownRenderer 渲染 + HtmlSanitizer 白名单净化派生出的 HTML（与帮助中心文章、商品详情同一套不变式）。
  */
 class CsAnnouncement extends Model
 {
+    use HasPublicId;
+
     public const STATUS_DRAFT = 'draft';
     public const STATUS_PUBLISHED = 'published';
     public const STATUS_OFFLINE = 'offline';
@@ -28,13 +36,23 @@ class CsAnnouncement extends Model
     protected $table = 'cs_announcement';
 
     protected $fillable = [
-        'title', 'content', 'is_top', 'status', 'published_at', 'created_by',
+        'title', 'content', 'content_md', 'is_top', 'status', 'published_at', 'created_by',
     ];
 
     protected $casts = [
         'is_top' => 'boolean',
         'published_at' => 'datetime',
     ];
+
+    protected static function booted(): void
+    {
+        // content_md 变更时派生 content(HTML)；未提供 content_md 时保留原 content（兼容存量行）
+        static::saving(function (self $model): void {
+            if ($model->isDirty('content_md') && $model->content_md !== null) {
+                $model->content = HtmlSanitizer::clean(MarkdownRenderer::toHtml($model->content_md));
+            }
+        });
+    }
 
     public function statusLabel(): string
     {
