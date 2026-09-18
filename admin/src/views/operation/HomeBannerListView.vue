@@ -13,14 +13,15 @@ import LoadingSpinner from '@/components/LoadingSpinner.vue'
 /**
  * 首页广告位管理（P-HomeBanner，权限 home.manage）
  *
- * UI 与营销管理页同款：标题旁 Tab 药丸（主轮播图 / 中部广告位 / 底部广告位）+
- * 面板内工具行（搜索/重置/新建）+ 表格 + 内联分页 + Teleport 弹层。
+ * UI 与营销管理页同款：标题旁 Tab 药丸（全部广告 / 主轮播图 / 中部广告位 / 底部广告位，
+ * 默认「全部广告」）+ 面板内工具行（搜索/重置/新建）+ 表格 + 内联分页 + Teleport 弹层。
  * 每条记录：图片 + 大标题 + 小标题 + 跳转链接 + 排序 + 启用。
  */
-type Tab = BannerPosition
-const tab = ref<Tab>('banner')
+type Tab = 'all' | BannerPosition
+const tab = ref<Tab>('all')
 
 const tabs: Array<{ key: Tab; label: string; hint: string }> = [
+  { key: 'all', label: '全部广告', hint: '全部位置的广告（按位置+排序）' },
   { key: 'banner', label: '主轮播图', hint: '首页多张自动轮播' },
   { key: 'promo', label: '中部广告位', hint: '建议 4 张' },
   { key: 'bottom', label: '底部广告位', hint: '建议 2 张' },
@@ -37,7 +38,7 @@ async function load() {
   try {
     const { data } = await getHomeBanners({
       keyword: keyword.value || undefined,
-      position: tab.value,
+      position: tab.value === 'all' ? undefined : tab.value,
       page: pagination.value.page,
       per_page: pagination.value.page_size,
     })
@@ -100,7 +101,8 @@ interface BannerForm {
 }
 
 function emptyForm(): BannerForm {
-  return { position: tab.value, image: '', title: '', subtitle: '', link_url: '', sort_order: 0, is_enabled: true }
+  // 「全部广告」Tab 下新建默认落在主轮播图
+  return { position: tab.value === 'all' ? 'banner' : tab.value, image: '', title: '', subtitle: '', link_url: '', sort_order: 0, is_enabled: true }
 }
 const form = ref<BannerForm>(emptyForm())
 
@@ -253,6 +255,7 @@ async function confirmDelete() {
       <thead>
         <tr class="border-b border-slate-200 text-left text-slate-500">
           <th class="px-3 py-1.5">图片</th>
+          <th class="px-3 py-1.5">位置</th>
           <th class="px-3 py-1.5">大标题</th>
           <th class="px-3 py-1.5">小标题</th>
           <th class="px-3 py-1.5">跳转链接</th>
@@ -264,6 +267,9 @@ async function confirmDelete() {
       <tbody>
         <tr v-for="row in rows" :key="row.id" class="border-b border-slate-50 hover:bg-slate-50/60">
           <td class="px-3 py-2"><img :src="row.image" alt="" class="h-10 w-16 rounded object-cover" /></td>
+          <td class="px-3 py-2">
+            <span class="rounded bg-slate-100 px-1.5 py-0.5 text-xs text-slate-600">{{ row.position_label }}</span>
+          </td>
           <td class="max-w-[220px] px-3 py-2">
             <div class="truncate font-medium text-slate-700" :title="row.title">{{ row.title }}</div>
           </td>
@@ -293,18 +299,18 @@ async function confirmDelete() {
           </td>
         </tr>
         <tr v-if="loading">
-          <td colspan="7"><LoadingSpinner /></td>
+          <td colspan="8"><LoadingSpinner /></td>
         </tr>
         <tr v-if="!rows.length && !loading">
-          <td colspan="7" class="px-3 py-12 text-center text-slate-400" data-testid="banner-empty">
+          <td colspan="8" class="px-3 py-12 text-center text-slate-400" data-testid="banner-empty">
             暂无广告位，点击右上角「新建广告位」添加
           </td>
         </tr>
       </tbody>
     </table>
 
-    <!-- 分页（与营销管理同款内联分页） -->
-    <div v-if="pagination.total_pages > 1" class="mt-4 flex items-center justify-between text-[13px] text-slate-500">
+    <!-- 分页（与营销管理同款内联分页，始终显示） -->
+    <div class="mt-4 flex items-center justify-between text-[13px] text-slate-500">
       <span>共 {{ pagination.total }} 条记录 / 每页 {{ pagination.page_size }} 条</span>
       <div class="flex items-center gap-1">
         <button
