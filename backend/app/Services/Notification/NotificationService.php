@@ -26,6 +26,11 @@ class NotificationService
     public const TYPE_PASSWORD_CHANGED = 'password_changed';
     public const TYPE_LOW_STOCK = 'low_stock';
 
+    // 客户服务中心（CS-107）
+    public const TYPE_CS_TICKET_NEW = 'cs_ticket_new';
+    public const TYPE_CS_TICKET_REPLY = 'cs_ticket_reply';
+    public const TYPE_CS_TICKET_STATUS = 'cs_ticket_status';
+
     public function __construct(private ConfigService $config)
     {
     }
@@ -76,6 +81,34 @@ class NotificationService
                 $this->send($user->id, $type, $title, $content, $link, Notification::RECEIVER_ADMIN);
                 $count++;
             });
+
+        return $count;
+    }
+
+    /**
+     * 向持有某权限的后台管理员发送通知
+     *
+     * 适用场景：收件人不是一个固定角色名，而是「谁有权处理这件事」——例如客服工单，
+     * 未来新增客服专属角色时可自动覆盖，无需改代码。
+     */
+    public function sendToPermission(string $permission, string $type, string $title, string $content, ?string $link = null): int
+    {
+        $count = 0;
+        SysUser::query()
+            ->where('status', 1)
+            ->permission($permission)
+            ->cursor()
+            ->each(function (SysUser $user) use ($type, $title, $content, $link, &$count) {
+                $this->send($user->id, $type, $title, $content, $link, Notification::RECEIVER_ADMIN);
+                $count++;
+            });
+
+        if ($count === 0) {
+            \Illuminate\Support\Facades\Log::warning('[Notify] 权限收件人为空，通知无人接收', [
+                'permission' => $permission,
+                'type' => $type,
+            ]);
+        }
 
         return $count;
     }

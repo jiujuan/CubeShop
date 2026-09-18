@@ -8,6 +8,7 @@ use App\Models\Product;
 use App\Models\ProductSku;
 use App\Services\Inventory\InventoryService;
 use App\Support\ApiResponse;
+use App\Support\PublicId;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -30,7 +31,7 @@ class CartController extends Controller
 
         $items = CartItem::query()
             ->where('user_id', $userId)
-            ->with(['sku:id,product_id,specs,price,status', 'sku.product:id,title,main_image,status'])
+            ->with(['sku:id,public_id,product_id,specs,price,status', 'sku.product:id,public_id,title,main_image,status'])
             ->orderByDesc('id')
             ->get();
 
@@ -61,8 +62,9 @@ class CartController extends Controller
 
             $list[] = [
                 'id' => $item->id,
-                'sku_id' => $item->sku_id,
-                'product_id' => $sku?->product_id,
+                // P2-11 终态：SKU / 商品主键属平台资源，对外只给 public_id（购物车项 id 为本人资源，保持原样）
+                'sku_id' => $sku?->public_id,
+                'product_id' => $sku?->product?->public_id,
                 'title' => $product?->title ?? '商品已删除',
                 'specs' => $sku?->specs ?? [],
                 'image' => $product?->main_image,
@@ -86,11 +88,16 @@ class CartController extends Controller
     public function store(Request $request): JsonResponse
     {
         $data = $request->validate([
-            'sku_id' => ['required', 'integer'],
+            // SEC-04-B：接受 public_id（字符串）或历史 int 主键
+            'sku_id' => ['required'],
             'quantity' => ['required', 'integer', 'min:1', 'max:999'],
         ]);
 
-        $sku = ProductSku::with('product:id,status')->find($data['sku_id']);
+        $skuId = PublicId::resolve(PublicId::SCOPE_SKU, $data['sku_id']);
+        $sku = $skuId === null
+            ? null
+            : ProductSku::with('product:id,status')->find($skuId);
+
         if (! $sku || (int) $sku->product->status !== 1) {
             throw BusinessException::notFound('商品不存在或已下架');
         }

@@ -27,7 +27,6 @@ class HealthController extends Controller
         $data = [
             'status' => $dbOk ? 'ok' : 'degraded',
             'app' => config('app.name'),
-            'env' => config('app.env'),
             'time' => now()->toIso8601String(),
             'database' => [
                 'ok' => $dbOk,
