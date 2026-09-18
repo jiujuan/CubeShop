@@ -62,7 +62,8 @@ test('TC-FAV-004 收藏列表返回商品字段与失效标记', function () {
     $resp = $this->getJson('/api/me/favorites', $this->auth)->json();
     expect($resp['code'])->toBe(0)
         ->and($resp['data']['list'])->toHaveCount(1)
-        ->and($resp['data']['list'][0]['id'])->toBe($this->productId)
+        // SEC-04-B：对外只给 public_id，需用 PublicId 还原后再比对
+        ->and($resp['data']['list'][0]['id'])->toBe(\App\Support\PublicId::encode(\App\Support\PublicId::SCOPE_PRODUCT, (int) $this->productId))
         ->and($resp['data']['list'][0]['is_available'])->toBeTrue()
         ->and($resp['data']['list'][0]['price'])->toBe('58.00');
 });
@@ -120,7 +121,7 @@ test('TC-FAV-009 足迹列表按最近浏览倒序并含浏览时间', function 
 
     $list = $this->getJson('/api/me/histories', $this->auth)->json('data.list');
     expect($list)->toHaveCount(2)
-        ->and($list[0]['id'])->toBe($sku2->product_id) // 最后浏览置顶
+        ->and($list[0]['id'])->toBe(\App\Support\PublicId::encode(\App\Support\PublicId::SCOPE_PRODUCT, (int) $sku2->product_id)) // 最后浏览置顶
         ->and($list[0]['browsed_at'])->not->toBeNull();
 });
 

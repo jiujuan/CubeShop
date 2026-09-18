@@ -1,6 +1,7 @@
 <?php
 
 use App\Services\Common\CaptchaService;
+use App\Support\PublicId;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);
@@ -70,14 +71,16 @@ test('TC-CART-004 删除购物车商品', function () {
     addToCart($this, $this->auth, $skuB->id, 1);
 
     $items = $this->getJson('/api/cart', $this->auth)->json('data.items');
-    $targetId = collect($items)->firstWhere('sku_id', $skuB->id)['id'];
+    // SEC-04-B：购物车项的 sku_id 对外为 public_id
+    $targetId = collect($items)->firstWhere('sku_id', PublicId::encode(PublicId::SCOPE_SKU, (int) $skuB->id))['id'];
 
     $resp = $this->deleteJson("/api/cart/{$targetId}", [], $this->auth);
 
     $remaining = $this->getJson('/api/cart', $this->auth)->json('data.items');
     expect($resp->json('code'))->toBe(0)
         ->and(count($remaining))->toBe(1)
-        ->and($remaining[0]['sku_id'])->toBe($this->sku->id);
+        // SEC-04-B：sku_id 对外为 public_id
+        ->and($remaining[0]['sku_id'])->toBe(PublicId::encode(PublicId::SCOPE_SKU, (int) $this->sku->id));
 });
 
 // CART-005 数量非法

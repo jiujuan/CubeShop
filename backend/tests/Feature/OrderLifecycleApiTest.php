@@ -16,6 +16,7 @@ uses(RefreshDatabase::class);
 beforeEach(function () {
     seedRoles();
     config(['app.debug' => true]);
+    $this->seed(\Database\Seeders\ExpressCompanySeeder::class); // T-043 发货需要快递字典
 
     // 管理员
     $cap = app(CaptchaService::class)->generate();
@@ -58,11 +59,11 @@ function makeShippedOrder($test, string $skuPrice = '50.00'): int
     $payNo = $pay['payment_no'] ?? ($pay['pay_params']['payment_no'] ?? null);
     $test->postJson("/api/payments/sandbox/{$payNo}", [], $test->userAuth);
 
-    $test->postJson("/api/admin/orders/{$order['order_id']}/ship", [
-        'remark' => '已发出',
+    $test->postJson('/api/admin/orders/'.oid($order['order_id']).'/ship', [
+        'express_company_code' => 'SF', 'tracking_no' => 'SF'.strtoupper(substr(uniqid(), 0, 12)),
     ], $test->adminAuth)->assertStatus(200);
 
-    return $order['order_id'];
+    return oid($order['order_id']);
 }
 
 // T-001：下单后即产生创建流水
@@ -70,7 +71,7 @@ test('TC-LIFE-001 下单产生创建流水且操作人为 user', function () {
     $this->postJson('/api/cart', ['sku_id' => $this->sku->id, 'quantity' => 1], $this->userAuth);
     $order = $this->postJson('/api/orders', ['address_id' => $this->addressId], $this->userAuth)->json('data');
 
-    $logs = OrderLog::where('order_id', $order['order_id'])->orderBy('id')->get();
+    $logs = OrderLog::where('order_id', oid($order['order_id']))->orderBy('id')->get();
 
     expect($logs)->toHaveCount(1)
         ->and($logs[0]->from_status)->toBeNull()
@@ -83,7 +84,7 @@ test('TC-LIFE-001 下单产生创建流水且操作人为 user', function () {
 test('TC-LIFE-002 支付与发货各写一条流水且顺序正确', function () {
     $orderId = makeShippedOrder($this);
 
-    $logs = OrderLog::where('order_id', $orderId)->orderBy('id')->get();
+    $logs = OrderLog::where('order_id', oid($orderId))->orderBy('id')->get();
 
     expect($logs->pluck('to_status')->all())
         ->toBe([
@@ -116,12 +117,12 @@ test('TC-LIFE-003 已发货订单确认收货成功', function () {
         ->and($resp->json('data.status'))->toBe(Order::STATUS_COMPLETED)
         ->and($resp->json('data.completed_at'))->not->toBeNull();
 
-    $order = Order::find($orderId);
+    $order = Order::find(oid($orderId));
     expect($order->completed_at)->not->toBeNull()
         ->and($order->auto_completed)->toBeFalse();
 
     // 流水：完成节点 operator_type = user
-    $last = OrderLog::where('order_id', $orderId)->orderByDesc('id')->first();
+    $last = OrderLog::where('order_id', oid($orderId))->orderByDesc('id')->first();
     expect($last->to_status)->toBe(Order::STATUS_COMPLETED)
         ->and($last->operator_type)->toBe(OrderLog::OPERATOR_USER)
         ->and($last->from_status)->toBe(Order::STATUS_SHIPPED);
@@ -137,7 +138,7 @@ test('TC-LIFE-004 重复确认收货幂等且只产生一条完成流水', funct
     expect($second->json('code'))->toBe(0)
         ->and($second->json('data.status'))->toBe(Order::STATUS_COMPLETED);
 
-    expect(OrderLog::where('order_id', $orderId)->where('to_status', Order::STATUS_COMPLETED)->count())->toBe(1);
+    expect(OrderLog::where('order_id', oid($orderId))->where('to_status', Order::STATUS_COMPLETED)->count())->toBe(1);
 });
 
 // T-002：未发货订单确认收货被拒
@@ -186,12 +187,12 @@ test('TC-LIFE-009 超过配置天数自动确认收货且标记来源', function
 
     $this->artisan('orders:auto-complete')->assertExitCode(0);
 
-    $order = Order::find($orderId);
+    $order = Order::find(oid($orderId));
     expect($order->status)->toBe(Order::STATUS_COMPLETED)
         ->and($order->auto_completed)->toBeTrue()
         ->and($order->completed_at)->not->toBeNull();
 
-    $last = OrderLog::where('order_id', $orderId)->orderByDesc('id')->first();
+    $last = OrderLog::where('order_id', oid($orderId))->orderByDesc('id')->first();
     expect($last->to_status)->toBe(Order::STATUS_COMPLETED)
         ->and($last->operator_type)->toBe(OrderLog::OPERATOR_SYSTEM)
         ->and($last->remark)->toContain('自动确认');
@@ -204,7 +205,7 @@ test('TC-LIFE-010 未超期订单不被自动确认', function () {
 
     $this->artisan('orders:auto-complete')->assertExitCode(0);
 
-    expect(Order::find($orderId)->status)->toBe(Order::STATUS_SHIPPED);
+    expect(Order::find(oid($orderId))->status)->toBe(Order::STATUS_SHIPPED);
 });
 
 // T-003：时间边界（刚好 7 天 / 6天23小时 / 8天）
@@ -217,8 +218,8 @@ test('TC-LIFE-011 自动确认收货时间边界判定', function () {
 
     $this->artisan('orders:auto-complete')->assertExitCode(0);
 
-    expect(Order::find($exact)->status)->toBe(Order::STATUS_COMPLETED)
-        ->and(Order::find($notYet)->status)->toBe(Order::STATUS_SHIPPED);
+    expect(Order::find(oid($exact))->status)->toBe(Order::STATUS_COMPLETED)
+        ->and(Order::find(oid($notYet))->status)->toBe(Order::STATUS_SHIPPED);
 });
 
 // T-003：Command 幂等，重复执行处理数为 0
@@ -227,13 +228,13 @@ test('TC-LIFE-012 自动确认收货重复执行幂等', function () {
     Order::whereKey($orderId)->update(['shipped_at' => now()->subDays(10)]);
 
     $this->artisan('orders:auto-complete')->assertExitCode(0);
-    $countAfterFirst = OrderLog::where('order_id', $orderId)->count();
+    $countAfterFirst = OrderLog::where('order_id', oid($orderId))->count();
 
     $this->artisan('orders:auto-complete')
         ->expectsOutputToContain('没有需要自动确认收货的订单')
         ->assertExitCode(0);
 
-    expect(OrderLog::where('order_id', $orderId)->count())->toBe($countAfterFirst);
+    expect(OrderLog::where('order_id', oid($orderId))->count())->toBe($countAfterFirst);
 });
 
 // T-003：dry-run 只统计不执行
@@ -245,7 +246,7 @@ test('TC-LIFE-013 dry-run 仅统计不改变状态', function () {
         ->expectsOutputToContain('待自动确认收货订单')
         ->assertExitCode(0);
 
-    expect(Order::find($orderId)->status)->toBe(Order::STATUS_SHIPPED);
+    expect(Order::find(oid($orderId))->status)->toBe(Order::STATUS_SHIPPED);
 });
 
 // T-002 + T-003：手动确认与自动确认不冲突
@@ -256,10 +257,10 @@ test('TC-LIFE-014 手动确认后自动任务不再处理', function () {
     $this->postJson("/api/orders/{$orderId}/confirm", [], $this->userAuth)->assertStatus(200);
     $this->artisan('orders:auto-complete')->assertExitCode(0);
 
-    $order = Order::find($orderId);
+    $order = Order::find(oid($orderId));
     expect($order->status)->toBe(Order::STATUS_COMPLETED)
         ->and($order->auto_completed)->toBeFalse()
-        ->and(OrderLog::where('order_id', $orderId)->where('to_status', Order::STATUS_COMPLETED)->count())->toBe(1);
+        ->and(OrderLog::where('order_id', oid($orderId))->where('to_status', Order::STATUS_COMPLETED)->count())->toBe(1);
 });
 
 // T-001：订单详情返回 logs（供前端时间轴）
@@ -279,14 +280,14 @@ test('TC-LIFE-015 订单详情返回状态流水', function () {
 // T-001：回填命令幂等
 test('TC-LIFE-016 历史流水回填命令可用且幂等', function () {
     $orderId = makeShippedOrder($this);
-    OrderLog::where('order_id', $orderId)->delete(); // 模拟历史订单无流水
+    OrderLog::where('order_id', oid($orderId))->delete(); // 模拟历史订单无流水
 
     $this->artisan('orders:backfill-logs')->assertExitCode(0);
-    $count = OrderLog::where('order_id', $orderId)->count();
+    $count = OrderLog::where('order_id', oid($orderId))->count();
     expect($count)->toBe(3);
 
     $this->artisan('orders:backfill-logs')->assertExitCode(0);
-    expect(OrderLog::where('order_id', $orderId)->count())->toBe($count);
+    expect(OrderLog::where('order_id', oid($orderId))->count())->toBe($count);
 });
 
 // T-002：状态机允许 shipped→completed，拒绝 pending_payment→completed
@@ -305,10 +306,10 @@ test('TC-LIFE-018 自动确认天数可配置', function () {
 
     // 默认 7 天：不处理
     $this->artisan('orders:auto-complete')->assertExitCode(0);
-    expect(Order::find($orderId)->status)->toBe(Order::STATUS_SHIPPED);
+    expect(Order::find(oid($orderId))->status)->toBe(Order::STATUS_SHIPPED);
 
     // 配置改为 3 天：处理
     app(\App\Services\Common\ConfigService::class)->set('order.auto_complete_days', '3');
     $this->artisan('orders:auto-complete')->assertExitCode(0);
-    expect(Order::find($orderId)->status)->toBe(Order::STATUS_COMPLETED);
+    expect(Order::find(oid($orderId))->status)->toBe(Order::STATUS_COMPLETED);
 });

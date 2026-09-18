@@ -18,6 +18,7 @@ uses(RefreshDatabase::class);
 beforeEach(function () {
     seedRoles();
     config(['app.debug' => true]);
+    $this->seed(\Database\Seeders\ExpressCompanySeeder::class); // T-043 发货需要快递字典
 
     $login = function (string $username, string $password) {
         $cap = app(CaptchaService::class)->generate();
@@ -109,13 +110,13 @@ test('TC-OLOG-002 下单支付成功写入状态流水', function () {
 test('TC-OLOG-003 发货产生管理员流水且可按操作人类型筛选', function () {
     [$order] = prepareOrder($this);
 
-    $this->postJson('/api/admin/orders/'.$order['order_id'].'/ship', ['remark' => '顺丰 SF123'], $this->adminAuth)
+    $this->postJson('/api/admin/orders/'.oid($order['order_id']).'/ship', ['express_company_code' => 'SF', 'tracking_no' => 'SF22200001'], $this->adminAuth)
         ->assertJsonPath('code', 0);
 
     $all = $this->getJson('/api/admin/order-logs?order_no='.$order['order_no'], $this->adminAuth)->json('data.list');
     $shipped = collect($all)->firstWhere('to_status', Order::STATUS_SHIPPED);
     expect($shipped['operator_type'])->toBe(OrderLog::OPERATOR_ADMIN)
-        ->and($shipped['remark'])->toBe('顺丰 SF123');
+        ->and($shipped['remark'])->toContain('顺丰速运');
 
     $byAdmin = $this->getJson('/api/admin/order-logs?operator_type=admin', $this->adminAuth)->json('data.list');
     expect(collect($byAdmin)->pluck('operator_type')->unique()->all())->toBe(['admin']);
@@ -140,9 +141,9 @@ test('TC-OLOG-004 按目标状态筛选', function () {
 // 单笔订单时间轴（正序，含创建记录）
 test('TC-OLOG-005 单笔订单时间轴按时间正序', function () {
     [$order] = prepareOrder($this);
-    $this->postJson('/api/admin/orders/'.$order['order_id'].'/ship', [], $this->adminAuth)->assertJsonPath('code', 0);
+    $this->postJson('/api/admin/orders/'.oid($order['order_id']).'/ship', ['express_company_code' => 'SF', 'tracking_no' => 'SF22200002'], $this->adminAuth)->assertJsonPath('code', 0);
 
-    $resp = $this->getJson('/api/admin/orders/'.$order['order_id'].'/logs', $this->adminAuth);
+    $resp = $this->getJson('/api/admin/orders/'.oid($order['order_id']).'/logs', $this->adminAuth);
     expect($resp->json('code'))->toBe(0)
         ->and($resp->json('data.order_no'))->toBe($order['order_no']);
 
