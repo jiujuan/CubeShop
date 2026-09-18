@@ -1,5 +1,7 @@
 node_modules/
 dist/
+dist-verify/
+_bak_pagination/
 dist-ssr/
 *.local
 .env

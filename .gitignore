@@ -40,3 +40,5 @@ docs/testing/.smoke-*
 
 # 地区字典服务：dist 为派生产物（单一真源 shared/region-dict/regions.json）
 /shared/region-dict/dist/
+
+docs/testing/evidence
