@@ -144,10 +144,11 @@ test('TC-PWD-008 强度规则可配置：关闭混合要求后纯字母可通过
     );
     app(\App\Services\Common\ConfigService::class)->flush();
 
+    // 纯字母且无弱口令特征（非连续序列、非键盘走位）的密码，验证关闭混合要求后可通过
     $resp = $this->postJson('/api/auth/password', [
         'old_password' => $this->password,
-        'password' => 'abcdefghij',
-        'password_confirmation' => 'abcdefghij',
+        'password' => 'kzpmwbfgrx',
+        'password_confirmation' => 'kzpmwbfgrx',
     ], $this->authA)->json();
 
     expect($resp['code'])->toBe(0);

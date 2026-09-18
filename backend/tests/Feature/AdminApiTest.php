@@ -10,6 +10,7 @@ uses(RefreshDatabase::class);
 beforeEach(function () {
     seedRoles();
     config(['app.debug' => true]);
+    $this->seed(\Database\Seeders\ExpressCompanySeeder::class); // T-043 发货需要快递字典
 
     // 管理员
     $cap = app(CaptchaService::class)->generate();
@@ -54,7 +55,7 @@ test('TC-ADMIN-002 管理端订单列表与详情', function () {
         ->and($list['data']['pagination']['total'])->toBeGreaterThanOrEqual(1)
         ->and($list['data']['list'])->not->toBeEmpty();
 
-    $detail = $this->getJson('/api/admin/orders/'.$this->order['order_id'], $this->adminAuth)->json();
+    $detail = $this->getJson('/api/admin/orders/'.oid($this->order['order_id']), $this->adminAuth)->json();
     expect($detail['code'])->toBe(0)->and($detail['data']['order_no'])->toBe($this->order['order_no']);
 });
 
@@ -63,8 +64,8 @@ test('TC-ADMIN-005 已支付订单发货成功', function () {
     $pay = $this->postJson('/api/payments', ['order_no' => $this->order['order_no'], 'channel' => 'wechat'], $this->userAuth)->json('data');
     $this->postJson('/api/payments/sandbox/'.($pay['payment_no'] ?? $pay['pay_params']['payment_no']), [], $this->userAuth);
 
-    $resp = $this->postJson("/api/admin/orders/{$this->order['order_id']}/ship", [
-        'company' => '顺丰', 'tracking_no' => 'SF999888777',
+    $resp = $this->postJson('/api/admin/orders/'.oid($this->order['order_id']).'/ship', [
+        'express_company_code' => 'SF', 'tracking_no' => 'SF999888777',
     ], $this->adminAuth);
 
     expect($resp->json('code'))->toBe(0)
@@ -73,8 +74,8 @@ test('TC-ADMIN-005 已支付订单发货成功', function () {
 });
 
 test('待支付订单直接发货被状态机拒绝', function () {
-    $resp = $this->postJson("/api/admin/orders/{$this->order['order_id']}/ship", [
-        'company' => '顺丰', 'tracking_no' => 'SF000',
+    $resp = $this->postJson('/api/admin/orders/'.oid($this->order['order_id']).'/ship', [
+        'express_company_code' => 'SF', 'tracking_no' => 'SF00000001',
     ], $this->adminAuth);
 
     expect($resp->json('code'))->toBe(40009);
@@ -87,14 +88,15 @@ function makeStuckPaidOrder($test): void
     $test->postJson('/api/payments/sandbox/'.($pay['payment_no'] ?? $pay['pay_params']['payment_no']), [], $test->userAuth);
 
     // 支付成功默认会自动流转到待发货；这里回退到已支付以复用「人工兜底」场景
-    Order::whereKey($test->order['order_id'])->update(['status' => Order::STATUS_PAID]);
+    // order_id 是对外 public_id（ULID），须先解析为内部 int 主键；PG 下 whereKey 直接比较 ULID 会抛 22P02
+    Order::whereKey(oid($test->order['order_id']))->update(['status' => Order::STATUS_PAID]);
 }
 
 // ADMIN-005b 受理备货：已支付 → 待发货（系统自动流转之外的人工兜底）
 test('TC-ADMIN-005b 已支付订单人工受理备货后进入待发货', function () {
     makeStuckPaidOrder($this);
 
-    $resp = $this->postJson("/api/admin/orders/{$this->order['order_id']}/accept", [
+    $resp = $this->postJson('/api/admin/orders/'.oid($this->order['order_id']).'/accept', [
         'remark' => '人工受理',
     ], $this->adminAuth);
 
@@ -107,14 +109,14 @@ test('待发货订单重复受理备货幂等', function () {
     $pay = $this->postJson('/api/payments', ['order_no' => $this->order['order_no'], 'channel' => 'wechat'], $this->userAuth)->json('data');
     $this->postJson('/api/payments/sandbox/'.($pay['payment_no'] ?? $pay['pay_params']['payment_no']), [], $this->userAuth);
 
-    $resp = $this->postJson("/api/admin/orders/{$this->order['order_id']}/accept", [], $this->adminAuth);
+    $resp = $this->postJson('/api/admin/orders/'.oid($this->order['order_id']).'/accept', [], $this->adminAuth);
 
     expect($resp->json('code'))->toBe(0)
         ->and($resp->json('data.status'))->toBe(Order::STATUS_PENDING_SHIP);
 });
 
 test('待支付订单受理备货被状态机拒绝', function () {
-    $resp = $this->postJson("/api/admin/orders/{$this->order['order_id']}/accept", [], $this->adminAuth);
+    $resp = $this->postJson('/api/admin/orders/'.oid($this->order['order_id']).'/accept', [], $this->adminAuth);
 
     expect($resp->json('code'))->toBe(40009);
 });
@@ -122,12 +124,12 @@ test('待支付订单受理备货被状态机拒绝', function () {
 test('重复发货被状态机拒绝', function () {
     $pay = $this->postJson('/api/payments', ['order_no' => $this->order['order_no'], 'channel' => 'wechat'], $this->userAuth)->json('data');
     $this->postJson('/api/payments/sandbox/'.($pay['payment_no'] ?? $pay['pay_params']['payment_no']), [], $this->userAuth);
-    $this->postJson("/api/admin/orders/{$this->order['order_id']}/ship", [
-        'company' => '顺丰', 'tracking_no' => 'SF001',
+    $this->postJson('/api/admin/orders/'.oid($this->order['order_id']).'/ship', [
+        'express_company_code' => 'SF', 'tracking_no' => 'SF00000001',
     ], $this->adminAuth);
 
-    $resp = $this->postJson("/api/admin/orders/{$this->order['order_id']}/ship", [
-        'company' => '顺丰', 'tracking_no' => 'SF002',
+    $resp = $this->postJson('/api/admin/orders/'.oid($this->order['order_id']).'/ship', [
+        'express_company_code' => 'SF', 'tracking_no' => 'SF00000002',
     ], $this->adminAuth);
 
     expect($resp->json('code'))->toBe(40009);
@@ -184,7 +186,7 @@ test('TC-ADMIN-006 退款审核拒绝后订单回到已支付', function () {
 
     $apply = $this->postJson("/api/orders/{$this->order['order_id']}/refund", ['reason' => '不想要'], $this->userAuth)->json('data');
 
-    $resp = $this->postJson("/api/admin/refunds/{$apply['refund_id']}/process", [
+    $resp = $this->postJson('/api/admin/refunds/'.rfid($apply['refund_id']).'/process', [
         'action' => 'reject', 'admin_remark' => '凭证不足',
     ], $this->adminAuth);
 
@@ -206,8 +208,8 @@ test('TC-ADMIN-008 订单导出返回 CSV 响应', function () {
 
 // SYS-001 操作日志落库
 test('TC-SYS-001 后台操作记录操作日志', function () {
-    $this->postJson("/api/admin/orders/{$this->order['order_id']}/ship", [
-        'company' => '顺丰', 'tracking_no' => 'SF777',
+    $this->postJson('/api/admin/orders/'.oid($this->order['order_id']).'/ship', [
+        'express_company_code' => 'SF', 'tracking_no' => 'SF77700001',
     ], $this->adminAuth);
 
     $logs = $this->getJson('/api/admin/operation-logs?module=order', $this->adminAuth)->json();

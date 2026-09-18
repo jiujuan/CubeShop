@@ -6,6 +6,7 @@ use App\Exceptions\BusinessException;
 use App\Http\Controllers\Controller;
 use App\Models\SysUser;
 use App\Services\Common\OperationLogService;
+use App\Support\AdminRole;
 use App\Support\ApiResponse;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -18,20 +19,18 @@ use Spatie\Permission\PermissionRegistrar;
  * 角色权限管理（V1.1 F04 / T-022）
  * 权限：role.manage（超管专属）
  *
- * 内置角色（super_admin / operator / customer）不可删除；被账号引用的角色不可删除。
+ * 内置角色（super_admin / operator / cs_agent，见 App\Support\AdminRole）不可重命名/删除；
+ * 被账号引用的角色不可删除。
  */
 class RoleController extends Controller
 {
     use ApiResponse;
 
     /** 内置角色（不允许删除/重命名） */
-    private const BUILTIN_ROLES = ['super_admin', 'operator'];
+    private const BUILTIN_ROLES = AdminRole::BUILTIN;
 
-    /** 角色中文标签 */
-    private const ROLE_LABELS = [
-        'super_admin' => '超级管理员',
-        'operator' => '运营',
-    ];
+    /** 角色中文标签（兜底：roles.display_name 为空时展示） */
+    private const ROLE_LABELS = AdminRole::LABELS;
 
     /** 权限码模块中文标签 */
     private const MODULE_LABELS = [
@@ -49,6 +48,7 @@ class RoleController extends Controller
         'address' => '地址',
         'config' => '系统配置',
         'log' => '日志',
+        'cs' => '客服中心',
     ];
 
     public function __construct(private OperationLogService $opLog)
