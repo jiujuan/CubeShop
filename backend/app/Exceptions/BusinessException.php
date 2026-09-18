@@ -38,4 +38,15 @@ class BusinessException extends RuntimeException
     {
         return new self(40003, $message);
     }
+
+    /**
+     * 限流 / 频控（SEC-07 账号锁定、SEC-09 导出频次）：HTTP 429
+     *
+     * 注意：中间件层抛出的 ThrottleRequestsException 在 bootstrap/app.php 中
+     * 仍映射为 40009（历史约定，勿动），此处 40029 仅供业务代码主动限流使用。
+     */
+    public static function tooManyRequests(string $message = '操作过于频繁，请稍后再试'): self
+    {
+        return new self(40029, $message);
+    }
 }

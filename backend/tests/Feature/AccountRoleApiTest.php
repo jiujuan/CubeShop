@@ -251,24 +251,26 @@ test('TC-ROL-001 角色列表含内置标记与权限分组', function () {
 });
 
 test('TC-ROL-002 新建角色并分配权限（含中文名）', function () {
+    // 注：角色名原先用 cs_agent，CS-117 缺陷 #4 把 cs_agent 变成内置客服角色后
+    // 会因唯一约束撞车，故改用自定义角色名（本用例只验证「新建自定义角色」这条链路）。
     $resp = $this->postJson('/api/admin/roles', [
-        'name' => 'cs_agent',
-        'display_name' => '客服专员',
+        'name' => 'audit_agent',
+        'display_name' => '审核专员',
         'permissions' => ['order.view', 'review.manage'],
     ], $this->adminAuth);
 
     expect($resp->json('code'))->toBe(0);
 
-    $role = \Spatie\Permission\Models\Role::where('name', 'cs_agent')->first();
+    $role = \Spatie\Permission\Models\Role::where('name', 'audit_agent')->first();
     expect($role)->not->toBeNull()
-        ->and($role->display_name)->toBe('客服专员')
+        ->and($role->display_name)->toBe('审核专员')
         ->and($role->permissions->pluck('name')->all())->toEqualCanonicalizing(['order.view', 'review.manage']);
 
     // 列表 label 取中文名
     $data = $this->getJson('/api/admin/roles', $this->adminAuth)->json('data');
     $byName = collect($data['roles'])->keyBy('name');
-    expect($byName['cs_agent']['display_name'])->toBe('客服专员')
-        ->and($byName['cs_agent']['label'])->toBe('客服专员');
+    expect($byName['audit_agent']['display_name'])->toBe('审核专员')
+        ->and($byName['audit_agent']['label'])->toBe('审核专员');
 });
 
 test('TC-ROL-002B 新建角色缺少中文名返回 422', function () {

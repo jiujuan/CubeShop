@@ -31,7 +31,13 @@ return Application::configure(basePath: dirname(__DIR__))
             'role_or_permission' => \Spatie\Permission\Middleware\RoleOrPermissionMiddleware::class,
             // 账号状态校验（V1.1 T-022）：禁用后 Token 立即失效
             'account.active' => \App\Http\Middleware\EnsureAccountActive::class,
+            // 反枚举频控（SEC-10）：对敏感前缀的 404 做计数与限流
+            'enum.guard' => \App\Http\Middleware\EnumGuard::class,
         ]);
+
+        // SEC-10：反枚举频控中间件作用于全部 API 路由，
+        // 中间件内部按前缀过滤，仅对公开资源（商品/工单/评价/订单）的 404 计数与限流。
+        $middleware->api(append: [\App\Http\Middleware\EnumGuard::class]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         // API 请求一律返回 JSON
@@ -57,6 +63,7 @@ return Application::configure(basePath: dirname(__DIR__))
                     40003 => 403,
                     40004 => 404,
                     40009 => 409,
+                    40029 => 429,
                     default => 400,
                 });
             }

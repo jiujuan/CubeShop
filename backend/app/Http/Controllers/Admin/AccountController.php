@@ -6,6 +6,7 @@ use App\Exceptions\BusinessException;
 use App\Http\Controllers\Controller;
 use App\Models\SysUser;
 use App\Services\Common\OperationLogService;
+use App\Support\AdminRole;
 use App\Support\ApiResponse;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -17,15 +18,15 @@ use Illuminate\Validation\Rule;
  * 管理员账号管理（V1.1 F04 / T-022）
  * 权限：account.manage（超管专属）
  *
- * 管理对象：后台账号（super_admin / operator 角色）。
+ * 管理对象：后台账号（super_admin / operator / cs_agent，见 App\Support\AdminRole）。
  * 安全约束：不能禁用/删除自己；不能移除最后一个超管。
  */
 class AccountController extends Controller
 {
     use ApiResponse;
 
-    /** 后台角色白名单 */
-    private const ADMIN_ROLES = ['super_admin', 'operator'];
+    /** 后台角色白名单（唯一来源：App\Support\AdminRole::BUILTIN） */
+    private const ADMIN_ROLES = AdminRole::BUILTIN;
 
     public function __construct(private OperationLogService $opLog)
     {
@@ -36,7 +37,7 @@ class AccountController extends Controller
     {
         $data = $request->validate([
             'keyword' => ['nullable', 'string', 'max:64'],
-            'role' => ['nullable', 'string', 'in:super_admin,operator'],
+            'role' => ['nullable', 'string', Rule::in(AdminRole::BUILTIN)],
             'status' => ['nullable', 'integer', 'in:0,1'],
             'page' => ['nullable', 'integer', 'min:1'],
             'page_size' => ['nullable', 'integer', 'min:1', 'max:100'],
