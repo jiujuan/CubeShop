@@ -7,7 +7,8 @@ export interface CartItemView {
   id: number
   /** P2-11：后端出口为 SKU public_id（ULID 字符串） */
   sku_id: string
-  product_id: number | null
+  /** P2-11：后端出口为商品 public_id（ULID 字符串），商品已删时为 null */
+  product_id: string | number | null
   title: string
   specs: Record<string, string>
   image: string | null

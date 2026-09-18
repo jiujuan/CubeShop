@@ -79,7 +79,7 @@ const address = {
   detail_address: '科技路 1 号', label: null, is_default: true,
 }
 
-const cartItem = { id: 1, valid: true, title: '耳机', specs: {}, price: '150.00', quantity: 1, subtotal: '150.00', image: null, product_id: 11 }
+const cartItem = { id: 1, valid: true, title: '耳机', specs: {}, price: '150.00', quantity: 1, subtotal: '150.00', image: null, product_id: '01M2V91KBWXB2WV1MVCAB4TZKB' }
 
 /** 可用券工厂（对齐 availableFor 的 usable 项） */
 const usableCoupon = (o: Record<string, unknown> = {}) => ({
@@ -292,5 +292,22 @@ describe('结算页用券与金额明细（T-039）', () => {
     await waitFor(() => expect(screen.getByTestId('checkout-promo-amount').textContent).toContain('10.00'))
     expect(screen.getByTestId('checkout-coupon-amount').textContent).toContain('10.00')
     expect(screen.getByTestId('checkout-pay-amount').textContent).toContain('130.00')
+  })
+
+  it('⑦ 拉取券/满减预览时 items.product_id 传商品 public_id 字符串（P2-11，避免后端 422）', async () => {
+    await renderCheckout()
+
+    // 商品 id 必须是购物车出口的 public_id 原样字符串，不做 Number() 转换
+    await waitFor(() => expect(getPromotionPreviewMock).toHaveBeenCalled())
+    const promoArg = getPromotionPreviewMock.mock.calls[0][0] as { items: Array<{ product_id: unknown }> }
+    expect(promoArg.items[0].product_id).toBe(cartItem.product_id)
+    expect(typeof promoArg.items[0].product_id).toBe('string')
+
+    const couponArg = getAvailableCouponsMock.mock.calls[0][0] as {
+      amount: number
+      items: Array<{ product_id: unknown }>
+    }
+    expect(couponArg.items[0].product_id).toBe(cartItem.product_id)
+    expect(couponArg.amount).toBe(150)
   })
 })

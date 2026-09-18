@@ -123,7 +123,8 @@ export interface AvailableCouponsResponse {
 /** 结算可用券 GET /coupons/available（items 缺 category_id 由后端回库补全） */
 export function getAvailableCoupons(params: {
   amount: number | string
-  items: Array<{ product_id?: number | null; price: number | string; quantity: number }>
+  /** P2-11：product_id 传 public_id 字符串（与购物车/订单出口一致），后端 resolve 回主键 */
+  items: Array<{ product_id?: string | number | null; price: number | string; quantity: number }>
 }) {
   return request.get<ApiResult<AvailableCouponsResponse>>('/coupons/available', { params })
 }
@@ -143,7 +144,8 @@ export interface PromotionDisplay {
 
 /** 满减预览 GET /promotions/preview（无命中时 promotion 为 null） */
 export function getPromotionPreview(params: {
-  items: Array<{ product_id?: number | null; price: number | string; quantity: number }>
+  /** P2-11：product_id 传 public_id 字符串（与购物车/订单出口一致），后端 resolve 回主键 */
+  items: Array<{ product_id?: string | number | null; price: number | string; quantity: number }>
 }) {
   return request.get<ApiResult<{ promotion: PromotionDisplay | null }>>('/promotions/preview', { params })
 }
