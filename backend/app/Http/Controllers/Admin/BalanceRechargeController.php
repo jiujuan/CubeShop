@@ -159,6 +159,13 @@ class BalanceRechargeController extends Controller
         ]);
 
         $rows = $this->buildQuery($data)->with('user:id,username')->orderByDesc('id')->limit(5000)->get();
+
+        // SEC-09：导出审计
+        $this->opLog->record($request->user()->id, 'balance_recharge', 'export', 'balance_recharges', null, [
+            'count' => $rows->count(),
+            'filter' => $data,
+        ]);
+
         $filename = 'balance-recharges-'.now()->format('YmdHis').'.csv';
 
         return response()->streamDownload(function () use ($rows) {

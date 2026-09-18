@@ -5,13 +5,16 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use App\Models\OrderLog;
 use Illuminate\Database\Eloquent\Relations\HasOne;
+use App\Models\Traits\HasPublicId;
 
 /**
  * 订单主表（数据库设计 2.6）
  */
 class Order extends Model
 {
+    use HasPublicId;
     /** 订单状态（API 文档 10） */
     public const STATUS_PENDING_PAYMENT = 'pending_payment';
     public const STATUS_PAID = 'paid';
@@ -86,6 +89,7 @@ class Order extends Model
         'address_snapshot', 'remark',
         'paid_at', 'shipped_at', 'completed_at', 'cancelled_at', 'cancel_reason',
         'auto_completed',
+        'express_company', 'tracking_no',
     ];
 
     protected $casts = [
@@ -111,6 +115,18 @@ class Order extends Model
     public function refunds(): HasMany
     {
         return $this->hasMany(Refund::class, 'order_id');
+    }
+
+    /** 状态流水（供前端时间轴渲染） */
+    public function logs(): HasMany
+    {
+        return $this->hasMany(OrderLog::class, 'order_id');
+    }
+
+    /** 发货记录（T-042，物流） */
+    public function shipping(): HasMany
+    {
+        return $this->hasMany(Shipping::class, 'order_id');
     }
 
     /** 使用的券模板（V1.1 F06） */
