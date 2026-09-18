@@ -168,4 +168,30 @@ class ProductController extends Controller
             'newest' => $newest->map(fn ($p) => new ProductResource($p))->all(),
         ]);
     }
+
+    /**
+     * 首页推荐 GET /products/recommended（P-HomeRecommend）
+     *
+     * 取后台勾选「首页推荐」且处于上架状态的商品：
+     * - 排序：sort 倒序 → 上架时间（created_at）倒序 → id 倒序兜底；
+     * - 下架商品即使勾了也不露出，避免运营下架后首页仍展示。
+     */
+    public function recommended(Request $request): JsonResponse
+    {
+        $limit = min(max((int) $request->query('limit', 12), 1), 50);
+
+        $list = Product::query()
+            ->where('status', 1)
+            ->where('is_home_recommended', true)
+            ->with('category:id,name')
+            ->orderByDesc('sort')
+            ->orderByDesc('created_at')
+            ->orderByDesc('id')
+            ->limit($limit)
+            ->get();
+
+        return $this->success([
+            'list' => $list->map(fn ($p) => new ProductResource($p))->all(),
+        ]);
+    }
 }

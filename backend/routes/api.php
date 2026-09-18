@@ -62,6 +62,8 @@ Route::prefix('products')->group(function () {
     Route::get('/', [StorefrontProductController::class, 'index']);
     Route::get('/categories', [StorefrontProductController::class, 'categories']);
     Route::get('/hot', [StorefrontProductController::class, 'hot']);
+    // 首页推荐（P-HomeRecommend，无需登录）；必须在 /{id} 之前声明
+    Route::get('/recommended', [StorefrontProductController::class, 'recommended']);
     // V1.1 F01（T-015）：商品评价列表与汇总（匿名可访问）
     Route::get('/{id}/reviews', [ReviewController::class, 'productReviews']);
     Route::get('/{id}', [StorefrontProductController::class, 'show']);

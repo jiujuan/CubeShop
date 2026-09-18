@@ -296,6 +296,8 @@ class ProductController extends Controller
             'description_md' => ['nullable', 'string'],
             'status' => ['nullable', 'in:0,1'],
             'sort' => ['nullable', 'integer'],
+            // 首页推荐（P-HomeRecommend）：勾选后在前台首页「产品推荐」栏展示
+            'is_home_recommended' => ['nullable', 'boolean'],
             // V1.1 E01 新增字段
             'brand_id' => ['nullable', 'integer', 'exists:brands,id'],
             'weight' => ['nullable', 'integer', 'min:0'],
@@ -686,6 +688,8 @@ class ProductController extends Controller
             'status' => (int) $product->status,
             'sales_count' => $product->sales_count,
             'sort' => $product->sort,
+            // 首页推荐（P-HomeRecommend）
+            'is_home_recommended' => (bool) $product->is_home_recommended,
             // V1.1 E01
             'brand_id' => $product->brand_id,
             'brand' => $product->brand?->only(['id', 'name']),
