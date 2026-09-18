@@ -52,10 +52,11 @@ export interface PermissionGroup {
   permissions: string[]
 }
 
-/** 后台角色中文标签（与后端 RoleController::ROLE_LABELS 对齐） */
+/** 后台角色中文标签（与后端 App\Support\AdminRole::LABELS 对齐） */
 export const ROLE_LABELS: Record<string, string> = {
   super_admin: '超级管理员',
   operator: '运营',
+  cs_agent: '客服',
 }
 
 /** 账号列表 */
