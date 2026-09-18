@@ -62,6 +62,12 @@ class AuthController extends Controller
                 'phone' => ['nullable', 'string', 'max:20', 'unique:users,phone', $this->notUsedByAdmin('phone')],
                 'email' => ['nullable', 'email', 'max:128', 'unique:users,email', $this->notUsedByAdmin('email')],
                 'code' => ['required', 'string'],
+            ], [
+                // 应用 locale 为 en，密码规则的默认文案是英文；注册页是纯中文场景，
+                // 422 只回一个笼统 message 会让用户把「密码不合格」误认成「验证码错了」。
+                'password.min' => '密码至少 8 位',
+                'password.letters' => '密码需同时包含字母和数字',
+                'password.numbers' => '密码需同时包含字母和数字',
             ]);
         } catch (ValidationException $e) {
             throw $this->flattenAccountTaken($e);

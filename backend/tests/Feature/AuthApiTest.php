@@ -80,6 +80,37 @@ test('TC-USER-003 注册验证码错误被拒绝', function () {
     expect($resp->json('code'))->not->toBe(0);
 });
 
+// USER-003b 密码强度校验（SEC-05）：文案必须是中文，否则前端只显示「参数校验失败」，用户会误判成验证码错了
+test('TC-USER-003b 注册密码不合规则时返回中文字段提示', function () {
+    $cap = app(CaptchaService::class)->generate();
+
+    // 纯字母：缺数字
+    $resp = $this->postJson('/api/auth/register', [
+        'username' => 'weakuser1',
+        'password' => 'abcdefgh',
+        'password_confirmation' => 'abcdefgh',
+        'code' => $cap['debug_code'] ?? 'XXXX',
+        'captcha_id' => $cap['captcha_id'],
+    ]);
+    $resp->assertStatus(422);
+
+    $messages = collect($resp->json('data.errors.password'))->implode(' ');
+    expect($messages)->toContain('密码需同时包含字母和数字')
+        ->and($messages)->not->toContain('must contain at least one number');
+
+    // 纯数字：缺字母
+    $cap2 = app(CaptchaService::class)->generate();
+    $resp2 = $this->postJson('/api/auth/register', [
+        'username' => 'weakuser2',
+        'password' => '12345678',
+        'password_confirmation' => '12345678',
+        'code' => $cap2['debug_code'] ?? 'XXXX',
+        'captcha_id' => $cap2['captcha_id'],
+    ]);
+    $resp2->assertStatus(422);
+    expect(collect($resp2->json('data.errors.password'))->implode(' '))->toContain('密码需同时包含字母和数字');
+});
+
 // USER-004 登录成功
 test('TC-USER-004 登录成功返回 token', function () {
     registerViaApi('loginuser');
