@@ -114,7 +114,7 @@ test('TC-ADDR-004 代改地址不影响历史订单快照', function () {
     ], $this->adminAuth);
     expect($resp->json('code'))->toBe(0);
 
-    $detail = $this->getJson('/api/admin/orders/'.$order['order_id'], $this->adminAuth)->json('data');
+    $detail = $this->getJson('/api/admin/orders/'.oid($order['order_id']), $this->adminAuth)->json('data');
     expect($detail['address_snapshot']['contact_name'])->toBe('张三')
         ->and($detail['address_snapshot']['full_address'])->toContain('科技园南路 88 号');
 });

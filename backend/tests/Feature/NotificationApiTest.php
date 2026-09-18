@@ -19,6 +19,7 @@ uses(RefreshDatabase::class);
 beforeEach(function () {
     seedRoles();
     config(['app.debug' => true]);
+    $this->seed(\Database\Seeders\ExpressCompanySeeder::class); // T-043 发货需要快递字典
 
     // 管理员
     $cap = app(CaptchaService::class)->generate();
@@ -60,7 +61,7 @@ function notifyPayOrder($test): int
     $payNo = $pay['payment_no'] ?? ($pay['pay_params']['payment_no'] ?? null);
     $test->postJson("/api/payments/sandbox/{$payNo}", [], $test->buyerAuth);
 
-    return $order['order_id'];
+    return oid($order['order_id']);
 }
 
 // ---------- T-018 事件驱动的站内信 ----------
@@ -77,7 +78,7 @@ test('TC-NOTIFY-001 支付成功通知买家', function () {
 
 test('TC-NOTIFY-002 发货通知买家', function () {
     $orderId = notifyPayOrder($this);
-    $this->postJson("/api/admin/orders/{$orderId}/ship", ['remark' => '已发出'], $this->adminAuth)->assertStatus(200);
+    $this->postJson('/api/admin/orders/'.oid($orderId).'/ship', ['express_company_code' => 'SF', 'tracking_no' => 'SF55500001'], $this->adminAuth)->assertStatus(200);
 
     $n = Notification::where('user_id', $this->buyerId)->where('type', NotificationService::TYPE_ORDER_SHIPPED)->first();
     expect($n)->not->toBeNull()
@@ -89,10 +90,10 @@ test('TC-NOTIFY-003 退款结果通知买家', function () {
     $orderId = notifyPayOrder($this);
     // 买家申请退款
     $this->postJson("/api/orders/{$orderId}/refund", ['reason' => '不想要了'], $this->buyerAuth)->assertStatus(200);
-    $refundId = \App\Models\Refund::where('order_id', $orderId)->value('id');
+    $refundId = \App\Models\Refund::where('order_id', oid($orderId))->value('id');
 
     // 后台退款处理：同意并标记已退款
-    $this->postJson("/api/admin/refunds/{$refundId}/process", ['action' => 'approve', 'admin_remark' => '同意'], $this->adminAuth)
+    $this->postJson('/api/admin/refunds/'.rfid($refundId).'/process', ['action' => 'approve', 'admin_remark' => '同意'], $this->adminAuth)
         ->assertStatus(200);
 
     expect(Notification::where('user_id', $this->buyerId)->where('type', NotificationService::TYPE_REFUND_RESULT)->count())
@@ -137,7 +138,7 @@ test('TC-NOTIFY-007 未配置类型不投递邮件', function () {
 
     $orderId = notifyPayOrder($this);
     Queue::fake(); // 重置，排除支付那次
-    $this->postJson("/api/admin/orders/{$orderId}/ship", ['remark' => '已发出'], $this->adminAuth)->assertStatus(200);
+    $this->postJson('/api/admin/orders/'.oid($orderId).'/ship', ['express_company_code' => 'SF', 'tracking_no' => 'SF55500001'], $this->adminAuth)->assertStatus(200);
 
     Queue::assertNotPushed(SendNotificationMail::class);
 });

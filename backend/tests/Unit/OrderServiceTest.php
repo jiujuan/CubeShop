@@ -50,8 +50,8 @@ test('createFromCart 生成订单并快照金额与地址', function () {
     // 购物车项已清理
     expect(CartItem::where('user_id', $user->id)->count())->toBe(0);
 
-    // 订单号格式：CS + 日期 + 6 位
-    expect($order->order_no)->toMatch('/^CS\d{4}(0[1-9]|1[0-2])(0[1-9]|[12]\d|3[01])\d{6}$/');
+    // 订单号格式：CS + 日期 + 10 位随机段（SEC-03：不再使用可枚举的 6 位序列）
+    expect($order->order_no)->toMatch('/^CS\d{4}(0[1-9]|1[0-2])(0[1-9]|[12]\d|3[01])\d{10}$/');
 });
 
 test('满额包邮：达到阈值后运费为 0', function () {

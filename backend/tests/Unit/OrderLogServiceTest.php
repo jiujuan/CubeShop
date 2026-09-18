@@ -49,7 +49,7 @@ test('三种操作人类型均可写入', function () {
         expect($log->operator_type)->toBe($type);
     }
 
-    expect(OrderLog::where('order_id', $order->id)->count())->toBe(3);
+    expect(OrderLog::where('order_id', oid($order->id))->count())->toBe(3);
 });
 
 test('同一订单多次流转按 id 有序', function () {

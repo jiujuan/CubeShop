@@ -271,7 +271,7 @@ test('TC-ATTR-011 使用 specs_selection 创建商品自动生成 SKU 矩阵', f
     expect($skus)->toHaveCount(4);
 
     // 商品展示价 = 最低有效 SKU 价
-    expect((string) Product::find($productId)->price)->toBe('100.00');
+    expect((string) Product::find(pid($productId))->price)->toBe('100.00');
 
     $blackS = $skus->first(fn ($s) => $s->specs[$color->name] === '黑' && $s->specs[$size->name] === 'S');
     expect($blackS)->not->toBeNull()
@@ -731,8 +731,10 @@ test('TC-ATTR-021 品牌+属性+价格区间叠加筛选与无结果', function 
 
     // 无结果：属性值不存在
     $none = $this->getJson('/api/products?attribute_values[]='.$materialId.':不存在的值')->json();
+    // SEC-04：公开商品列表不再暴露精确总数，只给 has_more
     expect($none['data']['list'])->toHaveCount(0)
-        ->and($none['data']['pagination']['total'])->toBe(0);
+        ->and($none['data']['pagination']['total'])->toBeNull()
+        ->and($none['data']['pagination']['has_more'])->toBeFalse();
 });
 
 test('TC-ATTR-019 商品详情返回品牌与商品参数', function () {
