@@ -7,6 +7,7 @@ import { addToCart } from '@/api/user'
 import { favoriteProduct, trackProduct, unfavoriteProduct } from '@/api/favorite'
 import { getCouponCenter, type ReceivableCoupon } from '@/api/coupon'
 import { couponConditionText, couponValueText } from '@/utils/coupon'
+import { hashIndex } from '@/utils/id'
 import { useAuthStore } from '@/stores/auth'
 import ShopFooter from '@/components/ShopFooter.vue'
 import ShopHeader from '@/components/ShopHeader.vue'
@@ -238,7 +239,7 @@ const emojiByIndex = ['👕', '🎧', '🥤', '⌨️', '👟', '🧴', '💻', 
           <div class="w-full max-w-md">
             <div class="flex h-96 items-center justify-center rounded-2xl bg-gradient-to-br from-[#f0f7ff] to-[#e6f4ff] text-8xl">
               <img v-if="currentImage" :src="currentImage" class="h-full w-full rounded-2xl object-cover" alt="" />
-              <span v-else>{{ emojiByIndex[product.id % emojiByIndex.length] }}</span>
+              <span v-else>{{ emojiByIndex[hashIndex(product.id, emojiByIndex.length)] }}</span>
             </div>
             <div class="mt-3 flex gap-2">
               <button

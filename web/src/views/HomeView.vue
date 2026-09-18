@@ -52,7 +52,7 @@ const displayList = computed<ProductBrief[]>(() => {
   if (activeTab.value === 'hot') return hot.value.slice(0, PAGE_SIZE)
   if (activeTab.value === 'new') return newest.value.slice(0, PAGE_SIZE)
   // 人气推荐：热销 + 新品去重后按销量倒序
-  const merged = new Map<number, ProductBrief>()
+  const merged = new Map<string, ProductBrief>()
   for (const p of [...hot.value, ...newest.value]) if (!merged.has(p.id)) merged.set(p.id, p)
   return [...merged.values()].sort((a, b) => b.sales_count - a.sales_count).slice(0, PAGE_SIZE)
 })
@@ -77,7 +77,7 @@ function iconFor(name: string): Component {
 function subNames(root: CategoryNode) {
   return root.children.slice(0, 3).map((c) => c.name).join(' ') || '精选好物'
 }
-function goCategory(id: number) {
+function goCategory(id: string) {
   router.push(`/category/${id}`)
 }
 

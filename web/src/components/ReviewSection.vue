@@ -24,7 +24,8 @@ const hasImage = ref(false)
 
 const lightbox = ref<string | null>(null)
 
-const hasMore = computed(() => page.value < totalPages.value)
+// SEC-04：公开接口不再返回 total_pages，改由服务端 has_more 驱动"加载更多"
+const hasMore = ref(false)
 
 /** 星级分布条数据（5→1） */
 const starRows = computed(() => {
@@ -53,7 +54,8 @@ async function load(reset = true) {
       has_image: hasImage.value ? 1 : undefined,
     })
     summary.value = data.data.summary
-    totalPages.value = data.data.pagination.total_pages
+    totalPages.value = data.data.pagination.total_pages ?? 1
+    hasMore.value = data.data.pagination.has_more ?? page.value < (data.data.pagination.total_pages ?? 1)
     list.value = reset ? data.data.list : [...list.value, ...data.data.list]
   } finally {
     loading.value = false

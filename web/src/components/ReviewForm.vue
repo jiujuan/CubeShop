@@ -11,8 +11,8 @@ import { uploadImage } from '@/api/user'
  * - 星级 1~5 + 文案提示；内容上限 500 字；图片 ≤9 张（上传后回填 URL）；匿名开关
  */
 const props = defineProps<{
-  orderId?: number
-  itemId?: number
+  orderId?: string | number
+  itemId?: string | number
   /** 编辑模式：传入已存在的评价 */
   initial?: ReviewItem | null
   productTitle?: string

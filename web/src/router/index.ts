@@ -137,6 +137,48 @@ const router = createRouter({
       meta: { title: '消息通知 · CubeShop', requiresAuth: true },
     },
     {
+      path: '/service-center',
+      name: 'service-center',
+      component: () => import('@/views/ServiceCenterView.vue'),
+      meta: { title: '服务中心 · CubeShop', requiresAuth: true },
+    },
+    {
+      path: '/service-center/faq',
+      name: 'faq-category',
+      component: () => import('@/views/FaqCategoryView.vue'),
+      meta: { title: '帮助中心 · CubeShop', requiresAuth: true },
+    },
+    {
+      path: '/service-center/faq/list',
+      name: 'faq-list',
+      component: () => import('@/views/FaqListView.vue'),
+      meta: { title: '帮助中心 · CubeShop', requiresAuth: true },
+    },
+    {
+      path: '/service-center/faq/:id',
+      name: 'faq-detail',
+      component: () => import('@/views/FaqDetailView.vue'),
+      meta: { title: '帮助中心 · CubeShop', requiresAuth: true },
+    },
+    {
+      path: '/service-center/tickets',
+      name: 'ticket-list',
+      component: () => import('@/views/TicketListView.vue'),
+      meta: { title: '我的工单 · CubeShop', requiresAuth: true },
+    },
+    {
+      path: '/service-center/tickets/new',
+      name: 'ticket-create',
+      component: () => import('@/views/TicketCreateView.vue'),
+      meta: { title: '提交工单 · CubeShop', requiresAuth: true },
+    },
+    {
+      path: '/service-center/tickets/:id',
+      name: 'ticket-detail',
+      component: () => import('@/views/TicketDetailView.vue'),
+      meta: { title: '工单详情 · CubeShop', requiresAuth: true },
+    },
+    {
       path: '/:pathMatch(.*)*',
       redirect: '/',
     },

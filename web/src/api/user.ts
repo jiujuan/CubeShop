@@ -28,7 +28,7 @@ export function getCart() {
   return request.get<ApiResult<CartSummary>>('/cart')
 }
 
-export function addToCart(skuId: number, quantity: number) {
+export function addToCart(skuId: string, quantity: number) {
   return request.post<ApiResult<null>>('/cart', { sku_id: skuId, quantity })
 }
 

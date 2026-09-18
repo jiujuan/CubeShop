@@ -5,7 +5,8 @@ import type { ApiResult, Pagination } from './types'
  * 收藏与浏览足迹（V1.1 F05 / T-024）
  */
 export interface FavoriteItem {
-  id: number
+  /** P2-11：商品对外标识（public_id 字符串，非自增主键） */
+  id: string
   title: string
   subtitle: string | null
   main_image: string | null
@@ -21,11 +22,11 @@ export interface HistoryItem extends FavoriteItem {
 }
 
 /** 收藏 / 取消收藏（幂等） */
-export function favoriteProduct(productId: number) {
+export function favoriteProduct(productId: string | number) {
   return request.post<ApiResult<{ favorited: boolean }>>(`/products/${productId}/favorite`)
 }
 
-export function unfavoriteProduct(productId: number) {
+export function unfavoriteProduct(productId: string | number) {
   return request.delete<ApiResult<{ favorited: boolean }>>(`/products/${productId}/favorite`)
 }
 
@@ -35,12 +36,12 @@ export function getFavorites(params: { page?: number; page_size?: number } = {})
 }
 
 /** 批量取消收藏 */
-export function batchRemoveFavorites(productIds: number[]) {
+export function batchRemoveFavorites(productIds: Array<string | number>) {
   return request.post<ApiResult<{ removed: number }>>('/me/favorites/batch-remove', { product_ids: productIds })
 }
 
 /** 上报浏览足迹（幂等去重） */
-export function trackProduct(productId: number) {
+export function trackProduct(productId: string | number) {
   return request.post<ApiResult<null>>(`/products/${productId}/track`)
 }
 

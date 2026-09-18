@@ -44,10 +44,10 @@ export const ORDER_TABS: Array<{ value: OrderTab; label: string; empty: string }
 ]
 
 export interface OrderItemView {
-  /** 行项目 ID（评价入口需要） */
-  id?: number
-  product_id?: number | null
-  sku_id?: number | null
+  /** 行项目 ID（评价入口需要；已转 public_id 字符串） */
+  id?: string
+  product_id?: string | number | null
+  sku_id?: string | number | null
   product_title: string
   sku_specs: Record<string, string>
   sku_image: string | null
@@ -56,7 +56,7 @@ export interface OrderItemView {
   total_amount: string
   /** V1.1 T-016：该行项目的评价状态（未评价为 null） */
   review?: {
-    id: number
+    id: string
     rating: number
     content: string | null
     status: 'pending' | 'approved' | 'rejected'
@@ -66,7 +66,7 @@ export interface OrderItemView {
 
 /** 列表缩略预览（V1.1 T-004） */
 export interface OrderItemPreview {
-  product_id?: number | null
+  product_id?: string | number | null
   product_title: string
   sku_image: string | null
   quantity: number
@@ -104,7 +104,8 @@ export interface AddressSnapshot {
 }
 
 export interface OrderBrief {
-  id: number
+  /** 订单对外标识（已转 public_id 字符串，非自增主键） */
+  id: string
   order_no: string
   status: OrderStatus
   status_label: string
@@ -145,7 +146,8 @@ export interface OrderListResult {
 }
 
 export interface CreateOrderResult {
-  order_id: number
+  /** P2-11：订单对外标识（public_id 字符串，非自增主键） */
+  order_id: string
   order_no: string
   total_amount: string
   freight_amount: string
@@ -181,19 +183,19 @@ export function getOrders(params: {
   return request.get<ApiResult<OrderListResult>>('/orders', { params })
 }
 
-export function getOrder(id: number) {
+export function getOrder(id: string | number) {
   return request.get<ApiResult<OrderDetail>>(`/orders/${id}`)
 }
 
-export function cancelOrder(id: number, reason?: string) {
+export function cancelOrder(id: string | number, reason?: string) {
   return request.post<ApiResult<OrderDetail>>(`/orders/${id}/cancel`, { reason })
 }
 
 /** 确认收货（V1.1 E02-A / T-002） */
-export function confirmOrder(id: number) {
+export function confirmOrder(id: string | number) {
   return request.post<
     ApiResult<{
-      id: number
+      id: string
       order_no: string
       status: OrderStatus
       status_label: string
@@ -205,18 +207,39 @@ export function confirmOrder(id: number) {
 /** 再次购买（V1.1 E02-D / T-004）：按历史订单加入购物车 */
 export interface RebuyResult {
   added: number
-  skipped: Array<{ product_id: number | null; title: string; reason: string }>
+  skipped: Array<{ product_id: string | number | null; title: string; reason: string }>
   cart_count: number
 }
 
-export function rebuyOrder(id: number) {
+export function rebuyOrder(id: string | number) {
   return request.post<ApiResult<RebuyResult>>(`/orders/${id}/rebuy`)
 }
 
 /** 申请退款（API 文档 6.5） */
-export function applyRefund(id: number, reason?: string) {
-  return request.post<ApiResult<{ refund_id: number; refund_no: string; amount: string; status: string }>>(
+export function applyRefund(id: string | number, reason?: string) {
+  return request.post<ApiResult<{ refund_id: string; refund_no: string; amount: string; status: string }>>(
     `/orders/${id}/refund`,
     { reason },
   )
+}
+
+/** 订单物流信息（V1.1 T-046） */
+export interface ShippingTraceEntry {
+  context: string
+  occurred_at: string
+}
+
+export interface ShippingInfo {
+  express_company: string
+  tracking_no: string
+  trace_status: 'pending' | 'in_transit' | 'delivered' | 'failed'
+  shipped_at: string | null
+  delivered_at: string | null
+  has_trace: boolean
+  traces: ShippingTraceEntry[]
+}
+
+/** 订单物流信息（仅本人；未发货返回 null） */
+export function getOrderShipping(id: string | number) {
+  return request.get<ApiResult<ShippingInfo | null>>(`/orders/${id}/shipping`)
 }
