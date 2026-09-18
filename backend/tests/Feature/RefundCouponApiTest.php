@@ -84,7 +84,7 @@ function t036Order(array $auth, int $addressId, array $extra = []): Order
 {
     $data = test()->postJson('/api/orders', array_merge(['address_id' => $addressId], $extra), $auth)->json('data');
 
-    return Order::find($data['order_id']);
+    return Order::find(oid($data['order_id']));
 }
 
 /** 沙箱支付成功 → 订单进入 pending_ship（即可退款状态） */
@@ -104,13 +104,13 @@ function t036Apply(array $auth, int $orderId, ?string $amount = null): int
     }
     test()->postJson("/api/orders/{$orderId}/refund", $payload, $auth)->assertOk();
 
-    return Refund::where('order_id', $orderId)->latest('id')->first()->id;
+    return Refund::where('order_id', oid($orderId))->latest('id')->first()->id;
 }
 
 /** 后台审核 */
 function t036Process(int $refundId, array $adminAuth, string $action = 'approve'): void
 {
-    test()->postJson("/api/admin/refunds/{$refundId}/process", ['action' => $action], $adminAuth)->assertOk();
+    test()->postJson('/api/admin/refunds/'.rfid($refundId).'/process', ['action' => $action], $adminAuth)->assertOk();
 }
 
 /* ------------------------------------------------------------------ */
@@ -183,7 +183,7 @@ test('TC-RFD-036-003 整单全额退款 → 退款金额=行实付Σ+运费，�
     t036Process($refundId, $this->adminAuth);
 
     $orderFresh = $order->fresh();
-    $refund = Refund::find($refundId);
+    $refund = Refund::find(rfid($refundId));
 
     // 退款金额 = 订单实付
     expect((string) $refund->amount)->toBe('122.00')
@@ -213,7 +213,7 @@ test('TC-RFD-036-004 部分退款 → 券不返还，金额正确', function () 
     $refundId = t036Apply($auth, $order->id, '50.00'); // 部分退款
     t036Process($refundId, $this->adminAuth);
 
-    $refund = Refund::find($refundId);
+    $refund = Refund::find(rfid($refundId));
     expect((string) $refund->amount)->toBe('50.00')
         ->and($refund->status)->toBe(Refund::STATUS_SUCCESS)
         ->and($order->fresh()->status)->toBe(Order::STATUS_REFUNDED)
@@ -240,7 +240,7 @@ test('TC-RFD-036-005 退款金额超过可退余额被拒', function () {
     ], $auth);
 
     $res->assertJsonFragment(['code' => 40000]);
-    expect(Refund::where('order_id', $order->id)->exists())->toBeFalse();
+    expect(Refund::where('order_id', oid($order->id))->exists())->toBeFalse();
 });
 
 test('TC-RFD-036-006 已存在处理中退款 → 重复申请被拒', function () {
@@ -256,7 +256,7 @@ test('TC-RFD-036-006 已存在处理中退款 → 重复申请被拒', function 
 
     $res = test()->postJson("/api/orders/{$order->id}/refund", ['reason' => '再来一笔'], $auth);
     $res->assertJsonFragment(['code' => 40009]); // 冲突：已有退款处理中
-    expect(Refund::where('order_id', $order->id)->count())->toBe(1);
+    expect(Refund::where('order_id', oid($order->id))->count())->toBe(1);
 });
 
 test('TC-RFD-036-007 无券订单退款金额与 V1.0 一致（回归）', function () {
@@ -272,7 +272,7 @@ test('TC-RFD-036-007 无券订单退款金额与 V1.0 一致（回归）', funct
     $refundId = t036Apply($auth, $order->id);
     t036Process($refundId, $this->adminAuth);
 
-    $refund = Refund::find($refundId);
+    $refund = Refund::find(rfid($refundId));
     expect((string) $refund->amount)->toBe('142.00')
         ->and($refund->status)->toBe(Refund::STATUS_SUCCESS)
         ->and($order->fresh()->status)->toBe(Order::STATUS_REFUNDED)

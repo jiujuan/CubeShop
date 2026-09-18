@@ -130,7 +130,7 @@ test('TC-ORD-035-001 不带券下单金额与 V1.0 完全一致（无活动配�
         ->and($details['lines'][0]['promotion_share'])->toBe('0.00');
 
     // 行项目分摊字段落库为 0
-    $item = Order::find($body['data']['order_id'])->items()->first();
+    $item = Order::find(oid($body['data']['order_id']))->items()->first();
     expect((string) $item->coupon_share)->toBe('0.00')
         ->and((string) $item->promotion_share)->toBe('0.00');
 });
@@ -161,14 +161,14 @@ test('TC-ORD-035-002 带券下单金额正确且分摊明细与核销完整', fu
     // 券被原子核销并绑定订单
     $uc->refresh();
     expect($uc->status)->toBe(UserCoupon::STATUS_USED)
-        ->and((int) $uc->used_order_id)->toBe($orderId)
+        ->and((int) $uc->used_order_id)->toBe(oid($orderId))
         ->and($uc->used_at)->not->toBeNull();
 
     // 券模板 used_count +1
     expect((int) $coupon->fresh()->used_count)->toBe(1);
 
     // 订单行分摊落库
-    $item = Order::find($orderId)->items()->first();
+    $item = Order::find(oid($orderId))->items()->first();
     expect((string) $item->coupon_share)->toBe('20.00')
         ->and($item->payableAmount())->toBe(112.0); // 132 − 20
 });
@@ -369,10 +369,13 @@ test('TC-ORD-035-012 订单列表与详情返回优惠汇总与分摊快照', fu
     $sku = createTestSku(stock: 10, price: '66.00');
     $uc = t035Grant(t035Coupon(['amount' => '20.00']), $user->id);
     t035Cart($auth, $sku->id, 2);
-    $orderId = t035Order($auth, $addressId, ['user_coupon_id' => $uc->id])['data']['order_id'];
+    $created = t035Order($auth, $addressId, ['user_coupon_id' => $uc->id])['data'];
+    $orderId = $created['order_id'];
+    $orderNo = $created['order_no'];
 
     $list = $this->getJson('/api/orders', $auth)->json('data.list');
-    $row = collect($list)->firstWhere('id', $orderId);
+    // 列表 id 已转为 public_id（P1-5），按稳定的 order_no 关联而非 int 主键
+    $row = collect($list)->firstWhere('order_no', $orderNo);
     expect($row)->not->toBeNull()
         ->and($row['discount_amount'])->toBe('20.00')
         ->and($row['promotion_discount'])->toBe('0.00')
@@ -429,7 +432,7 @@ test('TC-ORD-035-014 用券订单支付成功后状态与金额正确', function
 
     $this->postJson("/api/payments/sandbox/{$payNo}", [], $auth)->assertOk();
 
-    $order = Order::find($created['order_id']);
+    $order = Order::find(oid($created['order_id']));
     expect($order->status)->toBe(Order::STATUS_PENDING_SHIP)
         ->and((string) $order->pay_amount)->toBe('122.00')
         ->and((string) $order->discount_amount)->toBe('20.00')
