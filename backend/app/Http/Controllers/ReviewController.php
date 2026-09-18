@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Resources\ReviewResource;
 use App\Models\Review;
 use App\Services\Review\ReviewService;
 use App\Support\ApiResponse;
@@ -20,19 +21,30 @@ class ReviewController extends Controller
     }
 
     /** 商品评价列表与汇总（匿名可访问） GET /products/{id}/reviews */
-    public function productReviews(Request $request, int $id): JsonResponse
+    public function productReviews(Request $request, string $id): JsonResponse
     {
-        $paginator = $this->reviews->productReviews($id, $request->only(['rating', 'sort', 'has_image', 'page', 'page_size']));
-        $paginator->through(fn (Review $r) => $this->format($r, forPublic: true));
+        $productId = \App\Support\PublicId::resolve(\App\Support\PublicId::SCOPE_PRODUCT, $id);
+
+        if ($productId === null) {
+            throw \App\Exceptions\BusinessException::notFound('商品不存在');
+        }
+
+        $paginator = $this->reviews->productReviews($productId, $request->only(['rating', 'sort', 'has_image', 'page', 'page_size']));
+        // P2-11：公开场景走 ReviewResource（隐藏 user_id / order_id / order_item_id）
+        $paginator = $paginator->through(fn (Review $r) => new ReviewResource($r));
+
+        // SEC-04：评价总数属平台经营指标，非本人资源，对外隐藏精确值
+        $exposeTotal = $this->shouldExposeTotal();
 
         return $this->success([
-            'summary' => $this->reviews->summary($id),
+            'summary' => $this->reviews->summary($productId),
             'list' => $paginator->items(),
             'pagination' => [
                 'page' => $paginator->currentPage(),
                 'page_size' => $paginator->perPage(),
-                'total' => $paginator->total(),
-                'total_pages' => $paginator->lastPage(),
+                'total' => $exposeTotal ? $paginator->total() : null,
+                'total_pages' => $exposeTotal ? $paginator->lastPage() : null,
+                'has_more' => $paginator->hasMorePages(),
             ],
         ]);
     }
@@ -45,17 +57,23 @@ class ReviewController extends Controller
             (int) $request->query('page', 1),
             (int) $request->query('page_size', 10),
         );
-        $paginator->through(fn (Review $r) => $this->format($r) + [
-            'product' => $r->product?->only(['id', 'title', 'main_image']),
-        ]);
+        // 本人场景：补充商品引用（public_id）与 can_edit
+        $paginator->through(function (Review $r) {
+            $r->for_self = true;
+            $r->loadMissing('product');
+
+            return new ReviewResource($r);
+        });
 
         return $this->paginated($paginator);
     }
 
     /** 修改评价 PUT /reviews/{id} */
-    public function update(Request $request, int $id): JsonResponse
+    public function update(Request $request, string $id): JsonResponse
     {
-        $review = Review::find($id);
+        // P2-11 终态：评价 id 对外为 public_id，兼容历史 int 主键
+        $review = Review::resolvePublicId($id);
+
         if (! $review) {
             return $this->fail('评价不存在', 40004, null, 404);
         }
@@ -70,37 +88,9 @@ class ReviewController extends Controller
 
         $review = $this->reviews->update($review, $request->user()->id, $data);
 
-        return $this->success($this->format($review), '评价已更新');
-    }
+        $review->for_self = true;
+        $review->loadMissing('product');
 
-    /**
-     * 评价序列化
-     */
-    private function format(Review $r, bool $forPublic = false): array
-    {
-        $base = [
-            'id' => $r->id,
-            'rating' => $r->rating,
-            'content' => $r->content,
-            'images' => $r->images ?? [],
-            'is_anonymous' => (bool) $r->is_anonymous,
-            'status' => $r->status,
-            'status_label' => Review::STATUS_LABELS[$r->status] ?? $r->status,
-            'reply_content' => $r->reply_content,
-            'reply_at' => $r->reply_at?->format('Y-m-d H:i:s'),
-            'edited_at' => $r->edited_at?->format('Y-m-d H:i:s'),
-            'created_at' => $r->created_at?->format('Y-m-d H:i:s'),
-            'nickname' => $r->displayName(),
-            'avatar' => $r->is_anonymous ? null : $r->user?->avatar,
-        ];
-
-        if (! $forPublic) {
-            $base['product_id'] = $r->product_id;
-            $base['order_id'] = $r->order_id;
-            $base['order_item_id'] = $r->order_item_id;
-            $base['can_edit'] = $r->canEdit();
-        }
-
-        return $base;
+        return $this->success(new ReviewResource($review), '评价已更新');
     }
 }

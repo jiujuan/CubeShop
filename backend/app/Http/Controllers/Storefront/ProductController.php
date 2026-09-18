@@ -3,9 +3,11 @@
 namespace App\Http\Controllers\Storefront;
 
 use App\Http\Controllers\Controller;
+use App\Http\Resources\ProductResource;
 use App\Models\Category;
 use App\Models\Product;
 use App\Support\ApiResponse;
+use App\Support\PublicId;
 use App\Exceptions\BusinessException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -38,12 +40,16 @@ class ProductController extends Controller
                     ->orWhere('subtitle', 'like', "%{$keyword}%");
             });
         }
-        if ($categoryId = (int) $request->query('category_id')) {
-            $categoryIds = [$categoryId];
-            foreach (Category::where('parent_id', $categoryId)->pluck('id') as $childId) {
-                $categoryIds[] = $childId;
+        // P2-11：分类对外只暴露 public_id；入参接受 public_id 或历史 int 主键
+        if ($rawCategoryId = $request->query('category_id')) {
+            $categoryId = PublicId::resolve(PublicId::SCOPE_CATEGORY, $rawCategoryId);
+            if ($categoryId !== null) {
+                $categoryIds = [$categoryId];
+                foreach (Category::where('parent_id', $categoryId)->pluck('id') as $childId) {
+                    $categoryIds[] = $childId;
+                }
+                $q->whereIn('category_id', $categoryIds);
             }
-            $q->whereIn('category_id', $categoryIds);
         }
         if ($minPrice = $request->query('min_price')) {
             $q->where('price', '>=', (float) $minPrice);
@@ -52,9 +58,12 @@ class ProductController extends Controller
             $q->where('price', '<=', (float) $maxPrice);
         }
 
-        // V1.1 E01 / T-014：品牌筛选
-        if ($brandId = (int) $request->query('brand_id')) {
-            $q->where('brand_id', $brandId);
+        // V1.1 E01 / T-014：品牌筛选（P2-11：brand_id 接受 public_id 或历史 int 主键）
+        if ($rawBrandId = $request->query('brand_id')) {
+            $brandId = PublicId::resolve(PublicId::SCOPE_BRAND, $rawBrandId);
+            if ($brandId !== null) {
+                $q->where('brand_id', $brandId);
+            }
         }
 
         // V1.1 E01 / T-014：属性筛选
@@ -89,67 +98,31 @@ class ProductController extends Controller
 
         $paginator = $q->paginate((int) $request->query('page_size', 20));
 
-        $paginator->getCollection()->transform(fn ($p) => $this->brief($p));
+        // P2-11：统一走 ProductResource（id 改为 public_id，关联分类/品牌同样去 int 主键）
+        $paginator->getCollection()->transform(fn ($p) => new ProductResource($p));
 
         return $this->paginated($paginator);
     }
 
-    /** 商品详情（含 SKU 库存） GET /products/{id} */
-    public function show(Request $request, int $id): JsonResponse
+    /**
+     * 商品详情（含 SKU 库存） GET /products/{id}
+     *
+     * P2-11 终态：入参同时接受 public_id 与历史 int 主键，出参一律只给 public_id。
+     */
+    public function show(Request $request, string $id): JsonResponse
     {
-        $product = Product::query()
+        $productId = PublicId::resolve(PublicId::SCOPE_PRODUCT, $id);
+
+        $product = $productId === null ? null : Product::query()
             ->where('status', 1)
             ->with(['skus.inventory', 'images', 'category:id,name', 'brand:id,name', 'attributeValues.attribute:id,name,type'])
-            ->find($id);
+            ->find($productId);
 
         if (! $product) {
             throw BusinessException::notFound('商品不存在或已下架');
         }
 
-        $minPrice = $product->skus->where('status', 1)->min('price');
-
-        return $this->success([
-            'id' => $product->id,
-            'title' => $product->title,
-            'subtitle' => $product->subtitle,
-            'main_image' => $product->main_image,
-            'images' => $product->images->sortBy('sort')->pluck('url')->values(),
-            'description' => $product->description,
-            'price' => (string) ($minPrice ?? $product->price),
-            'sales_count' => $product->sales_count,
-            'status' => (int) $product->status,
-            'category' => $product->category?->only(['id', 'name']),
-            // V1.1 F05 / T-024：登录用户是否已收藏
-            'is_favorited' => $request->user()
-                ? app(\App\Services\Favorite\FavoriteService::class)->isFavorited($request->user()->id, $product->id)
-                : false,
-            // V1.1 E01：品牌 / 视频 / 重量 / 商品参数
-            'brand' => $product->brand?->only(['id', 'name']),
-            'brand_id' => $product->brand_id,
-            'video_url' => $product->video_url,
-            'weight' => (int) $product->weight,
-            'attributes' => $product->attributeValues
-                ->filter(fn ($v) => $v->attribute !== null)
-                ->map(fn ($v) => [
-                    'attribute_id' => $v->attribute_id,
-                    'name' => $v->attribute->name,
-                    'type' => $v->attribute->type,
-                    'value' => $v->value,
-                ])->values(),
-            'total_stock' => (int) $product->skus
-                ->filter(fn ($s) => $s->status == 1)
-                ->sum(fn ($s) => $s->inventory?->stock ?? 0),
-            'skus' => $product->skus
-                ->filter(fn ($s) => $s->status == 1)
-                ->map(fn ($sku) => [
-                    'id' => $sku->id,
-                    'sku_code' => $sku->sku_code,
-                    'specs' => $sku->specs,
-                    'price' => $sku->price,
-                    'stock' => $sku->inventory?->stock ?? 0,
-                    'status' => (int) $sku->status,
-                ])->values(),
-        ]);
+        return $this->success(new ProductResource($product));
     }
 
     /** 分类树 GET /products/categories（仅启用） */
@@ -163,10 +136,11 @@ class ProductController extends Controller
 
         return $this->success(
             $categories->where('parent_id', 0)->values()->map(fn ($root) => [
-                'id' => $root->id,
+                // P2-11：分类对外只暴露 public_id
+                'id' => $root->public_id,
                 'name' => $root->name,
                 'children' => $categories->where('parent_id', $root->id)->values()
-                    ->map(fn ($c) => ['id' => $c->id, 'name' => $c->name])->all(),
+                    ->map(fn ($c) => ['id' => $c->public_id, 'name' => $c->name])->all(),
             ])->all()
         );
     }
@@ -190,23 +164,8 @@ class ProductController extends Controller
             ->get();
 
         return $this->success([
-            'hot' => $hot->map(fn ($p) => $this->brief($p))->all(),
-            'newest' => $newest->map(fn ($p) => $this->brief($p))->all(),
+            'hot' => $hot->map(fn ($p) => new ProductResource($p))->all(),
+            'newest' => $newest->map(fn ($p) => new ProductResource($p))->all(),
         ]);
-    }
-
-    /** 列表简要字段 */
-    private function brief(Product $p): array
-    {
-        return [
-            'id' => $p->id,
-            'title' => $p->title,
-            'subtitle' => $p->subtitle,
-            'main_image' => $p->main_image,
-            'price' => $p->price,
-            'sales_count' => $p->sales_count,
-            'total_stock' => (int) ($p->total_stock ?? 0),
-            'category' => $p->category?->only(['id', 'name']),
-        ];
     }
 }

@@ -28,6 +28,9 @@ class ProfileController extends Controller
         $user = $request->user();
         $isAdmin = $user instanceof SysUser;
 
+        // SEC-04-B：当前用户「自身」的主键属于单条自有记录，攻击者无法据此枚举全表，
+        // 故 self-profile（me / profile）直接返回内部 id；public_id（SCOPE_USER）仅用于
+        // 跨用户引用场景（如评价作者），本系统公开列表当前不暴露作者 user_id，故此处无需编码。
         return $this->success([
             'id' => $user->id,
             'username' => $user->username,
