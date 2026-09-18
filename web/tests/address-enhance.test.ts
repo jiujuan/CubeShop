@@ -67,10 +67,18 @@ import CheckoutView from '@/views/CheckoutView.vue'
 import { useAuthStore } from '@/stores/auth'
 
 const regions = {
-  version: 'v1',
-  provinces: [
-    { name: '广东省', cities: [{ name: '深圳市', districts: ['南山区', '福田区'] }, { name: '广州市', districts: ['天河区'] }] },
-    { name: '北京市', cities: [{ name: '北京市', districts: ['朝阳区', '海淀区'] }] },
+  regions: [
+    {
+      code: '440000', name: '广东省', children: [
+        { code: '440300', name: '深圳市', children: [{ code: '440305', name: '南山区' }, { code: '440304', name: '福田区' }] },
+        { code: '440100', name: '广州市', children: [{ code: '440106', name: '天河区' }] },
+      ],
+    },
+    {
+      code: '110000', name: '北京市', children: [
+        { code: '110100', name: '北京市', children: [{ code: '110105', name: '朝阳区' }, { code: '110108', name: '海淀区' }] },
+      ],
+    },
   ],
 }
 

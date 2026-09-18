@@ -3,7 +3,7 @@ import { computed, onMounted, ref } from 'vue'
 import { Sparkles } from 'lucide-vue-next'
 import {
   createAddress, getRegions, parseAddress, updateAddress,
-  type Address, type AddressPayload, type RegionProvince,
+  type Address, type AddressPayload, type RegionNode,
 } from '@/api/user'
 
 /**
@@ -24,7 +24,7 @@ const emit = defineEmits<{
 
 const LABELS = ['家', '公司', '学校'] as const
 
-const regions = ref<RegionProvince[]>([])
+const regions = ref<RegionNode[]>([])
 const form = ref<AddressPayload>({
   contact_name: '',
   contact_phone: '',
@@ -49,7 +49,7 @@ const parseHint = ref('')
 onMounted(async () => {
   try {
     const { data } = await getRegions()
-    regions.value = data.data.provinces
+    regions.value = data.data.regions
   } catch {
     regions.value = []
   }
@@ -71,10 +71,10 @@ onMounted(async () => {
 })
 
 const cityOptions = computed(
-  () => regions.value.find((p) => p.name === form.value.province)?.cities ?? [],
+  () => regions.value.find((p) => p.name === form.value.province)?.children ?? [],
 )
 const districtOptions = computed(
-  () => cityOptions.value.find((c) => c.name === form.value.city)?.districts ?? [],
+  () => cityOptions.value.find((c) => c.name === form.value.city)?.children ?? [],
 )
 
 function onProvinceChange() {
@@ -225,7 +225,7 @@ async function submit() {
         :disabled="!form.city"
       >
         <option value="">请选择区</option>
-        <option v-for="d in districtOptions" :key="d" :value="d">{{ d }}</option>
+        <option v-for="d in districtOptions" :key="d.code" :value="d.name">{{ d.name }}</option>
       </select>
     </div>
 

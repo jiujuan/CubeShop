@@ -281,6 +281,13 @@ Route::middleware(['auth:sanctum', 'account.active'])->group(function () {
         Route::post('/shipping-companies', [\App\Http\Controllers\Admin\ExpressCompanyController::class, 'store'])->middleware('permission:shipping.manage');
         Route::put('/shipping-companies/{id}', [\App\Http\Controllers\Admin\ExpressCompanyController::class, 'update'])->middleware('permission:shipping.manage')->whereNumber('id');
         Route::delete('/shipping-companies/{id}', [\App\Http\Controllers\Admin\ExpressCompanyController::class, 'destroy'])->middleware('permission:shipping.manage')->whereNumber('id');
+
+        // 运费模板（T-053 Stage1，权限 shipping.manage）
+        Route::get('/freight-templates', [\App\Http\Controllers\Admin\FreightTemplateController::class, 'index'])->middleware('permission:shipping.manage');
+        Route::post('/freight-templates', [\App\Http\Controllers\Admin\FreightTemplateController::class, 'store'])->middleware('permission:shipping.manage');
+        Route::put('/freight-templates/{id}', [\App\Http\Controllers\Admin\FreightTemplateController::class, 'update'])->middleware('permission:shipping.manage')->whereNumber('id');
+        Route::delete('/freight-templates/{id}', [\App\Http\Controllers\Admin\FreightTemplateController::class, 'destroy'])->middleware('permission:shipping.manage')->whereNumber('id');
+
         Route::get('/orders/{id}', [AdminOrderController::class, 'show'])->middleware('permission:order.view');
         Route::post('/orders/{id}/ship', [AdminOrderController::class, 'ship'])->middleware('permission:order.ship');
         Route::post('/orders/{id}/accept', [AdminOrderController::class, 'accept'])->middleware('permission:order.ship');

@@ -20,7 +20,7 @@ const {
 vi.mock('@/api/user', () => ({
   getAddresses: getAddressesMock,
   getCart: getCartMock,
-  getRegions: vi.fn().mockResolvedValue({ data: { data: { provinces: [] } } }),
+  getRegions: vi.fn().mockResolvedValue({ data: { data: { regions: [] } } }),
   parseAddress: vi.fn(),
   createAddress: vi.fn(),
   updateAddress: vi.fn(),

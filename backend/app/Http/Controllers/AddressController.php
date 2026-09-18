@@ -32,10 +32,24 @@ class AddressController extends Controller
         return $this->success($addresses->map(fn (UserAddress $a) => $this->format($a))->values());
     }
 
-    /** 行政区划数据（省/市/区三级，含中国香港、中国澳门、中国台湾） */
-    public function regions(): JsonResponse
+    /**
+     * 行政区划数据（省/市/区三级，GB/T 2260 编码树，含中国香港、中国澳门、中国台湾）
+     *
+     * T-053 Stage1 起统一由 RegionService 提供唯一数据源（regions.json，code+name 树），
+     * 前后端共用；数据极少变更 → 强缓存 + ETag（命中返回 304）。
+     */
+    public function regions(Request $request): JsonResponse
     {
-        return $this->success(app(\App\Services\Address\AddressService::class)->regions());
+        $tree = \App\Services\Common\RegionService::tree();
+        $etag = '"regions-'.md5((string) json_encode($tree)).'"';
+
+        if ($request->header('If-None-Match') === $etag) {
+            return response()->json(null, 304, ['ETag' => $etag]);
+        }
+
+        return $this->success(['regions' => $tree])
+            ->header('ETag', $etag)
+            ->header('Cache-Control', 'public, max-age=86400');
     }
 
     /** 一行文本智能解析（V1.1 E04 / T-028） */

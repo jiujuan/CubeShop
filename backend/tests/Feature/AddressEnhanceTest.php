@@ -50,11 +50,15 @@ test('TC-ADDR-E02 标签超长返回 422', function () {
 
 // ---------- 级联数据 ----------
 
-test('TC-ADDR-E03 行政区划接口返回三级结构且含中国香港/澳门/台湾', function () {
-    $resp = $this->getJson('/api/regions')->json();
+test('TC-ADDR-E03 行政区划接口返回编码树且含中国香港/澳门/台湾', function () {
+    $res = $this->getJson('/api/regions');
+    $resp = $res->json();
     expect($resp['code'])->toBe(0);
 
-    $provinces = collect($resp['data']['provinces']);
+    // T-053 Stage1：统一为 GB/T 2260 编码树（code+name+children），强缓存 + ETag
+    $res->assertHeader('ETag')->assertHeader('Cache-Control');
+
+    $provinces = collect($resp['data']['regions']);
     $names = $provinces->pluck('name')->all();
 
     expect($names)->toContain('中国香港')
@@ -63,8 +67,18 @@ test('TC-ADDR-E03 行政区划接口返回三级结构且含中国香港/澳门/
         ->and($names)->toContain('广东省');
 
     $gd = $provinces->firstWhere('name', '广东省');
-    expect($gd['cities'])->not->toBeEmpty()
-        ->and($gd['cities'][0])->toHaveKeys(['name', 'districts']);
+    expect($gd['code'])->toBe('440000')
+        ->and($gd['children'])->not->toBeEmpty()
+        ->and($gd['children'][0])->toHaveKeys(['code', 'name', 'children'])
+        ->and($gd['children'][0]['children'][0])->toHaveKeys(['code', 'name']);
+});
+
+test('TC-ADDR-E03b 行政区划 ETag 命中返回 304', function () {
+    $first = $this->getJson('/api/regions');
+    $etag = $first->headers->get('ETag');
+    expect($etag)->not->toBeNull();
+
+    $this->getJson('/api/regions', ['If-None-Match' => $etag])->assertStatus(304);
 });
 
 // ---------- 智能解析 ----------

@@ -67,18 +67,14 @@ export interface Address {
 
 export type AddressPayload = Omit<Address, 'id' | 'contact_phone_full' | 'used_count' | 'last_used_at'>
 
-export interface RegionCity {
+/** 行政区划节点（GB/T 2260 编码树，T-053 Stage1 起前后端共用同一数据源） */
+export interface RegionNode {
+  code: string
   name: string
-  districts: string[]
-}
-export interface RegionProvince {
-  name: string
-  cities: RegionCity[]
+  children?: RegionNode[]
 }
 export interface RegionData {
-  version: string
-  note?: string
-  provinces: RegionProvince[]
+  regions: RegionNode[]
 }
 
 export interface ParsedAddress {
