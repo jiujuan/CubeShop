@@ -33,6 +33,8 @@ class Product extends Model
         'brand_id', 'weight', 'video_url', 'keywords',
         // 运费升级 Stage 2（T-053）：绑定运费模板（null = 全局默认）
         'freight_template_id',
+        // 首页推荐（P-HomeRecommend）：勾选后在前台首页「产品推荐」栏展示
+        'is_home_recommended',
     ];
 
     protected $casts = [
@@ -40,6 +42,7 @@ class Product extends Model
         'brand_id' => 'integer',
         'weight' => 'integer',
         'freight_template_id' => 'integer',
+        'is_home_recommended' => 'boolean',
     ];
 
     /**
