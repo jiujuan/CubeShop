@@ -109,8 +109,8 @@ const detailLogs = computed(() =>
   (detailState.value?.data?.logs ?? []).map((log) => ({
     log,
     fields: formatRefundLogFields(log.content, log.content_data),
-    actor: log.actor_type === 'customer' ? '用户' : '管理员',
-    operatorName: log.operator?.nickname || log.operator?.username || '',
+    // 操作人：优先昵称 / 用户名；取不到时回退角色名（用户 / 管理员）
+    operator: log.operator?.nickname || log.operator?.username || (log.actor_type === 'customer' ? '用户' : '管理员'),
   })),
 )
 
@@ -462,13 +462,13 @@ async function doReceive() {
           <section class="mt-4 rounded-lg border border-slate-100 p-3" data-testid="detail-logs">
             <h4 class="mb-2 text-xs font-semibold text-slate-500">处理记录</h4>
             <ol class="space-y-3 text-[13px]">
-              <li v-for="entry in detailLogs" :key="entry.log.id" class="flex items-start gap-2">
+              <li v-for="entry in detailLogs" :key="entry.log.id" class="flex items-start gap-2" data-testid="log-entry">
                 <span class="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-[#1677ff]"></span>
                 <div class="min-w-0 flex-1">
                   <p class="text-black">
                     {{ REFUND_ACTION_LABELS[entry.log.action] || entry.log.action }}
                     <span class="text-slate-400">
-                      · {{ entry.actor }}{{ entry.operatorName ? `（${entry.operatorName}）` : '' }}
+                      · {{ entry.operator }}
                       · {{ entry.log.created_at }}
                     </span>
                   </p>

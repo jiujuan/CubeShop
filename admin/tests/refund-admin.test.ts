@@ -133,7 +133,7 @@ function mockDetail() {
             created_at: '2026-09-19 10:00:00',
           },
           {
-            id: 2, actor_type: 'admin' as const, operator: { id: 1, username: 'admin', nickname: '管理员' },
+            id: 2, actor_type: 'admin' as const, operator: { id: 1, username: 'admin', nickname: '客服小李' },
             action: 'process_approve', content: JSON.stringify(approveData), content_data: approveData,
             created_at: '2026-09-19 10:05:00',
           },
@@ -200,6 +200,25 @@ describe('后台退款处理 RefundView', () => {
     // 两条流水的图片（用户凭证图 + 后台说明图）共 2 张缩略图，且无跳转链接
     expect(logs.findAll('[data-testid="log-image"]').length).toBe(2)
     expect(logs.findAll('a').length).toBe(0)
+  })
+
+  it('处理记录的申请人显示买家昵称，后台动作显示操作员昵称', async () => {
+    const wrapper = mount(RefundView, { global: globalCfg(freshPinia()) })
+    await flushPromises()
+    await wrapper.find('[data-testid="detail-21"]').trigger('click')
+    await flushPromises()
+
+    const entries = wrapper.findAll('[data-testid="log-entry"]')
+    expect(entries.length).toBe(2)
+
+    // 第 1 条：用户提交申请 → 操作人应为买家昵称（而非「管理员」）
+    expect(entries[0].text()).toContain('用户提交申请')
+    expect(entries[0].text()).toContain('买家甲')
+    expect(entries[0].text()).not.toContain('客服小李')
+
+    // 第 2 条：后台同意退款 → 操作人应为后台操作员昵称
+    expect(entries[1].text()).toContain('后台同意退款')
+    expect(entries[1].text()).toContain('客服小李')
   })
 
   it('点击处理记录中的图片在图层灯箱中放大，不跳转页面', async () => {
