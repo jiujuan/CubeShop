@@ -173,7 +173,7 @@ test('closePendingForOrder 关闭订单待支付单', function () {
 
     PaymentService::closePendingForOrder($order->id);
 
-    expect(Payment::where('order_id', $order->id)->value('status'))->toBe(Payment::STATUS_CLOSED);
+    expect(Payment::where('order_id', oid($order->id))->value('status'))->toBe(Payment::STATUS_CLOSED);
 });
 
 // PAY-U-09 查询：仅本人可见

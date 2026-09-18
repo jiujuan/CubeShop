@@ -10,6 +10,7 @@ use App\Services\Payment\Dto\QueryResult;
 use App\Services\Payment\Dto\RefundResult;
 use App\Services\Payment\Dto\TestResult;
 use Illuminate\Http\Request;
+use RuntimeException;
 
 /**
  * L1 本地模拟网关（收银台方案 §8.2）
@@ -55,6 +56,11 @@ class MockGateway implements PaymentGateway
             return CallbackResult::fail('缺少 payment_no', $payload);
         }
 
+        // SEC-02 fail-closed：未配置密钥时一律拒绝，避免「空密钥 = 任何人都能算出签名」
+        if (self::secret() === '') {
+            return CallbackResult::fail('支付签名密钥未配置，拒绝回调', $payload);
+        }
+
         $expected = self::sign(
             $payload['payment_no'],
             $payload['channel_trade_no'],
@@ -93,7 +99,14 @@ class MockGateway implements PaymentGateway
     /** HMAC-SHA256(payment_no|channel_trade_no|amount|status) */
     public static function sign(string $paymentNo, string $channelTradeNo, string $amount, string $status): string
     {
-        return hash_hmac('sha256', implode('|', [$paymentNo, $channelTradeNo, $amount, $status]), self::secret());
+        $secret = self::secret();
+
+        // SEC-02 fail-closed：空密钥下 HMAC 可被任何人复算，宁可报错也不生成可预测的签名
+        if ($secret === '') {
+            throw new RuntimeException('PAY_SIGN_SECRET 未配置，拒绝生成支付回调签名');
+        }
+
+        return hash_hmac('sha256', implode('|', [$paymentNo, $channelTradeNo, $amount, $status]), $secret);
     }
 
     /** 生成一笔模拟回调的完整报文（PaymentService::sandboxNotify 使用） */
@@ -110,8 +123,17 @@ class MockGateway implements PaymentGateway
         ];
     }
 
+    /**
+     * 回调验签密钥（SEC-02）
+     *
+     * 历史实现为 `env('PAY_SIGN_SECRET', '<硬编码默认密钥>')`——默认值写在入库源码中，
+     * 生产未覆盖时任何人都能算出合法签名、伪造「支付成功」回调。现改为**无默认值**：
+     * 未配置时返回空串，由两道防线兜底——
+     *   ① AppServiceProvider 启动 fail-fast（非 local/testing 的 HTTP 请求直接 500）；
+     *   ② sign()/verifyCallback() fail-closed（空密钥不签名、不放行）。
+     */
     public static function secret(): string
     {
-        return (string) config('payments.secret', env('PAY_SIGN_SECRET', 'cubeshop-sandbox-secret'));
+        return (string) config('payments.secret', '');
     }
 }

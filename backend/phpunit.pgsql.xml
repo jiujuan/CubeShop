@@ -38,5 +38,8 @@
         <env name="PULSE_ENABLED" value="false"/>
         <env name="TELESCOPE_ENABLED" value="false"/>
         <env name="NIGHTWATCH_ENABLED" value="false"/>
+        <!-- 支付安全配置（SEC-01/02 回归基线）：测试需显式开启沙箱与密钥，不依赖 .env -->
+        <env name="PAYMENT_SANDBOX" value="true"/>
+        <env name="PAY_SIGN_SECRET" value="testing-pay-sign-secret-not-for-production"/>
     </php>
 </phpunit>

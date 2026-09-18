@@ -83,6 +83,16 @@ class ReportController extends Controller
             ]);
         }
 
+        // SEC-09：导出审计
+        app(\App\Services\Common\OperationLogService::class)->record(
+            $request->user()->id,
+            'report',
+            'export',
+            'orders',
+            null,
+            ['start' => $data['start'], 'end' => $data['end']],
+        );
+
         return $this->success($this->reports->exportOrders($data['start'], $data['end']));
     }
 
