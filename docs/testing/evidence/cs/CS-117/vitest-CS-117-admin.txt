@@ -1,0 +1,28 @@
+===== CS 一期 ADMIN 前端测试（vitest，含 R7 侧栏 icon 双注册）=====
+
+
+[1m[30m[46m RUN [49m[39m[22m [36mv5.0.1 [39m[90mD:/codeproject/PHP/CubeShop/admin[39m
+
+ [32m✓[39m tests/sidebar-icon.test.ts [2m([22m[2m2 tests[22m[2m)[22m[32m 4[2mms[22m[39m
+ [32m✓[39m tests/cs-faq.test.ts [2m([22m[2m8 tests[22m[2m)[22m[32m 129[2mms[22m[39m
+[90mstderr[2m | tests/cs-ticket.test.ts[2m > [22m[2m侧栏客服菜单权限显隐（CS-114 / R7）[2m > [22m[2m无 cs.ticket.view / cs.faq.manage 时不渲染客服菜单
+[22m[39m[Vue Router warn]: No match found for location with path "/dashboard"
+[Vue Router warn]: No match found for location with path "/reviews"
+[Vue Router warn]: No match found for location with path "/dashboard"
+[Vue Router warn]: No match found for location with path "/reviews"
+
+[90mstderr[2m | tests/cs-ticket.test.ts[2m > [22m[2m侧栏客服菜单权限显隐（CS-114 / R7）[2m > [22m[2m有权限时渲染「服务工单」「帮助中心」菜单
+[22m[39m[Vue Router warn]: No match found for location with path "/dashboard"
+[Vue Router warn]: No match found for location with path "/cs/tickets"
+[Vue Router warn]: No match found for location with path "/cs/faq"
+[Vue Router warn]: No match found for location with path "/dashboard"
+[Vue Router warn]: No match found for location with path "/cs/tickets"
+[Vue Router warn]: No match found for location with path "/cs/faq"
+
+ [32m✓[39m tests/cs-ticket.test.ts [2m([22m[2m9 tests[22m[2m)[22m[32m 162[2mms[22m[39m
+
+[2m Test Files [22m [1m[32m3 passed[39m[22m[90m (3)[39m
+[2m      Tests [22m [1m[32m19 passed[39m[22m[90m (19)[39m
+[2m   Start at [22m 17:27:23
+[2m   Duration [22m 1.76s[2m (environment 63%, transform 15%, import 13%, tests 8%, setup 1%, worker 1%)[22m
+

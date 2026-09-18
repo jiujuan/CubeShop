@@ -1,0 +1,45 @@
+数据库连接：pgsql / cubeshop
+导出时间：2026-09-17 21:30:47
+
+===== cs_quick_reply =====
+  id                     bigint             nextval('cs_quick_reply_id_seq'::regclass) NO    
+  type_id                bigint             -      YES   
+  title                  character varying(64) -      NO    
+  content                text               -      NO    
+  sort                   smallint           '0'::smallint NO    
+  created_by             bigint             -      YES   
+  updated_by             bigint             -      YES   
+  created_at             timestamp without time zone -      YES   
+  updated_at             timestamp without time zone -      YES   
+  --- 索引 ---
+  cs_quick_reply_pkey
+  cs_quick_reply_type_id_sort_index
+  行数：0
+
+===== cs_announcement =====
+  id                     bigint             nextval('cs_announcement_id_seq'::regclass) NO    
+  title                  character varying(128) -      NO    
+  content                text               -      NO    
+  is_top                 boolean            false  NO    
+  status                 character varying(16) 'draft'::character varying NO    
+  published_at           timestamp without time zone -      YES   
+  created_by             bigint             -      YES   
+  created_at             timestamp without time zone -      YES   
+  updated_at             timestamp without time zone -      YES   
+  --- 索引 ---
+  cs_announcement_pkey
+  cs_announcement_status_is_top_published_at_index
+  行数：0
+
+===== 决策 D8：配置承载 =====
+  system_configs 存在：yes
+  cs_service_config 存在：no(符合 D8)
+
+===== cs_ticket 满意度 / 时间锚点字段核对 =====
+  satisfaction           OK
+  satisfaction_remark    OK
+  satisfaction_at        OK
+  first_replied_at       OK
+  completed_at           OK
+  closed_at              OK
+  close_reason           OK

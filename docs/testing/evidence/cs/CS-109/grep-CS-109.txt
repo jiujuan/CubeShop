@@ -1,0 +1,30 @@
+===== CS-109 后台处理动作副作用核对 =====
+
+--- [1] 操作日志写入点（sys_operation_log）---
+25: * 写操作（回复/状态/转交/优先级/批量转交）均记 sys_operation_log。
+144:        $this->log($request, 'cs_ticket_reply', 'cs_ticket', $id, '回复工单 #'.$ticket->ticket_no);
+162:        $this->log($request, 'cs_ticket_status', 'cs_ticket', $id, '状态变更 → '.$data['status']);
+178:        $this->log($request, 'cs_ticket_assign', 'cs_ticket', $id, '转交 → '.$assigneeName);
+311:    private function log(Request $request, string $action, string $targetType, int $targetId, string $content): void
+
+--- [2] 内部备注不得通知用户（守卫位置）---
+16- * - 买家侧：send() → receiver_type = customer
+17- *
+18: * ⚠️ 硬性规则：**内部备注（is_internal）绝不通知用户**（AC-107.3）。
+19- * ⚠️ 通知失败不得阻断主流程（异常吞掉并记日志）。
+20- */
+21-class CsNotificationService
+--
+42-    public function notifyStaffReply(CsTicket $ticket, CsTicketMessage $message): bool
+43-    {
+44:        if ($message->is_internal) {
+45-            return false;
+46-        }
+47-
+
+--- [3] 内部备注强制限定 sender_type=staff ---
+111-
+112-        // 内部备注只有客服能写（其余发送方强制置 false，防越权带入）
+113:        $isInternal = $isInternal && $senderType === CsTicketMessage::SENDER_STAFF;
+114-
+115-        $normalizedImages = $this->normalizeImages($images);

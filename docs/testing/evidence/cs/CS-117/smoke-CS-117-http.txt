@@ -1,0 +1,43 @@
+== CS-117 端到端冒烟（接口通道）== base=http://127.0.0.1:8000/api
+--- 0. 前置：后台登录 / 买家注册 / 已支付订单 / 发布 FAQ
+  [PASS] 后台登录成功
+  [PASS] 买家注册成功(cse2e1789634675)
+  [PASS] 已支付订单就绪(no=CS20260917000015)
+  [PASS] FAQ 无草稿（前次已发布，跳过）
+  [PASS] 工单类型「物流问题」id=2
+--- 步骤 1：服务中心首页读 FAQ 分类
+  [PASS] 分类数=5
+--- 步骤 2：搜索关键词 → 命中文章 → 详情 → 提交「有帮助」
+  [PASS] 搜索命中文章 id=2
+  [PASS] 详情可读
+  [PASS] 「有帮助」已记录(helpful_count=2)
+--- 步骤 3：联系客服 → 物流问题 → 关联订单 → 上传 2 张凭证 → 提交
+  [PASS] 凭证上传 2 张（http://localhost:8000/storage/uploads/cs/20260917/5boICHgG9MpPVMvMwiOBRLblkzA2iVs7rop1DMB0.png）
+--- 步骤 4：工单号 / pending / 我的列表可见
+  [PASS] 工单号=TK20260917000006
+  [PASS] 初始状态=pending
+  [PASS] 我的工单列表可见
+--- 步骤 5：后台待处理数 + 打开工单
+  [PASS] 待处理数=1
+  [PASS] 后台详情可打开（user_summary.id=572）
+--- 步骤 6：内部备注（用户端不可见、不通知）
+  [PASS] 用户端无任何内部备注
+  [PASS] 用户端消息文本不含内部内容
+  [PASS] 内部备注不改状态
+  [PASS] 内部备注未通知买家
+--- 步骤 7：客服回复 → pending→processing + first_replied_at + 站内信
+  [PASS] 状态 pending → processing
+  [PASS] first_replied_at 已写入(2026-09-17T08:45:02.000000Z)
+  [PASS] 买家收到站内信（cs_ticket_reply ×1）
+--- 步骤 8：置「等待用户回复」→ 用户追加回复 → 回 processing
+  [PASS] 状态 → waiting_user
+  [PASS] 用户回复后 → processing
+--- 步骤 9：客服标记已完成 → 用户端可见完成 + 系统消息
+  [PASS] 状态 → completed
+  [PASS] 用户端可见系统消息（2 条）
+--- 步骤 10：用户关闭 → closed → 再次关闭 40009
+  [PASS] 关闭成功 → closed
+  [PASS] 再次关闭 → 40009
+
+== 结果：PASS=28 FAIL=0 ==
+=> 端到端 10 步全过

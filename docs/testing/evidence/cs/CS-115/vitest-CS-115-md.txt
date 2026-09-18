@@ -1,0 +1,10 @@
+
+[1m[30m[46m RUN [49m[39m[22m [36mv5.0.1 [39m[90mD:/codeproject/PHP/CubeShop/admin[39m
+
+ [32m✓[39m tests/cs-faq.test.ts [2m([22m[2m13 tests[22m[2m)[22m[32m 182[2mms[22m[39m
+
+[2m Test Files [22m [1m[32m1 passed[39m[22m[90m (1)[39m
+[2m      Tests [22m [1m[32m13 passed[39m[22m[90m (13)[39m
+[2m   Start at [22m 20:11:31
+[2m   Duration [22m 1.43s[2m (environment 53%, transform 17%, import 15%, tests 14%, worker 1%, setup 1%)[22m
+
