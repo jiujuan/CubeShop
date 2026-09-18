@@ -208,9 +208,12 @@ test('TC-REV-010 商品评价列表仅返回已通过评价', function () {
 
     $resp = $this->getJson("/api/products/{$this->productId}/reviews")->json('data');
 
+    // SEC-04：评价总数属平台经营指标，公开接口只给 has_more，不给精确 total
     expect($resp['list'])->toHaveCount(1)
         ->and($resp['list'][0]['content'])->toBe('approved one')
-        ->and($resp['pagination']['total'])->toBe(1);
+        ->and($resp['pagination']['total'])->toBeNull()
+        ->and($resp['pagination']['total_pages'])->toBeNull()
+        ->and($resp['pagination']['has_more'])->toBeFalse();
 });
 
 test('TC-REV-011 评分汇总均值/星级分布/好评率正确', function () {
@@ -387,4 +390,48 @@ test('TC-REV-024 评价后评分汇总缓存失效', function () {
 
     $after = $this->getJson("/api/products/{$this->productId}/reviews")->json('data.summary.total');
     expect($after)->toBe(1);
+});
+
+// ---------- 评价隐藏 / 显示（V1.2） ----------
+
+test('TC-REV-025 后台隐藏评价后前台不再展示且不计入评分，可恢复', function () {
+    [$order, $item] = seedReviewableOrder($this->buyerId, productId: $this->productId, skuId: $this->sku->id);
+    $this->postJson("/api/orders/{$order->id}/items/{$item->id}/review", ['rating' => 5], $this->buyerAuth);
+    $review = Review::where('order_item_id', $item->id)->first();
+
+    // 隐藏前：列表可见、汇总计数 1
+    expect($this->getJson("/api/products/{$this->productId}/reviews")->json('data.list'))->toHaveCount(1)
+        ->and($this->getJson("/api/products/{$this->productId}/reviews")->json('data.summary.total'))->toBe(1);
+
+    // 隐藏
+    $this->postJson("/api/admin/reviews/{$review->id}/hidden", ['hidden' => true], $this->adminAuth)
+        ->assertStatus(200);
+
+    expect($review->fresh()->is_hidden)->toBeTrue();
+
+    // 商品评价列表不再展示，评分汇总也不计入（缓存已失效）
+    expect($this->getJson("/api/products/{$this->productId}/reviews")->json('data.list'))->toHaveCount(0)
+        ->and($this->getJson("/api/products/{$this->productId}/reviews")->json('data.summary.total'))->toBe(0);
+
+    // 买家的「我的评价」同样不展示
+    expect($this->getJson('/api/me/reviews', $this->buyerAuth)->json('data.list'))->toHaveCount(0);
+
+    // 后台列表仍可见（支持按 hidden 过滤）
+    expect($this->getJson('/api/admin/reviews?hidden=1', $this->adminAuth)->json('data.list'))->toHaveCount(1);
+    expect($this->getJson('/api/admin/reviews?hidden=0', $this->adminAuth)->json('data.list'))->toHaveCount(0);
+
+    // 恢复显示
+    $this->postJson("/api/admin/reviews/{$review->id}/hidden", ['hidden' => false], $this->adminAuth)
+        ->assertStatus(200);
+
+    expect($this->getJson("/api/products/{$this->productId}/reviews")->json('data.list'))->toHaveCount(1)
+        ->and($this->getJson("/api/products/{$this->productId}/reviews")->json('data.summary.total'))->toBe(1);
+});
+
+test('TC-REV-026 无 review.manage 权限隐藏评价被拒', function () {
+    $r = Review::create(['order_id' => 1, 'order_item_id' => 5005, 'user_id' => $this->buyerId, 'product_id' => $this->productId, 'rating' => 5, 'status' => Review::STATUS_APPROVED]);
+
+    // 买家无后台权限
+    $this->postJson("/api/admin/reviews/{$r->id}/hidden", ['hidden' => true], $this->buyerAuth)->assertStatus(403);
+    expect($r->fresh()->is_hidden)->toBeFalse();
 });

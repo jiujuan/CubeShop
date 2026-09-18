@@ -33,6 +33,7 @@ class ReviewController extends Controller
         $data = $request->validate([
             'keyword' => ['nullable', 'string', 'max:100'],
             'status' => ['nullable', 'in:pending,approved,rejected'],
+            'hidden' => ['nullable', 'boolean'],
             'rating' => ['nullable', 'integer', 'min:1', 'max:5'],
             'page' => ['nullable', 'integer', 'min:1'],
             'page_size' => ['nullable', 'integer', 'min:1', 'max:100'],
@@ -104,6 +105,26 @@ class ReviewController extends Controller
         return $this->success(null, '回复成功');
     }
 
+    /**
+     * 隐藏 / 显示评价（V1.2）
+     *
+     * 隐藏后前台列表不再展示该评价、也不计入评分汇总；评价记录保留，可再次显示。
+     */
+    public function setHidden(Request $request, int $id): JsonResponse
+    {
+        $data = $request->validate(['hidden' => ['required', 'boolean']]);
+        $review = $this->find($id);
+
+        $before = (bool) $review->is_hidden;
+        $hidden = (bool) $data['hidden'];
+        $this->reviews->setHidden($review, $hidden);
+        $this->opLog->record($request->user()?->id, 'review', 'hidden', 'Review', $id, [
+            'before' => $before, 'after' => $hidden,
+        ]);
+
+        return $this->success(['is_hidden' => $hidden], $hidden ? '已隐藏该评价' : '已显示该评价');
+    }
+
     /** 删除评价 */
     public function destroy(Request $request, int $id): JsonResponse
     {
@@ -152,6 +173,7 @@ class ReviewController extends Controller
             'reject_reason' => $r->reject_reason,
             'reply_content' => $r->reply_content,
             'reply_at' => $r->reply_at?->format('Y-m-d H:i:s'),
+            'is_hidden' => (bool) $r->is_hidden,
             'created_at' => $r->created_at?->format('Y-m-d H:i:s'),
         ];
     }

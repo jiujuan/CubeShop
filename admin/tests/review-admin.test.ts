@@ -12,6 +12,7 @@ const {
   replyReviewMock,
   deleteReviewMock,
   setAuditModeMock,
+  setReviewHiddenMock,
 } = vi.hoisted(() => ({
   getReviewsMock: vi.fn(),
   approveReviewMock: vi.fn(),
@@ -19,6 +20,7 @@ const {
   replyReviewMock: vi.fn(),
   deleteReviewMock: vi.fn(),
   setAuditModeMock: vi.fn(),
+  setReviewHiddenMock: vi.fn(),
 }))
 
 vi.mock('@/api/review', async () => {
@@ -31,6 +33,7 @@ vi.mock('@/api/review', async () => {
     replyReview: replyReviewMock,
     deleteReview: deleteReviewMock,
     setAuditMode: setAuditModeMock,
+  setReviewHidden: setReviewHiddenMock,
   }
 })
 
@@ -75,6 +78,7 @@ const row = (overrides: Record<string, unknown> = {}) => ({
   reject_reason: null,
   reply_content: null,
   reply_at: null,
+  is_hidden: false,
   created_at: '2026-09-16 10:00:00',
   ...overrides,
 })
@@ -83,7 +87,7 @@ function mockList(list: unknown[], auditMode = false) {
   getReviewsMock.mockResolvedValue({
     data: {
       data: {
-        stats: { pending: 1, today: 2, total: 10, avg: 4.2 },
+        stats: { pending: 1, today: 2, total: 10, hidden: 3, avg: 4.2 },
         audit_mode: auditMode,
         list,
         pagination: { page: 1, page_size: 20, total: list.length, total_pages: 1 },
@@ -221,5 +225,46 @@ describe('评价管理页（T-017）', () => {
     await flushPromises()
 
     expect(setAuditModeMock).toHaveBeenCalledWith(true)
+  })
+
+  it('点击「隐藏」调用接口并刷新；已隐藏时按钮变为「显示」', async () => {
+    mockList([row({ id: 21, status: 'approved', status_label: '已通过' })])
+    setReviewHiddenMock.mockResolvedValue({ data: { data: { is_hidden: true } } })
+
+    const wrapper = mount(ReviewView, { global: globalCfg(freshPinia()) })
+    await flushPromises()
+
+    const btn = wrapper.find('[data-testid="toggle-hidden-21"]')
+    expect(btn.text()).toContain('隐藏')
+    await btn.trigger('click')
+    await flushPromises()
+
+    expect(setReviewHiddenMock).toHaveBeenCalledWith(21, true)
+    expect(getReviewsMock.mock.calls.length).toBeGreaterThanOrEqual(2)
+  })
+
+  it('已隐藏的评价展示「已隐藏」标记，点击「显示」恢复', async () => {
+    mockList([row({ id: 22, status: 'approved', status_label: '已通过', is_hidden: true })])
+    setReviewHiddenMock.mockResolvedValue({ data: { data: { is_hidden: false } } })
+
+    const wrapper = mount(ReviewView, { global: globalCfg(freshPinia()) })
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="hidden-tag-22"]').exists()).toBe(true)
+    await wrapper.find('[data-testid="toggle-hidden-22"]').trigger('click')
+    await flushPromises()
+
+    expect(setReviewHiddenMock).toHaveBeenCalledWith(22, false)
+  })
+
+  it('「仅看已隐藏」筛选携带 hidden 参数', async () => {
+    mockList([row({ id: 23 })])
+    const wrapper = mount(ReviewView, { global: globalCfg(freshPinia()) })
+    await flushPromises()
+
+    await wrapper.find('[data-testid="hidden-filter"]').trigger('click')
+    await flushPromises()
+
+    expect(getReviewsMock.mock.calls.at(-1)![0].hidden).toBe(true)
   })
 })
