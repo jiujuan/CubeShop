@@ -124,6 +124,8 @@ Route::middleware(['auth:sanctum', 'account.active'])->group(function () {
     Route::get('/orders/by-no/{orderNo}', [OrderController::class, 'showByNo']);
     Route::get('/orders', [OrderController::class, 'index']);
     Route::post('/orders', [OrderController::class, 'store'])->middleware('throttle:order');
+    // 运费实时预览（T-053 Stage 2：结算页选地址后调用，与下单同一套引擎；须在 {id} 路由前）
+    Route::post('/orders/freight-preview', [OrderController::class, 'freightPreview']);
     Route::get('/orders/{id}', [OrderController::class, 'show']);
     Route::get('/orders/{id}/shipping', [OrderController::class, 'shipping']);
     Route::post('/orders/{id}/cancel', [OrderController::class, 'cancel']);

@@ -7,12 +7,14 @@ const {
   getAddressesMock,
   getCartMock,
   createOrderMock,
+  previewFreightMock,
   getAvailableCouponsMock,
   getPromotionPreviewMock,
 } = vi.hoisted(() => ({
   getAddressesMock: vi.fn(),
   getCartMock: vi.fn(),
   createOrderMock: vi.fn(),
+  previewFreightMock: vi.fn(),
   getAvailableCouponsMock: vi.fn(),
   getPromotionPreviewMock: vi.fn(),
 }))
@@ -36,6 +38,7 @@ vi.mock('@/api/user', () => ({
 
 vi.mock('@/api/order', () => ({
   createOrder: createOrderMock,
+  previewFreight: previewFreightMock,
 }))
 
 vi.mock('@/api/coupon', () => ({
@@ -133,6 +136,10 @@ beforeEach(() => {
   // 默认：150 元商品 + 一张满 50 减 10 券 + 无满减活动
   getAddressesMock.mockResolvedValue({ data: { data: [address] } })
   getCartMock.mockResolvedValue({ data: { data: { items: [cartItem] } } })
+  // 运费预览（T-053）：默认包邮，与旧「满 99 免运费」场景一致
+  previewFreightMock.mockResolvedValue({
+    data: { data: { freight_amount: '0.00', free_shipping: true, free_shipping_gap: null, not_support: false, detail: [] } },
+  })
   getAvailableCouponsMock.mockResolvedValue({
     data: { data: { usable: [usableCoupon()], unusable: [] } },
   })

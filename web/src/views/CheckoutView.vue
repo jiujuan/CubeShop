@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { MapPin, NotebookPen, Plus, Ticket } from 'lucide-vue-next'
 import { getAddresses, getCart, type CartItemView, type Address } from '@/api/user'
-import { createOrder, type CreateOrderResult } from '@/api/order'
+import { createOrder, previewFreight, type CreateOrderResult, type FreightPreview } from '@/api/order'
 import {
   getAvailableCoupons, getPromotionPreview,
   type AvailableCoupon, type UnavailableCoupon, type PromotionDisplay,
@@ -65,17 +65,50 @@ async function onAddressSaved(addr: Address) {
 const goodsAmount = computed(() =>
   validItems.value.reduce((sum, item) => sum + Number(item.subtotal), 0).toFixed(2),
 )
-/** 运费展示：与后端规则一致（满 99 免运费，否则默认 10 元，阈值来自后端配置，前端仅展示） */
-const freightAmount = computed(() =>
-  Number(goodsAmount.value) >= 99 || Number(goodsAmount.value) === 0 ? '0.00' : '10.00',
-)
+
+/** 运费预览（T-053 Stage 2）：由后端 freight-preview 计算，前端不再硬编码规则。
+ *  null = 未选地址/加载中 → 显示「运费待结算」；not_support=true → 禁止提交。 */
+const freight = ref<FreightPreview | null>(null)
+const freightLoading = ref(false)
+const freightError = ref(false)
+
+const freightAmount = computed(() => freight.value?.freight_amount ?? '0.00')
+const freightUnknown = computed(() => !selectedAddressId.value || freightLoading.value || freightError.value || freight.value?.not_support === true)
+const notSupport = computed(() => freight.value?.not_support === true)
+
+async function loadFreight() {
+  const addressId = selectedAddressId.value
+  if (!addressId || !validItems.value.length) {
+    freight.value = null
+    return
+  }
+  freightLoading.value = true
+  freightError.value = false
+  try {
+    const { data } = await previewFreight({
+      items: validItems.value.map((i) => ({ sku_id: Number(i.sku_id), quantity: i.quantity })),
+      address_id: addressId,
+    })
+    // 地址在请求返回前被切换 → 丢弃过期结果
+    if (selectedAddressId.value === addressId) freight.value = data.data
+  } catch {
+    // 预览失败不阻塞结算（下单时后端兜底重算），仅回退显示旧口径提示
+    freightError.value = true
+    freight.value = null
+  } finally {
+    if (selectedAddressId.value === addressId) freightLoading.value = false
+  }
+}
+
+watch(selectedAddressId, () => void loadFreight())
+
 /** 满减优惠（后端自动匹配最优活动，预览值来自 displayFor） */
 const promoDiscount = computed(() => promotion.value?.discount ?? 0)
 /** 优惠券优惠（可用券接口返回的 discount，与下单同口径） */
 const couponDiscount = computed(() => selectedCoupon.value?.discount ?? 0)
-/** 应付预览：max(0, 商品 − 满减 − 券) + 运费（优惠项均受后端封顶，不会为负） */
+/** 应付预览：max(0, 商品 − 满减 − 券) + 运费（运费未知时暂按 0，提交前服务端重算） */
 const payAmount = computed(() =>
-  (Math.max(0, Number(goodsAmount.value) - promoDiscount.value - couponDiscount.value) + Number(freightAmount.value)).toFixed(2),
+  (Math.max(0, Number(goodsAmount.value) - promoDiscount.value - couponDiscount.value) + Number(freightUnknown.value ? 0 : freightAmount.value)).toFixed(2),
 )
 
 /** 结算可用券与满减预览（失败静默降级为无优惠，不阻塞结算） */
@@ -132,6 +165,10 @@ async function submit() {
   if (tip.value) return
   if (!selectedAddressId.value) {
     tip.value = '请先选择收货地址'
+    return
+  }
+  if (notSupport.value) {
+    tip.value = '当前收货地区暂不支持配送，请更换地址'
     return
   }
   if (!validItems.value.length) {
@@ -286,7 +323,25 @@ async function confirmMismatch() {
               <span>优惠券（{{ selectedCoupon.name }}）</span>
               <span data-testid="checkout-coupon-amount">−¥{{ couponDiscount.toFixed(2) }}</span>
             </div>
-            <div class="flex justify-between text-slate-600"><span>运费</span><span>{{ freightAmount === '0.00' ? '包邮' : `¥${freightAmount}` }}</span></div>
+            <div class="flex justify-between text-slate-600" data-testid="checkout-freight-row">
+              <span>运费</span>
+              <span data-testid="checkout-freight-amount">
+                <template v-if="!selectedAddressId">待结算</template>
+                <template v-else-if="freightLoading">计算中…</template>
+                <template v-else-if="notSupport">该地区暂不支持配送</template>
+                <template v-else-if="freightError">以下单结算为准</template>
+                <template v-else>{{ freightAmount === '0.00' ? '包邮' : `¥${freightAmount}` }}</template>
+              </span>
+            </div>
+            <!-- 再买 ¥X 包邮（阈值由后端下发） -->
+            <p
+              v-if="freight && !freight.free_shipping && freight.free_shipping_gap && Number(freight.free_shipping_gap) > 0"
+              class="text-xs text-[#ff7a45]"
+              data-testid="checkout-freight-gap"
+            >再买 ¥{{ freight.free_shipping_gap }} 免运费</p>
+            <p v-if="notSupport" class="rounded-md bg-red-50 px-3 py-2 text-xs text-red-500" data-testid="checkout-not-support">
+              当前收货地区暂不支持配送，请更换地址后下单
+            </p>
             <div class="flex justify-between border-t border-slate-100 pt-3">
               <span class="text-slate-700">应付总额</span>
               <span class="text-xl font-bold text-[#ff4d4f]" data-testid="checkout-pay-amount">¥{{ payAmount }}</span>
@@ -310,7 +365,7 @@ async function confirmMismatch() {
             <button
               class="mt-2 w-full rounded-full bg-[#1677ff] py-2.5 text-sm font-medium text-white transition-colors hover:bg-[#4096ff] disabled:cursor-not-allowed disabled:opacity-50"
               data-testid="checkout-submit"
-              :disabled="submitting || !validItems.length || !selectedAddressId"
+              :disabled="submitting || !validItems.length || !selectedAddressId || notSupport"
               @click="submit"
             >{{ submitting ? '提交中…' : '提交订单' }}</button>
 

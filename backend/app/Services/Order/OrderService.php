@@ -18,6 +18,7 @@ use App\Services\Common\OperationLogService;
 use App\Services\Inventory\InventoryService;
 use App\Services\Marketing\CouponService;
 use App\Services\Marketing\PromotionService;
+use App\Services\Shipping\FreightService;
 use Illuminate\Support\Facades\DB;
 use Throwable;
 
@@ -48,6 +49,7 @@ class OrderService
         private OrderLogService $orderLog,
         private CouponService $coupons,
         private PromotionService $promotions,
+        private FreightService $freight,
     ) {
     }
 
@@ -80,7 +82,7 @@ class OrderService
 
         // 2. 取购物车项（含分类 id：券/满减按分类命中时需要）
         $query = CartItem::where('user_id', $userId)
-            ->with(['sku:id,product_id,specs,price,status', 'sku.product:id,category_id,title,main_image,status']);
+            ->with(['sku:id,product_id,specs,price,status', 'sku.product:id,category_id,title,main_image,status,weight,freight_template_id']);
         if ($cartItemIds !== null && $cartItemIds !== []) {
             $query->whereIn('id', $cartItemIds);
         }
@@ -111,12 +113,9 @@ class OrderService
             }
         }
 
-        // 4. 金额快照 + 运费（与 V1.0 口径一致：Σ price×qty，再按配置计运费）
+        // 4. 金额快照（Σ price×qty，作为券/满减的上下文基础）+ 运费
         $itemRows = [];
-        $totalAmount = '0.00';
         foreach ($cartItems as $item) {
-            $subtotal = bcmul((string) $item->sku->price, (string) $item->quantity, 2);
-            $totalAmount = bcadd($totalAmount, $subtotal, 2);
             $itemRows[] = [
                 'product_id' => $item->sku->product_id,
                 'sku_id' => $item->sku_id,
@@ -125,7 +124,23 @@ class OrderService
                 'quantity' => (int) $item->quantity,
             ];
         }
-        $freightAmount = $this->calcFreight($totalAmount);
+        // 4b. 运费（Stage 2：FreightCalculator 引擎——按商品绑定模板分组计费，组间取 max；
+        //     无模板时走全局默认规则，与旧「固定运费 + 满额包邮」口径完全一致）
+        $freight = $this->freight->calculate(
+            lines: $cartItems->map(fn (CartItem $item) => [
+                'template_id' => $item->sku->product->freight_template_id !== null
+                    ? (int) $item->sku->product->freight_template_id
+                    : null,
+                'weight_g' => (int) ($item->sku->product->weight ?? 0),
+                'quantity' => (int) $item->quantity,
+                'price' => (string) $item->sku->price,
+            ])->all(),
+            provinceName: (string) $address->province,
+        );
+        if ($freight->notSupport) {
+            throw BusinessException::conflict('该地区暂不支持配送，请更换收货地址或联系客服');
+        }
+        $freightAmount = $freight->freightAmount;
 
         // 5. 优惠解析：券校验（先券）→ 满减匹配（不传则自动最优）→ 分摊计算
         $ctx = $this->coupons->buildContext($itemRows, $freightAmount);
@@ -648,20 +663,5 @@ class OrderService
             ->where('id', $order->coupon_id)
             ->where('used_count', '>', 0)
             ->update(['used_count' => DB::raw('used_count - 1'), 'updated_at' => now()]);
-    }
-
-    /**
-     * 运费计算：满 free_shipping_threshold 免运费，否则收 freight_default
-     */
-    private function calcFreight(string $totalAmount): string
-    {
-        $default = $this->config->getDecimal('order.freight_default', '10.00');
-        $threshold = $this->config->getDecimal('order.free_shipping_threshold', '0.00');
-
-        if (bccomp($threshold, '0.00', 2) === 1 && bccomp($totalAmount, $threshold, 2) !== -1) {
-            return '0.00';
-        }
-
-        return $default;
     }
 }
