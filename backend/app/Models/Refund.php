@@ -36,7 +36,8 @@ class Refund extends Model
     protected $table = 'refunds';
     protected $fillable = [
         'refund_no', 'order_id', 'order_no', 'user_id', 'type', 'warehouse_id',
-        'amount', 'reason', 'status', 'admin_remark', 'processed_by', 'processed_at',
+        'amount', 'reason', 'images', 'status', 'admin_remark', 'admin_images',
+        'processed_by', 'processed_at',
         'refund_details',
         'return_tracking_no', 'return_express_company', 'return_status',
         'return_details', 'return_received_details', 'return_received_at', 'return_exception_reason',
@@ -45,6 +46,8 @@ class Refund extends Model
     protected $casts = [
         'amount' => 'decimal:2',
         'refund_details' => 'array',
+        'images' => 'array',
+        'admin_images' => 'array',
         'return_details' => 'array',
         'return_received_details' => 'array',
         'return_received_at' => 'datetime',
@@ -66,5 +69,11 @@ class Refund extends Model
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class, 'user_id');
+    }
+
+    /** 处理人（后台管理员 sys_user） */
+    public function processor(): BelongsTo
+    {
+        return $this->belongsTo(SysUser::class, 'processed_by');
     }
 }

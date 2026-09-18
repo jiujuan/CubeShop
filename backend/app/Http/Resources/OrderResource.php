@@ -57,6 +57,7 @@ class OrderResource extends JsonResource
                     'type' => $r->type,
                     'amount' => (string) $r->amount,
                     'reason' => $r->reason,
+                    'images' => $r->images ?? [],
                     'status' => $r->status,
                     'return_status' => $r->return_status,
                     'return_details' => $r->return_details,

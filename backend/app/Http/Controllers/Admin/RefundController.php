@@ -6,6 +6,7 @@ use App\Exceptions\BusinessException;
 use App\Http\Controllers\Controller;
 use App\Models\Order;
 use App\Models\Refund;
+use App\Models\SysOperationLog;
 use App\Services\Refund\RefundService;
 use App\Support\ApiResponse;
 use Illuminate\Http\JsonResponse;
@@ -34,6 +35,7 @@ class RefundController extends Controller
         ]);
 
         $paginator = Refund::query()
+            ->with(['order:id,status', 'processor:id,username,nickname'])
             ->when($data['refund_no'] ?? null, fn ($q, $v) => $q->where('refund_no', $v))
             ->when($data['order_no'] ?? null, fn ($q, $v) => $q->where('order_no', $v))
             ->when($data['status'] ?? null, fn ($q, $v) => $q->where('status', $v))
@@ -45,12 +47,81 @@ class RefundController extends Controller
         return $this->paginated($paginator);
     }
 
-    /** 审核退款：POST /admin/refunds/{id}/process {action, admin_remark} */
+    /**
+     * 退款详情：GET /admin/refunds/{id}
+     *
+     * 在列表行基础上补齐：用户信息、订单摘要、订单商品明细（产品图/链接）、处理流水。
+     * 供后台「详情」弹层展示用户退款的产品图、产品链接、理由、凭证图片与后台处理记录。
+     */
+    public function show(Request $request, int $id): JsonResponse
+    {
+        $refund = Refund::with(['processor:id,username,nickname'])->find($id);
+        if (! $refund) {
+            throw BusinessException::notFound('退款单不存在');
+        }
+
+        $order = Order::with(['items.product', 'items.sku'])->find($refund->order_id);
+        $user = $refund->user;
+
+        $items = $order
+            ? $order->items->map(fn ($item) => [
+                // 后台商品详情路由 /products/{id} 用 int 主键；同时给出 public_id 供前台链接
+                'product_id' => $item->product?->id,
+                'product_public_id' => $item->product?->public_id,
+                'product_title' => $item->product_title,
+                'sku_id' => $item->sku_id,
+                'sku_public_id' => $item->sku?->public_id,
+                'sku_specs' => $item->sku_specs ?? [],
+                'sku_image' => $item->sku_image,
+                'price' => (string) $item->price,
+                'quantity' => (int) $item->quantity,
+                'total_amount' => (string) $item->total_amount,
+            ])->values()->all()
+            : [];
+
+        // 后台处理流水（本退款单的审计记录）
+        $logs = SysOperationLog::query()
+            ->with(['admin:id,username,nickname', 'customer:id,username,nickname'])
+            ->where('target_type', 'refund')
+            ->where('target_id', $refund->id)
+            ->orderBy('id')
+            ->get()
+            ->map(fn (SysOperationLog $log) => [
+                'id' => $log->id,
+                'actor_type' => $log->actor_type ?? SysOperationLog::ACTOR_ADMIN,
+                'operator' => ($log->actor_type === SysOperationLog::ACTOR_CUSTOMER ? $log->customer : $log->admin)
+                    ?->only(['id', 'username', 'nickname']),
+                'action' => $log->action,
+                'content' => $log->content,
+                'created_at' => $log->created_at?->format('Y-m-d H:i:s'),
+            ])->all();
+
+        return $this->success(array_merge($this->row($refund), [
+            'user' => $user ? [
+                'id' => $user->id,
+                'username' => $user->username,
+                'nickname' => $user->nickname,
+                'phone' => $user->phone,
+            ] : null,
+            'order' => $order ? [
+                'order_no' => $order->order_no,
+                'status' => $order->status,
+                'pay_amount' => (string) $order->pay_amount,
+                'created_at' => $order->created_at?->format('Y-m-d H:i:s'),
+            ] : null,
+            'items' => $items,
+            'logs' => $logs,
+        ]));
+    }
+
+    /** 审核退款：POST /admin/refunds/{id}/process {action, admin_remark, admin_images} */
     public function process(Request $request, int $id): JsonResponse
     {
         $data = $request->validate([
             'action' => ['required', 'string', 'in:approve,reject'],
-            'admin_remark' => ['nullable', 'string', 'max:200'],
+            'admin_remark' => ['nullable', 'string', 'max:255'],
+            'admin_images' => ['nullable', 'array', 'max:9'],
+            'admin_images.*' => ['string', 'max:500'],
         ]);
 
         $refund = Refund::find($id);
@@ -63,6 +134,7 @@ class RefundController extends Controller
             adminId: $request->user()->id,
             action: $data['action'],
             adminRemark: $data['admin_remark'] ?? null,
+            adminImages: $data['admin_images'] ?? [],
         );
 
         return $this->success($this->row($refund->fresh()), '处理成功');
@@ -108,6 +180,7 @@ class RefundController extends Controller
             'type' => $refund->type,
             'amount' => (string) $refund->amount,
             'reason' => $refund->reason,
+            'images' => $refund->images ?? [],
             'status' => $refund->status,
             'return_status' => $refund->return_status,
             'return_tracking_no' => $refund->return_tracking_no,
@@ -117,9 +190,12 @@ class RefundController extends Controller
             'return_received_at' => $refund->return_received_at?->format('Y-m-d H:i:s'),
             'return_exception_reason' => $refund->return_exception_reason,
             'admin_remark' => $refund->admin_remark,
+            'admin_images' => $refund->admin_images ?? [],
+            'processed_by' => $refund->processed_by,
+            'processed_by_name' => $refund->processor?->nickname ?: $refund->processor?->username,
             'processed_at' => $refund->processed_at?->format('Y-m-d H:i:s'),
             'created_at' => $refund->created_at?->format('Y-m-d H:i:s'),
-            'order_status' => Order::whereKey($refund->order_id)->value('status'),
+            'order_status' => $refund->order?->status,
         ];
     }
 }

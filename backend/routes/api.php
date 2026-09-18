@@ -334,6 +334,7 @@ Route::middleware(['auth:sanctum', 'account.active'])->group(function () {
 
         // 退款处理 refund.*（API 文档 8.4 / Roadmap P5）
         Route::get('/refunds', [RefundController::class, 'index'])->middleware('permission:refund.view');
+        Route::get('/refunds/{id}', [RefundController::class, 'show'])->middleware('permission:refund.view');
         Route::post('/refunds/{id}/process', [RefundController::class, 'process'])->middleware('permission:refund.process');
         Route::post('/refunds/{id}/receive', [RefundController::class, 'receive'])->middleware('permission:refund.process');
 

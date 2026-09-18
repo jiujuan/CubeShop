@@ -387,6 +387,8 @@ class OrderController extends Controller
             'return_details.*.sku_specs' => ['nullable', 'array'],
             'return_tracking_no' => ['nullable', 'string', 'max:64'],
             'return_express_company' => ['nullable', 'string', 'max:64'],
+            'images' => ['nullable', 'array', 'max:9'],
+            'images.*' => ['string', 'max:500'],
         ]);
 
         $order = $this->ownOrder($request, $id);
@@ -401,6 +403,7 @@ class OrderController extends Controller
                 'return_details' => $data['return_details'] ?? null,
                 'return_tracking_no' => $data['return_tracking_no'] ?? null,
                 'return_express_company' => $data['return_express_company'] ?? null,
+                'images' => $data['images'] ?? [],
             ],
         );
 

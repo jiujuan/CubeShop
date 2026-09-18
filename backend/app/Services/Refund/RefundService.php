@@ -43,6 +43,7 @@ class RefundService
      *   - type: refund(默认) | return_refund
      *   - return_details: 退货应退明细 [{sku_id, product_title?, sku_specs?, quantity}]
      *   - return_tracking_no / return_express_company / warehouse_id：退货物流与仓库
+     *   - images: 用户凭证图片 URL 数组（≤9）
      */
     public function apply(Order $order, int $userId, ?string $reason, ?string $amount = null, array $opts = []): Refund
     {
@@ -89,11 +90,14 @@ class RefundService
             $returnDetails = $this->normalizeReturnDetails($order, $opts['return_details'] ?? null);
         }
 
+        // 用户凭证图片（商品实拍等）
+        $images = $this->normalizeImages($opts['images'] ?? null);
+
         // 固化优惠构成与每行实付快照（来自 orders.amount_details，T-034 同一套分摊口径）
         $refundDetails = $this->buildRefundDetails($order);
 
         try {
-            $refund = DB::transaction(function () use ($order, $userId, $reason, $amount, $type, $returnDetails, $opts, $refundDetails) {
+            $refund = DB::transaction(function () use ($order, $userId, $reason, $amount, $type, $returnDetails, $images, $opts, $refundDetails) {
                 // 状态机：paid/pending_ship/shipped/completed → refunding
                 $this->orders->transitionTo($order, Order::STATUS_REFUNDING, $reason, 'order');
 
@@ -106,6 +110,7 @@ class RefundService
                     'warehouse_id' => $opts['warehouse_id'] ?? null,
                     'amount' => $amount,
                     'reason' => $reason,
+                    'images' => $images ?: null,
                     'status' => Refund::STATUS_PENDING,
                     'refund_details' => $refundDetails,
                     'return_tracking_no' => $opts['return_tracking_no'] ?? null,
@@ -124,6 +129,7 @@ class RefundService
             'type' => $type,
             'amount' => $amount,
             'reason' => $reason,
+            'images' => $images,
             'max_refundable' => $maxRefundable,
         ]);
 
@@ -179,6 +185,36 @@ class RefundService
     }
 
     /**
+     * 规范化图片 URL 数组：去空、丢弃非字符串、单条限长、总数封顶
+     *
+     * @param  array<int, mixed>|null  $raw
+     * @return array<int, string>
+     */
+    private function normalizeImages(?array $raw, int $max = 9): array
+    {
+        if (empty($raw)) {
+            return [];
+        }
+
+        $urls = [];
+        foreach ($raw as $url) {
+            if (! is_string($url)) {
+                continue;
+            }
+            $url = trim($url);
+            if ($url === '') {
+                continue;
+            }
+            $urls[] = mb_substr($url, 0, 500);
+            if (count($urls) >= $max) {
+                break;
+            }
+        }
+
+        return $urls;
+    }
+
+    /**
      * 可退余额 = 订单实付 − 已退款（含处理中）累计
      *
      * 供后台审核页展示「可退上限」与申请时的上限校验共用同一口径。
@@ -231,8 +267,11 @@ class RefundService
 
     /**
      * 后台审核（API 文档 8.4）：action = approve / reject
+     *
+     * @param  string|null  $adminRemark  同意/拒绝理由（写入 refunds.admin_remark）
+     * @param  array<int, mixed>  $adminImages  后台处理说明图片（写入 refunds.admin_images）
      */
-    public function process(Refund $refund, int $adminId, string $action, ?string $adminRemark = null): Refund
+    public function process(Refund $refund, int $adminId, string $action, ?string $adminRemark = null, array $adminImages = []): Refund
     {
         if (! in_array($action, ['approve', 'reject'], true)) {
             throw BusinessException::badRequest('非法的审核操作');
@@ -241,7 +280,9 @@ class RefundService
             throw BusinessException::conflict('退款单已处理，请勿重复操作');
         }
 
-        $refund = DB::transaction(function () use ($refund, $adminId, $action, $adminRemark) {
+        $adminImages = $this->normalizeImages($adminImages);
+
+        $refund = DB::transaction(function () use ($refund, $adminId, $action, $adminRemark, $adminImages) {
             $order = Order::whereKey($refund->order_id)->lockForUpdate()->first();
 
             if ($action === 'approve') {
@@ -272,6 +313,7 @@ class RefundService
             }
 
             $refund->admin_remark = $adminRemark;
+            $refund->admin_images = $adminImages ?: null;
             $refund->processed_by = $adminId;
             $refund->processed_at = now();
             $refund->save();
@@ -285,6 +327,7 @@ class RefundService
             'type' => $refund->type,
             'amount' => (string) $refund->amount,
             'admin_remark' => $adminRemark,
+            'admin_images' => $adminImages,
         ]);
 
         // V1.1 F02 / T-018：退款结果通知买家（失败不影响审核结果）
