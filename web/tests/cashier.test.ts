@@ -39,7 +39,7 @@ vi.mock('@/api/user', () => ({
   addToCart: vi.fn(),
   getCart: vi.fn(),
   getAddresses: vi.fn().mockResolvedValue({ data: { data: [] } }),
-  getRegions: vi.fn().mockResolvedValue({ data: { data: { version: 'v1', provinces: [] } } }),
+  getRegions: vi.fn().mockResolvedValue({ data: { data: { regions: [] } } }),
   parseAddress: vi.fn(),
   createAddress: vi.fn(),
   updateAddress: vi.fn(),

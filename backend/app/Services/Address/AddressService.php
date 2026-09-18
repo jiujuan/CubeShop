@@ -7,24 +7,16 @@ use App\Models\UserAddress;
 /**
  * 地址增强服务（V1.1 E04 / T-028）
  *
- * - 行政区划数据加载（省/市/区三级，含中国香港、中国澳门、中国台湾）
+ * - 行政区划数据（T-053 Stage1 起统一委托 RegionService：code+name 树，单一数据源）
  * - 一行文本智能解析（姓名 / 手机 / 省 / 市 / 区 / 详址）
  * - 使用频次记录
  */
 class AddressService
 {
-    private ?array $regions = null;
-
-    /** 读取行政区划数据（进程内缓存） */
+    /** 行政区划树（RegionService 统一加载，进程内缓存） */
     public function regions(): array
     {
-        if ($this->regions === null) {
-            $path = resource_path('data/regions.json');
-            $json = is_file($path) ? (string) file_get_contents($path) : '{"provinces":[]}';
-            $this->regions = json_decode($json, true) ?: ['provinces' => []];
-        }
-
-        return $this->regions;
+        return \App\Services\Common\RegionService::tree();
     }
 
     /**
@@ -58,8 +50,8 @@ class AddressService
             $text = trim(str_replace($m[0], ' ', $text));
         }
 
-        // 2. 行政区划匹配（省 → 市 → 区）
-        foreach ($this->regions()['provinces'] ?? [] as $province) {
+        // 2. 行政区划匹配（省 → 市 → 区，走 RegionService 的 code+name 树）
+        foreach ($this->regions() as $province) {
             $pName = $province['name'] ?? '';
             if ($pName === '' || ! str_contains($text, $pName)) {
                 continue;
@@ -67,7 +59,7 @@ class AddressService
             $result['province'] = $pName;
             $text = trim(str_replace($pName, ' ', $text));
 
-            foreach ($province['cities'] ?? [] as $city) {
+            foreach ($province['children'] ?? [] as $city) {
                 $cName = $city['name'] ?? '';
                 // 直辖市 / 特区：省与市同名，已在上一步消费
                 $cityMatched = ($cName !== '' && $cName === $pName)
@@ -82,7 +74,8 @@ class AddressService
                     $text = trim(str_replace($cName, ' ', $text));
                 }
 
-                foreach ($city['districts'] ?? [] as $dName) {
+                foreach ($city['children'] ?? [] as $area) {
+                    $dName = $area['name'] ?? '';
                     if ($dName !== '' && str_contains($text, $dName)) {
                         $result['district'] = $dName;
                         $text = trim(str_replace($dName, ' ', $text));
