@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
-import { ChevronLeft, ChevronRight } from 'lucide-vue-next'
+
 import { getRefunds, processRefund, REFUND_STATUS_CLASS, REFUND_STATUS_LABELS, type Refund, type RefundStatus } from '@/api/refund'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import LoadingSpinner from '@/components/LoadingSpinner.vue'
+import TablePagination from '@/components/TablePagination.vue'
 
 /**
  * 退款处理页（权限 refund.view / refund.process，Roadmap P5）
@@ -136,26 +137,7 @@ async function doProcess() {
     </table>
 
     <!-- 分页 -->
-    <div class="mt-4 flex items-center justify-between text-[13px] text-slate-500">
-      <span>共 {{ pagination.total }} 条记录 / 每页 {{ pagination.page_size }} 条</span>
-      <div class="flex items-center gap-1">
-        <button
-          class="flex h-7 w-7 items-center justify-center rounded border border-slate-200 disabled:opacity-40"
-          :disabled="pagination.page <= 1" @click="goPage(pagination.page - 1)"
-        ><ChevronLeft class="h-4 w-4" /></button>
-        <button
-          v-for="p in pagination.total_pages"
-          :key="p"
-          class="h-7 min-w-7 rounded border px-1.5"
-          :class="p === pagination.page ? 'border-[#1677ff] bg-[#1677ff] text-white' : 'border-slate-200 hover:border-[#1677ff]'"
-          @click="goPage(p)"
-        >{{ p }}</button>
-        <button
-          class="flex h-7 w-7 items-center justify-center rounded border border-slate-200 disabled:opacity-40"
-          :disabled="pagination.page >= pagination.total_pages" @click="goPage(pagination.page + 1)"
-        ><ChevronRight class="h-4 w-4" /></button>
-      </div>
-    </div>
+    <TablePagination :pagination="pagination" @change="goPage" />
 
     <ConfirmDialog
       :open="!!confirmState"

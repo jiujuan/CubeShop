@@ -1,12 +1,13 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
-import { ChevronLeft, ChevronRight, Pencil, Plus, Search, Trash2 } from 'lucide-vue-next'
+import { Pencil, Plus, Search, Trash2 } from 'lucide-vue-next'
 import {
   createBrand, deleteBrand, getBrands, updateBrand,
   type BrandRow, type Pagination,
 } from '@/api/attribute'
 import { Button } from '@/components/ui/button'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
+import TablePagination from '@/components/TablePagination.vue'
 
 /**
  * 品牌管理（V1.1 E01 / T-011）
@@ -185,14 +186,7 @@ function goPage(page: number) {
       </tbody>
     </table>
 
-    <div class="mt-4 flex items-center justify-between text-[13px] text-slate-500">
-      <span>共 {{ pagination.total }} 条</span>
-      <div class="flex items-center gap-1">
-        <button class="flex h-7 w-7 items-center justify-center rounded border border-slate-200 disabled:opacity-40" :disabled="pagination.page <= 1" @click="goPage(pagination.page - 1)"><ChevronLeft class="h-4 w-4" /></button>
-        <span class="px-2">{{ pagination.page }} / {{ pagination.total_pages }}</span>
-        <button class="flex h-7 w-7 items-center justify-center rounded border border-slate-200 disabled:opacity-40" :disabled="pagination.page >= pagination.total_pages" @click="goPage(pagination.page + 1)"><ChevronRight class="h-4 w-4" /></button>
-      </div>
-    </div>
+    <TablePagination :pagination="pagination" :total-text="`共 ${pagination.total} 条`" @change="goPage" />
 
     <!-- 编辑弹窗 -->
     <div v-if="dialogOpen" class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">

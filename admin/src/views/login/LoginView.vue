@@ -3,6 +3,7 @@ import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { Eye, EyeOff, Lock, RefreshCw, ShieldCheck, SquareUser, Store } from 'lucide-vue-next'
 import { getCaptcha, login, type Captcha } from '@/api/auth'
+import { landingPath } from '@/router'
 import { useAuthStore } from '@/stores/auth'
 
 /**
@@ -66,7 +67,8 @@ async function handleLogin() {
     }
 
     const redirect = router.currentRoute.value.query.redirect as string | undefined
-    router.replace(redirect || '/dashboard')
+    // 兜底落地页按当前账号权限计算（客服无 dashboard.view，登录后直接进客服工作台）
+    router.replace(redirect || landingPath())
   } catch (e) {
     errorMsg.value = e instanceof Error && e.message ? e.message : '登录失败，请稍后重试'
     form.value.captcha_code = ''

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import { ChevronLeft, ChevronRight, Search } from 'lucide-vue-next'
+import { Search } from 'lucide-vue-next'
 import {
   createAccount, getAccounts, resetAccountPassword, setAccountStatus, updateAccount,
   ROLE_LABELS, type AccountRow,
@@ -8,6 +8,7 @@ import {
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import LoadingSpinner from '@/components/LoadingSpinner.vue'
 import { useAuthStore } from '@/stores/auth'
+import TablePagination from '@/components/TablePagination.vue'
 
 /**
  * 管理员账号管理（V1.1 F04 / T-023）
@@ -21,13 +22,11 @@ const list = ref<AccountRow[]>([])
 const pagination = ref({ page: 1, page_size: 20, total: 0, total_pages: 1 })
 
 const keyword = ref('')
-const roleFilter = ref<'' | 'super_admin' | 'operator'>('')
+const roleFilter = ref('')
 const statusFilter = ref<'' | 0 | 1>('')
 
-const roleOptions = [
-  { value: 'super_admin', label: '超级管理员' },
-  { value: 'operator', label: '运营' },
-]
+/** 角色选项直接来自共享标签表，新增后台角色时无需再改本页 */
+const roleOptions = Object.entries(ROLE_LABELS).map(([value, label]) => ({ value, label }))
 
 const statusTabs: Array<{ value: '' | 0 | 1; label: string }> = [
   { value: '', label: '全部' },
@@ -104,7 +103,7 @@ function openEdit(row: AccountRow) {
     nickname: row.nickname ?? '',
     email: row.email ?? '',
     phone: row.phone ?? '',
-    roles: [...row.roles].filter((r) => r === 'super_admin' || r === 'operator'),
+    roles: [...row.roles],
   }
   formError.value = ''
   formOpen.value = true
@@ -308,14 +307,7 @@ onMounted(() => load())
     </table>
 
     <!-- 分页 -->
-    <div class="mt-4 flex items-center justify-between text-[13px] text-slate-500">
-      <span>共 {{ pagination.total }} 个账号</span>
-      <div class="flex items-center gap-1">
-        <button class="flex h-7 w-7 items-center justify-center rounded border border-slate-200 disabled:opacity-40" :disabled="pagination.page <= 1" @click="goPage(pagination.page - 1)"><ChevronLeft class="h-4 w-4" /></button>
-        <span class="px-2">{{ pagination.page }} / {{ pagination.total_pages }}</span>
-        <button class="flex h-7 w-7 items-center justify-center rounded border border-slate-200 disabled:opacity-40" :disabled="pagination.page >= pagination.total_pages" @click="goPage(pagination.page + 1)"><ChevronRight class="h-4 w-4" /></button>
-      </div>
-    </div>
+    <TablePagination :pagination="pagination" :total-text="`共 ${pagination.total} 个账号`" @change="goPage" />
 
     <!-- 新增/编辑弹窗 -->
     <div v-if="formOpen" class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-6" @click.self="formOpen = false">
