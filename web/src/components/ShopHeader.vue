@@ -102,11 +102,12 @@ async function handleLogout() {
 <template>
   <header class="sticky top-0 z-40 bg-white shadow-sm">
     <!-- 公告条：动态展示后台已发布公告（置顶优先轮播），点击进详情 -->
-    <div class="flex h-9 items-center justify-between gap-2 bg-gradient-to-r from-[#e6f4ff] to-white px-3 text-xs text-slate-500 sm:px-6">
+    <!-- justify-end + 公告 mr-auto：无论公告是否存在，右侧账号区始终贴右 -->
+    <div class="flex h-9 items-center justify-end gap-2 bg-gradient-to-r from-[#e6f4ff] to-white px-3 text-xs text-slate-500 sm:px-6" data-testid="announcement-bar">
       <RouterLink
         v-if="topAnnouncement"
         :to="`/announcements/${topAnnouncement.id}`"
-        class="flex min-w-0 items-center gap-2 truncate text-[#1677ff] hover:opacity-80"
+        class="mr-auto flex min-w-0 items-center gap-2 truncate text-[#1677ff] hover:opacity-80"
       >
         <Volume2 class="h-3.5 w-3.5 shrink-0" />
         <span class="truncate">{{ topAnnouncement.title }}</span>
@@ -116,7 +117,7 @@ async function handleLogout() {
         <span class="text-slate-200">|</span>
         <RouterLink to="/register" class="hover:text-[#1677ff]">注册</RouterLink>
       </div>
-      <div v-else class="hidden shrink-0 items-center gap-3 sm:flex">
+      <div v-else class="hidden shrink-0 items-center gap-3 sm:flex" data-testid="header-account-entry">
         <span class="hidden max-w-[10rem] truncate md:inline">Hi，{{ auth.user?.nickname || auth.user?.username }}</span>
         <span class="hidden text-slate-200 md:inline">|</span>
         <RouterLink to="/account" class="hover:text-[#1677ff]">个人中心</RouterLink>

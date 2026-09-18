@@ -44,6 +44,12 @@ vi.mock('@/api/announcement', () => ({
   }),
 }))
 
+/** 无公告场景：把公告接口返回空列表 */
+async function withEmptyAnnouncements() {
+  const { getAnnouncements } = await import('@/api/announcement')
+  vi.mocked(getAnnouncements).mockResolvedValue({ data: { data: { list: [] } } } as never)
+}
+
 async function mountHeader() {
   const router = createRouter({
     history: createMemoryHistory(),
@@ -129,5 +135,31 @@ describe('ShopHeader 移动端适配（P1 回归）', () => {
     expect(entry).toBeTruthy()
     expect(entry!.className).toContain('hidden')
     expect(entry!.className).toContain('sm:flex')
+  })
+
+  it('账号区始终贴右：公告条用 justify-end，公告链接用 mr-auto 撑开左侧', async () => {
+    const { getByTestId, findByText } = await mountHeader()
+
+    const bar = getByTestId('announcement-bar')
+    expect(bar.className).toContain('justify-end')
+    expect(bar.className).not.toContain('justify-between')
+
+    // 公告为异步拉取，等它渲染出来再断言
+    const link = (await findByText('系统维护通知')).closest('a')
+    expect(link).not.toBeNull()
+    expect(link!.className).toContain('mr-auto')
+  })
+
+  it('无公告（接口返回空）时账号区仍在右侧，不会跑到左边', async () => {
+    await withEmptyAnnouncements()
+    const { getByTestId, findByText } = await mountHeader()
+
+    expect(getByTestId('announcement-bar').className).toContain('justify-end')
+
+    const entry = (await findByText('个人中心')).closest('div')
+    expect(entry).toBeTruthy()
+    expect(entry!.getAttribute('data-testid')).toBe('header-account-entry')
+    // 公告缺失时不再渲染公告链接，账号区是条内唯一可见内容且被推到右侧
+    expect(document.querySelector('[data-testid="announcement-bar"] a[href^="/announcements/"]')).toBeNull()
   })
 })
