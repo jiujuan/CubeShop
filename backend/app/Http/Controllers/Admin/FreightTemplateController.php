@@ -14,10 +14,18 @@ use Illuminate\Http\Request;
  *
  * 写操作记 sys_operation_log（module=freight_template）。
  * 规则 fail-closed：rules 结构非法 / region 省 code 非法 → 422，绝不带坏规则入库。
+ *
+ * Stage4 修复：新增「设为全局默认」——把模板 id 写入配置 order.freight_template_id
+ * （未绑定模板的商品行走该模板）。此前模板建好后无任何引用时引擎永远走旧口径，
+ * 运营误以为规则已生效（详见 2026-09-18 结算页运费与后台 region 模板不一致事故）。
  */
 class FreightTemplateController extends Controller
 {
     use ApiResponse;
+
+    public function __construct(private \App\Services\Common\ConfigService $config)
+    {
+    }
 
     /** GET /api/admin/freight-templates —— 列表（筛选 + 分页） */
     public function index(Request $request): JsonResponse
@@ -41,6 +49,8 @@ class FreightTemplateController extends Controller
 
         return $this->success([
             'list' => $list,
+            /** 当前全局默认模板 id（0=无，走旧口径固定运费）；列表页展示徽标与操作用 */
+            'default_id' => $this->config->getInt('order.freight_template_id', 0),
             'pagination' => [
                 'page' => $paginator->currentPage(),
                 'page_size' => $paginator->perPage(),
@@ -71,6 +81,31 @@ class FreightTemplateController extends Controller
         $this->log($request, 'freight_template_update', 'freight_templates', $id, '编辑运费模板 '.$template->name);
 
         return $this->success($this->toArray($template), '已更新');
+    }
+
+    /** POST /api/admin/freight-templates/{id}/set-default —— 设为全局默认（order.freight_template_id） */
+    public function setDefault(Request $request, int $id): JsonResponse
+    {
+        $template = FreightTemplate::findOrFail($id);
+
+        if ($template->status !== 1) {
+            throw \App\Exceptions\BusinessException::badRequest('停用的模板不能设为全局默认，请先启用');
+        }
+
+        $this->config->set('order.freight_template_id', (string) $template->id);
+        $this->log($request, 'freight_template_set_default', 'freight_templates', $id, '设为全局默认运费模板 '.$template->name);
+
+        return $this->success(['default_id' => $template->id], '已设为全局默认模板');
+    }
+
+    /** POST /api/admin/freight-templates/clear-default —— 取消全局默认（回到旧口径固定运费） */
+    public function clearDefault(Request $request): JsonResponse
+    {
+        $current = $this->config->getInt('order.freight_template_id', 0);
+        $this->config->set('order.freight_template_id', '');
+        $this->log($request, 'freight_template_clear_default', 'freight_templates', $current, '取消全局默认运费模板（回到固定运费口径）');
+
+        return $this->success(['default_id' => 0], '已取消全局默认模板');
     }
 
     /** DELETE /api/admin/freight-templates/{id} —— 删除（仍有商品绑定时拒绝，fail-closed） */

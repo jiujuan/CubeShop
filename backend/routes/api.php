@@ -293,6 +293,9 @@ Route::middleware(['auth:sanctum', 'account.active'])->group(function () {
         Route::post('/freight-templates', [\App\Http\Controllers\Admin\FreightTemplateController::class, 'store'])->middleware('permission:shipping.manage');
         Route::put('/freight-templates/{id}', [\App\Http\Controllers\Admin\FreightTemplateController::class, 'update'])->middleware('permission:shipping.manage')->whereNumber('id');
         Route::delete('/freight-templates/{id}', [\App\Http\Controllers\Admin\FreightTemplateController::class, 'destroy'])->middleware('permission:shipping.manage')->whereNumber('id');
+        // 全局默认模板（未绑定模板的商品行走此模板；须放在 {id} 泛型路由后无碍——方法+数字约束已隔离）
+        Route::post('/freight-templates/clear-default', [\App\Http\Controllers\Admin\FreightTemplateController::class, 'clearDefault'])->middleware('permission:shipping.manage');
+        Route::post('/freight-templates/{id}/set-default', [\App\Http\Controllers\Admin\FreightTemplateController::class, 'setDefault'])->middleware('permission:shipping.manage')->whereNumber('id');
 
         Route::get('/orders/{id}', [AdminOrderController::class, 'show'])->middleware('permission:order.view');
         Route::post('/orders/{id}/ship', [AdminOrderController::class, 'ship'])->middleware('permission:order.ship');

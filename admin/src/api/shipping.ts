@@ -52,6 +52,8 @@ export function getFreightTemplates(params: {
   return request.get<
     ApiResult<{
       list: FreightTemplateRow[]
+      /** 当前全局默认模板 id（0=无，走旧口径固定运费） */
+      default_id: number
       pagination: { page: number; page_size: number; total: number; total_pages: number }
     }>
   >('/admin/freight-templates', { params })
@@ -67,6 +69,16 @@ export function updateFreightTemplate(id: number, data: Partial<FreightTemplateP
 
 export function deleteFreightTemplate(id: number) {
   return request.delete<ApiResult<null>>(`/admin/freight-templates/${id}`)
+}
+
+/** 设为全局默认模板（未绑定模板的商品行走此模板） */
+export function setDefaultFreightTemplate(id: number) {
+  return request.post<ApiResult<{ default_id: number }>>(`/admin/freight-templates/${id}/set-default`)
+}
+
+/** 取消全局默认模板（回到旧口径固定运费） */
+export function clearDefaultFreightTemplate() {
+  return request.post<ApiResult<{ default_id: number }>>('/admin/freight-templates/clear-default')
 }
 
 // ---------- 行政区划：省级列表（region 编辑器省份多选用，公开接口可缓存） ----------
