@@ -93,9 +93,10 @@ class PaymentChannelService
     public function defaultEnabled(string $channel): bool
     {
         return match ($channel) {
-            PaymentChannel::CHANNEL_MOCK => app()->environment('local', 'testing') || (bool) config('payments.sandbox', true),
+            PaymentChannel::CHANNEL_MOCK => app()->environment('local', 'testing') || (bool) config('payments.sandbox', false),
             // 沙箱模式下微信/支付宝由 Mock 网关代理，视为可用；正式环境必须显式配置后才可用
-            PaymentChannel::CHANNEL_WECHAT, PaymentChannel::CHANNEL_ALIPAY => (bool) config('payments.sandbox', true),
+            // （SEC-01：默认 false，避免未配置凭据的渠道在生产被默认放行）
+            PaymentChannel::CHANNEL_WECHAT, PaymentChannel::CHANNEL_ALIPAY => (bool) config('payments.sandbox', false),
             PaymentChannel::CHANNEL_BALANCE => $this->globalEnabled($channel),
             PaymentChannel::CHANNEL_OFFLINE => $this->globalEnabled($channel),
             default => false,
@@ -117,7 +118,7 @@ class PaymentChannelService
     {
         $record = $this->find($channel);
 
-        return $record ? $record->sandbox : (bool) config('payments.sandbox', true);
+        return $record ? $record->sandbox : (bool) config('payments.sandbox', false);
     }
 
     /**

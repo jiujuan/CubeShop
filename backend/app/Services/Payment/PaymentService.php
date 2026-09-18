@@ -19,6 +19,7 @@ use App\Services\Payment\Contracts\PaymentGateway;
 use App\Services\Payment\Dto\PayParams;
 use App\Services\Payment\Gateways\MockGateway;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Throwable;
@@ -46,10 +47,20 @@ class PaymentService
     ) {
     }
 
-    /** 是否启用沙箱（本地/开发环境模拟渠道） */
+    /**
+     * 是否启用沙箱（本地/开发环境模拟渠道）
+     *
+     * SEC-01：双重约束 —— ① 配置开关（默认 false，见 config/payments.php）；
+     * ② 环境白名单（local/testing/staging）。生产环境即便被误配 PAYMENT_SANDBOX=true
+     * 也一律返回 false，避免未登录者调用 /payments/sandbox/{no} 把支付单置为成功。
+     */
     public static function sandboxEnabled(): bool
     {
-        return (bool) config('payments.sandbox', env('PAYMENT_SANDBOX', true));
+        if (! app()->environment(['local', 'testing', 'staging'])) {
+            return false;
+        }
+
+        return (bool) config('payments.sandbox', false);
     }
 
     /** 生成回调验签：HMAC-SHA256(payment_no|channel_trade_no|amount|status)（Mock 网关沿用） */
@@ -88,6 +99,9 @@ class PaymentService
             'status' => Payment::STATUS_PENDING,
             'biz_type' => Payment::BIZ_TYPE_ORDER,
             'biz_no' => $order->order_no,
+            // SEC-14：记录提交人身份域，供 review() 做同域自审隔离（买家提交=users 域）
+            'submitted_by' => $userId,
+            'submitted_by_type' => Payment::SUBMITTER_USER,
         ]);
 
         if ($existing && $existing->channel !== $channel) {
@@ -247,9 +261,51 @@ class PaymentService
 
         $result = $gateway->verifyCallback($request, $config);
 
+        // SEC-11：来源 IP 白名单（仅对真实网关渠道生效，沙箱跳过）。
+        // 即便签名密钥泄露，也能挡住来自公网的伪造回调。
+        if (! $this->isCallbackSourceAllowed($channel, $request)) {
+            Log::warning('payment_callback_ip_rejected', [
+                'channel' => $channel,
+                'ip' => $request->ip(),
+            ]);
+
+            return ['ok' => false, 'message' => '回调来源不在白名单内'];
+        }
+
+        // SEC-11：nonce 防重放。同一份（pay_no|渠道流水|金额|状态|签名）在窗口内重复到达，
+        // 视为网关重试直接返回当前状态（幂等友好），不二次处理；非幂等场景下则直接忽略。
+        $nonce = $this->callbackNonce($result->raw, (string) $request->input('sign', ''));
+        if ($nonce !== null && Cache::has($nonce)) {
+            $replayed = Payment::where('payment_no', $result->paymentNo)->first();
+            if ($replayed && $replayed->status === Payment::STATUS_SUCCESS) {
+                return ['ok' => true, 'message' => '重复回调已忽略（幂等）'];
+            }
+
+            return ['ok' => false, 'message' => '重复回调已忽略'];
+        }
+        if ($nonce !== null) {
+            Cache::put($nonce, true, now()->addMinutes(10));
+        }
+
         $payment = $result->paymentNo !== ''
             ? Payment::where('payment_no', $result->paymentNo)->first()
             : null;
+
+        // SEC-02 审计补强：验签/解析失败时 $result->paymentNo 为空，若就此返回，
+        // 伪造回调的尝试将完全不留痕（payment_logs 无记录、无法告警）。
+        // 这里按报文本身的 payment_no 反查支付单，仅为留痕，不参与任何信任判断。
+        if (! $payment && ! $result->ok) {
+            $auditTarget = Payment::where('payment_no', (string) $request->input('payment_no', ''))->first();
+
+            if ($auditTarget) {
+                $this->log(
+                    $auditTarget,
+                    PaymentLog::EVENT_CALLBACK,
+                    $result->raw,
+                    ['ok' => false, 'message' => $result->message, 'channel' => $channel],
+                );
+            }
+        }
 
         if (! $payment || $payment->channel !== $channel) {
             return ['ok' => false, 'message' => '支付单不存在或渠道不匹配'];
@@ -302,6 +358,10 @@ class PaymentService
      */
     public function sandboxNotify(string $paymentNo, string $result = Payment::STATUS_SUCCESS): array
     {
+        // SEC-01 纵深防御：即便配置被误设，生产环境也在此处硬拦截
+        if (! app()->environment(['local', 'testing', 'staging'])) {
+            throw BusinessException::forbidden('生产环境禁用沙箱支付');
+        }
         if (! self::sandboxEnabled()) {
             throw BusinessException::forbidden('沙箱支付未启用');
         }
@@ -388,6 +448,15 @@ class PaymentService
         }
         if (! $pass && trim((string) $remark) === '') {
             throw BusinessException::badRequest('驳回时请填写原因');
+        }
+
+        // SEC-14：线下审核隔离（四人眼原则）——审核人不得为同一支付单的提交人。
+        // 提交人与审核人分属不同身份域：买家提交时 submitted_by_type='user'（users 域），
+        // 审核人来自 sys_user 域，跨域天然不触发；仅当「提交人也是管理员（sys_user 域）」
+        // 且主键相等时才视为同一人，避免「sys_user.id 与 users.id 恰好相等」这类跨表误伤。
+        if ($payment->submitted_by_type === Payment::SUBMITTER_ADMIN
+            && $adminId === (int) $payment->submitted_by) {
+            throw BusinessException::conflict('审核人不能是支付单提交人');
         }
 
         $payment->forceFill([
@@ -683,5 +752,80 @@ class PaymentService
             'response_data' => $response,
             'created_at' => now(),
         ]);
+    }
+
+    /**
+     * 回调来源 IP 是否允许（SEC-11）
+     *
+     * 仅对**非沙箱**渠道（微信/支付宝等真实网关）生效；沙箱模拟渠道不校验来源 IP。
+     * 白名单为空（未配置）时放行，由签名 + nonce 兜底。
+     */
+    private function isCallbackSourceAllowed(string $channel, Request $request): bool
+    {
+        if (self::sandboxEnabled() || $channel === Payment::CHANNEL_MOCK) {
+            return true;
+        }
+
+        $allowed = config('payments.callback_allowed_ips');
+        if (is_string($allowed)) {
+            $allowed = array_filter(array_map('trim', explode(',', $allowed)), 'strlen');
+        }
+        if (! is_array($allowed) || $allowed === []) {
+            return true;
+        }
+
+        $ip = $request->ip();
+
+        foreach ($allowed as $range) {
+            if ($this->ipMatches($ip, (string) $range)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /** CIDR / 单 IP 匹配 */
+    private function ipMatches(string $ip, string $range): bool
+    {
+        if (! str_contains($range, '/')) {
+            return $ip === $range;
+        }
+
+        [$subnet, $bits] = explode('/', $range, 2);
+        $bits = (int) $bits;
+
+        $ipLong = ip2long($ip);
+        $subLong = ip2long($subnet);
+        if ($ipLong === false || $subLong === false) {
+            return false;
+        }
+
+        $mask = $bits === 0 ? 0 : (~0 << (32 - $bits)) & 0xFFFFFFFF;
+
+        return ($ipLong & $mask) === ($subLong & $mask);
+    }
+
+    /**
+     * 回调 nonce：同一份报文的去重指纹（SEC-11 防重放）
+     *
+     * 以（pay_no|渠道流水|金额|状态|签名）拼接哈希，作为幂等键。
+     * 报文缺字段（如验签前）返回 null，交由调用方决定是否继续。
+     */
+    private function callbackNonce(?array $raw, string $sign): ?string
+    {
+        if (! is_array($raw) || ($raw['payment_no'] ?? '') === '') {
+            return null;
+        }
+
+        $seed = implode('|', [
+            $raw['payment_no'] ?? '',
+            $raw['channel_trade_no'] ?? '',
+            $raw['amount'] ?? '',
+            $raw['status'] ?? '',
+            $sign,
+        ]);
+
+        return 'pay:cb:nonce:'.hash('sha256', $seed);
     }
 }

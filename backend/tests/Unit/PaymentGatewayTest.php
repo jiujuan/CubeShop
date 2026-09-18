@@ -295,5 +295,5 @@ test('切换支付渠道复用同一支付单而非新建', function () {
 
     expect($p2->id)->toBe($p1->id)
         ->and($p2->channel)->toBe('alipay')
-        ->and(Payment::where('order_id', $order->id)->count())->toBe(1);
+        ->and(Payment::where('order_id', oid($order->id))->count())->toBe(1);
 });
