@@ -159,6 +159,12 @@ const router = createRouter({
           meta: { title: '快递公司字典', menu: true, icon: 'Truck', permission: 'shipping.manage' },
         },
         {
+          path: 'freight-templates',
+          name: 'freight-templates',
+          component: () => import('@/views/system/FreightTemplateListView.vue'),
+          meta: { title: '运费模板', menu: true, icon: 'Calculator', permission: 'shipping.manage' },
+        },
+        {
           path: 'order-logs',
           name: 'order-logs',
           component: () => import('@/views/order/OrderLogView.vue'),

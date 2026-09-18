@@ -52,6 +52,26 @@ class AddressController extends Controller
             ->header('Cache-Control', 'public, max-age=86400');
     }
 
+    /**
+     * 省级列表（轻量版，仅 34 省的 code+name）
+     *
+     * 供 admin 运费模板 region 编辑器（省份多选）等只需省级数据的场景，
+     * 避免拉取含 3056 区县的全量树。公开接口（游客配置后台也不要求登录态差异）。
+     */
+    public function provinces(Request $request): JsonResponse
+    {
+        $provinces = \App\Services\Common\RegionService::provinces();
+        $etag = '"provinces-'.md5((string) json_encode($provinces)).'"';
+
+        if ($request->header('If-None-Match') === $etag) {
+            return response()->json(null, 304, ['ETag' => $etag]);
+        }
+
+        return $this->success(['provinces' => $provinces])
+            ->header('ETag', $etag)
+            ->header('Cache-Control', 'public, max-age=86400');
+    }
+
     /** 一行文本智能解析（V1.1 E04 / T-028） */
     public function parse(Request $request): JsonResponse
     {
