@@ -7,6 +7,7 @@ use App\Models\Coupon;
 use App\Models\Promotion;
 use App\Models\UserCoupon;
 use App\Services\Marketing\Dto\OrderContext;
+use App\Support\PublicId;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Facades\DB;
 
@@ -69,7 +70,7 @@ class CouponService
                 'min_spend' => (float) $c->min_spend,
                 'scope' => $c->scope,
                 'scope_label' => Coupon::SCOPE_LABELS[$c->scope] ?? $c->scope,
-                'scope_refs' => $c->scope_refs ?? [],
+                'scope_refs' => $this->scopeRefsToPublicId($c),
                 'valid_type' => $c->valid_type,
                 'valid_to' => $c->valid_to?->format('Y-m-d H:i:s'),
                 'valid_days' => $c->valid_days,
@@ -192,7 +193,7 @@ class CouponService
             // 门店上下文优先按行项目命中金额；无行项目时对全场券回退到总金额
             $base = ($ctx->lines === [] && $coupon->scope === Coupon::SCOPE_ALL)
                 ? $fallbackTotal
-                : $ctx->scopeBaseAmount($coupon->scope, $coupon->scope_refs ?? []);
+                : $ctx->scopeBaseAmount($coupon->scope, $this->scopeRefsToInt($coupon));
 
             if ($coupon->scope !== Coupon::SCOPE_ALL && $base <= 0) {
                 $unusable[] = $this->briefUnusable($uc, '适用范围不符');
@@ -283,7 +284,7 @@ class CouponService
             return '优惠券已停止使用';
         }
 
-        $base = $ctx->scopeBaseAmount($coupon->scope, $coupon->scope_refs ?? []);
+        $base = $ctx->scopeBaseAmount($coupon->scope, $this->scopeRefsToInt($coupon));
         if ($coupon->scope !== Coupon::SCOPE_ALL && $base <= 0) {
             return '订单中没有适用该优惠券的商品';
         }
@@ -410,7 +411,7 @@ class CouponService
             'max_discount' => $coupon->max_discount !== null ? (float) $coupon->max_discount : null,
             'min_spend' => (float) $coupon->min_spend,
             'scope' => $coupon->scope,
-            'scope_refs' => $coupon->scope_refs ?? [],
+            'scope_refs' => $this->scopeRefsToInt($coupon),
         ];
     }
 
@@ -446,5 +447,61 @@ class CouponService
             'expire_at' => $uc->expire_at?->format('Y-m-d H:i:s'),
             'reason' => $reason,
         ];
+    }
+
+    /**
+     * scope_refs（public_id 或历史 int）解析为内部 int 主键，供匹配引擎 OrderContext 使用。
+     * 保持 OrderContext 纯值对象不变；兼容混存格式。
+     *
+     * @return array<int, int>
+     */
+    private function scopeRefsToInt(Coupon $coupon): array
+    {
+        $scope = $coupon->scope;
+        if ($scope === Coupon::SCOPE_ALL) {
+            return [];
+        }
+
+        $pidScope = $scope === Coupon::SCOPE_CATEGORY ? PublicId::SCOPE_CATEGORY : PublicId::SCOPE_PRODUCT;
+        $out = [];
+
+        foreach (array_values($coupon->scope_refs ?? []) as $r) {
+            $id = is_numeric($r) ? (int) $r : PublicId::resolve($pidScope, (string) $r);
+            if ($id !== null) {
+                $out[] = $id;
+            }
+        }
+
+        return array_values(array_unique($out));
+    }
+
+    /**
+     * 出口 scope_refs 归一化为 public_id 字符串（前台按 category/product.id 匹配）。
+     *
+     * @return array<int, string>
+     */
+    private function scopeRefsToPublicId(Coupon $coupon): array
+    {
+        $scope = $coupon->scope;
+        if ($scope === Coupon::SCOPE_ALL) {
+            return [];
+        }
+
+        $pidScope = $scope === Coupon::SCOPE_CATEGORY ? PublicId::SCOPE_CATEGORY : PublicId::SCOPE_PRODUCT;
+        $out = [];
+
+        foreach (array_values($coupon->scope_refs ?? []) as $r) {
+            if (is_numeric($r)) {
+                $pid = PublicId::encode($pidScope, (int) $r);
+            } else {
+                // 已是 public_id：存在性校验交由业务层
+                $pid = PublicId::resolve($pidScope, (string) $r) !== null ? (string) $r : null;
+            }
+            if ($pid !== null) {
+                $out[] = $pid;
+            }
+        }
+
+        return array_values(array_unique($out));
     }
 }

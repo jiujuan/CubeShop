@@ -8,6 +8,7 @@ use App\Models\Coupon;
 use App\Models\UserCoupon;
 use App\Services\Common\OperationLogService;
 use App\Support\ApiResponse;
+use App\Support\PublicId;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -102,6 +103,10 @@ class CouponController extends Controller
         }
 
         $data = $request->validate($this->updateRules($id));
+
+        if (isset($data['scope_refs'])) {
+            $this->assertScopeRefsValid($data['scope'] ?? $coupon->scope, $data['scope_refs']);
+        }
 
         // 已发放的券：禁止触碰核心字段
         if ($coupon->issued_count > 0) {
@@ -238,7 +243,11 @@ class CouponController extends Controller
             'min_spend' => ['nullable', 'numeric', 'min:0'],
             'scope' => ['nullable', 'in:'.implode(',', self::SCOPES)],
             'scope_refs' => ['nullable', 'array'],
-            'scope_refs.*' => ['integer', 'min:1'],
+            'scope_refs.*' => ['nullable', function ($attribute, $value, $fail) {
+                if (! is_int($value) && ! is_string($value)) {
+                    $fail('适用范围 ID 必须是整数或字符串');
+                }
+            }],
             'total_count' => ['required', 'integer', 'min:1'],
             'per_user_limit' => ['required', 'integer', 'min:1'],
             'valid_type' => ['required', 'in:'.implode(',', self::VALID_TYPES)],
@@ -261,7 +270,11 @@ class CouponController extends Controller
             'min_spend' => ['sometimes', 'nullable', 'numeric', 'min:0'],
             'scope' => ['sometimes', 'in:'.implode(',', self::SCOPES)],
             'scope_refs' => ['sometimes', 'nullable', 'array'],
-            'scope_refs.*' => ['integer', 'min:1'],
+            'scope_refs.*' => ['nullable', function ($attribute, $value, $fail) {
+                if (! is_int($value) && ! is_string($value)) {
+                    $fail('适用范围 ID 必须是整数或字符串');
+                }
+            }],
             'total_count' => ['sometimes', 'integer', 'min:1'],
             'per_user_limit' => ['sometimes', 'integer', 'min:1'],
             'valid_type' => ['sometimes', 'in:'.implode(',', self::VALID_TYPES)],
@@ -284,7 +297,7 @@ class CouponController extends Controller
 
         $out = $data;
         $out['scope'] = $data['scope'] ?? $existing?->scope ?? Coupon::SCOPE_ALL;
-        $out['scope_refs'] = $out['scope'] === Coupon::SCOPE_ALL ? [] : array_values($data['scope_refs'] ?? $existing?->scope_refs ?? []);
+        $out['scope_refs'] = $this->normalizeScopeRefsPublicId($out['scope'] ?? Coupon::SCOPE_ALL, $data['scope_refs'] ?? $existing?->scope_refs ?? []);
         $out['min_spend'] = $data['min_spend'] ?? $existing?->min_spend ?? 0;
         $out['status'] = $data['status'] ?? $existing?->status ?? Coupon::STATUS_ACTIVE;
 
@@ -314,21 +327,88 @@ class CouponController extends Controller
         return $out;
     }
 
-    /** 校验 scope_refs 中的 id 是否真实存在 */
+    /** 校验 scope_refs 中的 id（int 主键或 public_id）是否真实存在 */
     private function assertScopeRefsValid(string $scope, array $refs): void
     {
         if ($scope === Coupon::SCOPE_ALL || $refs === []) {
             return;
         }
 
+        $pidScope = $scope === Coupon::SCOPE_CATEGORY ? PublicId::SCOPE_CATEGORY : PublicId::SCOPE_PRODUCT;
+        $intIds = [];
+
+        foreach (array_values($refs) as $r) {
+            $id = is_numeric($r) ? (int) $r : PublicId::resolve($pidScope, (string) $r);
+            if ($id === null) {
+                throw BusinessException::badRequest('适用范围包含不存在的 ID：'.((string) $r));
+            }
+            $intIds[] = $id;
+        }
+
         $table = $scope === Coupon::SCOPE_CATEGORY ? 'categories' : 'products';
-        $ids = array_values(array_unique(array_map('intval', $refs)));
-        $found = DB::table($table)->whereIn('id', $ids)->pluck('id')->all();
-        $missing = array_diff($ids, array_map('intval', $found));
+        $found = DB::table($table)->whereIn('id', array_unique($intIds))->pluck('id')->all();
+        $missing = array_diff(array_unique($intIds), $found);
 
         if ($missing !== []) {
             throw BusinessException::badRequest('适用范围包含不存在的 ID：'.implode(',', $missing));
         }
+    }
+
+    /**
+     * 入参 scope_refs 归一化为 public_id 字符串（P2-11 终态）
+     *
+     * 兼容历史 int 主键（编码为 public_id）与已是 public_id 的字符串（保留并交由 assertScopeRefsValid 校验）。
+     *
+     * @param  array<int, int|string>  $refs
+     * @return array<int, string>
+     */
+    private function normalizeScopeRefsPublicId(string $scope, array $refs): array
+    {
+        if ($scope === Coupon::SCOPE_ALL || $refs === []) {
+            return [];
+        }
+
+        $pidScope = $scope === Coupon::SCOPE_CATEGORY ? PublicId::SCOPE_CATEGORY : PublicId::SCOPE_PRODUCT;
+        $out = [];
+
+        foreach (array_values($refs) as $r) {
+            if (is_numeric($r)) {
+                $pid = PublicId::encode($pidScope, (int) $r);
+            } else {
+                // 已是 public_id：存在性校验由 assertScopeRefsValid 负责
+                $pid = PublicId::resolve($pidScope, (string) $r) !== null ? (string) $r : null;
+            }
+            if ($pid !== null) {
+                $out[] = $pid;
+            }
+        }
+
+        return array_values(array_unique($out));
+    }
+
+    /**
+     * 出口 scope_refs 解析回内部 int 主键（后台管理表单仍以 int 主键工作）
+     *
+     * @param  array<int, int|string>  $refs
+     * @return array<int, int>
+     */
+    private function scopeRefsToInt(string $scope, array $refs): array
+    {
+        if ($scope === Coupon::SCOPE_ALL || $refs === []) {
+            return [];
+        }
+
+        $pidScope = $scope === Coupon::SCOPE_CATEGORY ? PublicId::SCOPE_CATEGORY : PublicId::SCOPE_PRODUCT;
+        $out = [];
+
+        foreach (array_values($refs) as $r) {
+            $id = is_numeric($r) ? (int) $r : PublicId::resolve($pidScope, (string) $r);
+            if ($id !== null) {
+                $out[] = $id;
+            }
+        }
+
+        return array_values(array_unique($out));
     }
 
     /** 绝对有效期窗口校验：valid_to 必须晚于 valid_from */
@@ -356,7 +436,7 @@ class CouponController extends Controller
             'max_discount' => $c->max_discount !== null ? (float) $c->max_discount : null,
             'scope' => $c->scope,
             'scope_label' => Coupon::SCOPE_LABELS[$c->scope] ?? $c->scope,
-            'scope_refs' => $c->scope_refs ?? [],
+            'scope_refs' => $this->scopeRefsToInt($c->scope, $c->scope_refs ?? []),
             'total_count' => $c->total_count,
             'issued_count' => $c->issued_count,
             'used_count' => $c->used_count,
