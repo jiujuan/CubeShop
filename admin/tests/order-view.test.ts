@@ -16,11 +16,12 @@ import { useAuthStore } from '@/stores/auth'
  * 3. 「待发货」（pending_ship）才是发货队列，附带「发货」操作；
  * 4. 支持从仪表盘待办卡带 `?status=` 直达并自动应用筛选。
  */
-const { getOrdersMock, shipOrderMock, acceptOrderMock, exportOrdersMock } = vi.hoisted(() => ({
+const { getOrdersMock, shipOrderMock, acceptOrderMock, exportOrdersMock, getEnabledShippingCompaniesMock } = vi.hoisted(() => ({
   getOrdersMock: vi.fn(),
   shipOrderMock: vi.fn(),
   acceptOrderMock: vi.fn(),
   exportOrdersMock: vi.fn(),
+  getEnabledShippingCompaniesMock: vi.fn(),
 }))
 
 vi.mock('@/api/order', () => ({
@@ -28,6 +29,7 @@ vi.mock('@/api/order', () => ({
   shipOrder: shipOrderMock,
   acceptOrder: acceptOrderMock,
   exportOrders: exportOrdersMock,
+  getEnabledShippingCompanies: getEnabledShippingCompaniesMock,
   ORDER_STATUS_CLASS: {
     pending_payment: 'bg-orange-100 text-orange-500',
     paid: 'bg-blue-100 text-blue-500',
@@ -70,6 +72,7 @@ function makeRouter() {
     routes: [
       { path: '/', component: { template: '<div />' } },
       { path: '/orders', component: { template: '<div />' } },
+      { path: '/orders/:id', component: { template: '<div />' } },
     ],
   })
 }
@@ -116,6 +119,8 @@ describe('后台订单管理页 — 订单状态 Tab', () => {
     shipOrderMock.mockReset()
     acceptOrderMock.mockReset()
     exportOrdersMock.mockReset()
+    getEnabledShippingCompaniesMock.mockReset()
+    getEnabledShippingCompaniesMock.mockResolvedValue({ data: { data: [{ code: 'SF', name: '顺丰速运' }, { code: 'ZTO', name: '中通快递' }] } })
   })
 
   it('Tab 行按履约主链路依次为 待支付/已支付/待发货/已发货/已完成', async () => {
@@ -164,8 +169,8 @@ describe('后台订单管理页 — 订单状态 Tab', () => {
     const cells = wrapper.find('tbody tr').findAll('td')
 
     expect(cells[4].text()).toBe('待发货')
-    expect(cells[6].text()).toContain('发货')
-    expect(cells[6].text()).not.toContain('受理备货')
+    expect(cells[7].text()).toContain('发货')
+    expect(cells[7].text()).not.toContain('受理备货')
   })
 
   it('paid 订单徽标显示「已支付」并提供「受理备货」而非直接发货', async () => {
@@ -173,8 +178,8 @@ describe('后台订单管理页 — 订单状态 Tab', () => {
     const cells = wrapper.find('tbody tr').findAll('td')
 
     expect(cells[4].text()).toBe('已支付')
-    expect(cells[6].text()).toContain('受理备货')
-    expect(cells[6].text()).not.toContain('发货')
+    expect(cells[7].text()).toContain('受理备货')
+    expect(cells[7].text()).not.toContain('发货')
   })
 
   it('后台「受理备货」提交后调用 accept 接口', async () => {
@@ -205,5 +210,35 @@ describe('后台订单管理页 — 订单状态 Tab', () => {
 
     expect(getOrdersMock).toHaveBeenCalledTimes(1)
     expect(getOrdersMock.mock.calls[0][0].status).toBeUndefined()
+  })
+})
+
+describe('后台订单管理页 — 详情入口改为路由跳转', () => {
+  beforeEach(() => {
+    getOrdersMock.mockReset()
+    shipOrderMock.mockReset()
+    acceptOrderMock.mockReset()
+    exportOrdersMock.mockReset()
+    getEnabledShippingCompaniesMock.mockReset()
+    getEnabledShippingCompaniesMock.mockResolvedValue({ data: { data: [{ code: 'SF', name: '顺丰速运' }] } })
+  })
+
+  it('点击「详情」跳转到 /orders/:id 而不是弹出层', async () => {
+    const { wrapper, router } = await mountView({ list: [orderFixture('shipped', '已发货', 2048)] })
+
+    await wrapper.find('[data-testid="detail-2048"]').trigger('click')
+    await flushPromises()
+
+    expect(router.currentRoute.value.path).toBe('/orders/2048')
+  })
+
+  it('页面内不再存在详情弹窗节点', async () => {
+    const { wrapper } = await mountView({ list: [orderFixture('shipped', '已发货', 2048)] })
+
+    await wrapper.find('[data-testid="detail-2048"]').trigger('click')
+    await flushPromises()
+
+    // 弹窗通常带 fixed inset-0 遮罩层，改造后不应出现
+    expect(wrapper.find('.fixed.inset-0').exists()).toBe(false)
   })
 })
