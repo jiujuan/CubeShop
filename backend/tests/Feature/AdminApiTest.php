@@ -164,6 +164,29 @@ test('TC-ADMIN-004 部分更新商品（仅状态）不报错且不影响 SKU', 
         ->and($detail['skus'])->toHaveCount(1);
 });
 
+test('TC-ADMIN-005b 商品详情 markdown 源经后端渲染派生 HTML', function () {
+    $md = "# 标题\n\n这是**加粗**正文与一张图 ![图](https://example.com/a.png)";
+    $pid = $this->postJson('/api/admin/products', [
+        'category_id' => createTestCategory(),
+        'title' => 'Markdown商品'.uniqid(),
+        'status' => 1,
+        'description_md' => $md,
+        'skus' => [['sku_code' => 'MD-'.uniqid(), 'specs' => [], 'price' => '1.00', 'stock' => 1]],
+    ], $this->adminAuth)->json('data.id');
+
+    $detail = $this->getJson("/api/admin/products/{$pid}", $this->adminAuth)->json('data');
+
+    expect($detail['description_md'])->toBe($md)
+        ->and($detail['description'])->toContain('<strong>加粗</strong>')
+        ->and($detail['description'])->toContain('<h1');
+
+    // 仅改状态不应触发派生钩子、不应清空已渲染的 description
+    $this->putJson("/api/admin/products/{$pid}", ['status' => 0], $this->adminAuth);
+    $after = $this->getJson("/api/admin/products/{$pid}", $this->adminAuth)->json('data');
+
+    expect($after['description'])->toContain('<strong>加粗</strong>');
+});
+
 test('SKU 编码重复返回业务错误而非系统错误', function () {
     $code = 'DUP-'.uniqid();
     $this->postJson('/api/admin/products', [

@@ -7,6 +7,7 @@ import {
   Sparkles, Truck, WalletMinimal,
 } from 'lucide-vue-next'
 import { getCategories, getHot, type CategoryNode, type ProductBrief } from '@/api/shop'
+import { getAnnouncements, type AnnouncementListItem } from '@/api/announcement'
 import ProductCard from '@/components/ProductCard.vue'
 import ShopFooter from '@/components/ShopFooter.vue'
 import ShopHeader from '@/components/ShopHeader.vue'
@@ -28,6 +29,9 @@ const newest = ref<ProductBrief[]>([])
 const categories = ref<CategoryNode[]>([])
 const loading = ref(true)
 
+/** 公告（P-Announcement）：右栏「最新公告」列表数据（顶栏全局公告条由 ShopHeader 统一展示，避免首页重复） */
+const announcements = ref<AnnouncementListItem[]>([])
+
 onMounted(async () => {
   try {
     const [hotRes, catRes] = await Promise.all([getHot(PAGE_SIZE), getCategories()])
@@ -38,6 +42,13 @@ onMounted(async () => {
     /* 单个接口异常不影响整页渲染 */
   } finally {
     loading.value = false
+  }
+
+  try {
+    const { data } = await getAnnouncements({ per_page: 5 })
+    announcements.value = data.data.list
+  } catch {
+    /* 公告加载失败不阻断首页其它内容 */
   }
 })
 
@@ -102,13 +113,6 @@ const orderEntries = [
   { label: '待发货', icon: Package, to: '/orders?tab=pending_ship' },
   { label: '待收货', icon: Truck, to: '/orders?tab=pending_receive' },
   { label: '待评价', icon: MessageSquare, to: '/orders?tab=pending_review' },
-]
-/** 最新公告（静态展示位，只展示最新 2 条，点击进消息通知） */
-const notices = [
-  { text: '夏日大促！全场满 99 元包邮', date: '2024-09-14' },
-  { text: '会员专享：积分翻倍活动开启', date: '2024-09-12' },
-  { text: '关于快递发货时间调整的通知', date: '2024-09-10' },
-  { text: '新品上架：精选数码配件', date: '2024-09-08' },
 ]
 
 /** 底部大促卡片 */
@@ -273,21 +277,22 @@ const bigPromos = [
           <div class="rounded-xl border border-slate-100 bg-white p-4 shadow-sm">
             <div class="mb-2.5 flex items-center justify-between">
               <span class="text-[13px] font-bold text-slate-800">最新公告</span>
-              <RouterLink to="/notifications" class="flex items-center text-[11px] text-slate-400 hover:text-[#1677ff]">
+              <RouterLink to="/announcements" class="flex items-center text-[11px] text-slate-400 hover:text-[#1677ff]">
                 更多 <ChevronRight class="h-3 w-3" />
               </RouterLink>
             </div>
-            <ul class="space-y-2.5">
-              <li v-for="n in notices.slice(0, 2)" :key="n.text">
-                <RouterLink to="/notifications" class="group flex gap-1.5">
+            <ul v-if="announcements.length" class="space-y-2.5">
+              <li v-for="a in announcements.slice(0, 4)" :key="a.id">
+                <RouterLink :to="`/announcements/${a.id}`" class="group flex gap-1.5" :data-testid="`home-announcement-${a.id}`">
                   <span class="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-[#1677ff]"></span>
                   <span class="min-w-0">
-                    <span class="block truncate text-xs text-slate-600 group-hover:text-[#1677ff]">{{ n.text }}</span>
-                    <span class="mt-0.5 block text-[10px] text-slate-400">{{ n.date }}</span>
+                    <span class="block truncate text-xs text-slate-600 group-hover:text-[#1677ff]">{{ a.title }}</span>
+                    <span class="mt-0.5 block text-[10px] text-slate-400">{{ a.published_at?.slice(0, 10) }}</span>
                   </span>
                 </RouterLink>
               </li>
             </ul>
+            <p v-else class="text-xs text-slate-400">暂无公告</p>
           </div>
 
           <!-- 新用户福利（单行紧凑卡，高度约原设计一半） -->

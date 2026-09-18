@@ -1,9 +1,0 @@
-=== SQLite (php artisan pest -> vendor/bin/pest) ===
-Tests:    554 passed (1972 assertions)
-Duration: 77.43s
-
-=== PostgreSQL (vendor/bin/pest -c phpunit.pgsql.xml) ===
-Tests:    554 passed (1972 assertions)
-Duration: 142.50s
-
-改动: CouponService::receivableCoupons() 增加 scope_refs 返回字段（增量）

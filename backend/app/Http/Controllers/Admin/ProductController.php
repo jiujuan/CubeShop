@@ -293,6 +293,7 @@ class ProductController extends Controller
             'subtitle' => ['nullable', 'string', 'max:255'],
             'main_image' => ['nullable', 'string', 'max:512'],
             'description' => ['nullable', 'string'],
+            'description_md' => ['nullable', 'string'],
             'status' => ['nullable', 'in:0,1'],
             'sort' => ['nullable', 'integer'],
             // V1.1 E01 新增字段
@@ -678,6 +679,7 @@ class ProductController extends Controller
             'main_image' => $product->main_image,
             'images' => $product->images->sortBy('sort')->pluck('url')->values(),
             'description' => $product->description,
+            'description_md' => $product->description_md,
             'price' => $product->price,
             'status' => (int) $product->status,
             'sales_count' => $product->sales_count,

@@ -34,6 +34,7 @@ export interface AdminProduct {
   category?: { id: number; name: string } | null
   category_id?: number | null
   description?: string | null
+  description_md?: string | null
   images?: string[]
   skus?: Sku[]
   created_at?: string
@@ -55,6 +56,8 @@ export interface ProductPayload {
   subtitle?: string
   main_image?: string | null
   description?: string
+  /** 详情正文 markdown 源（md-editor-v3 编辑，与帮助中心文章一致）；后端派生 description(HTML) */
+  description_md?: string
   status: number
   sort?: number
   /** V1.1 E01 新增 */

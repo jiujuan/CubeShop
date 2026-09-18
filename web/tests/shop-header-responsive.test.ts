@@ -38,6 +38,12 @@ vi.mock('@/api/auth', () => ({
   logout: vi.fn(),
 }))
 
+vi.mock('@/api/announcement', () => ({
+  getAnnouncements: vi.fn().mockResolvedValue({
+    data: { data: { list: [{ id: 'abc123', title: '系统维护通知', is_top: true, published_at: '2026-09-18', summary: '升级维护' }] } },
+  }),
+}))
+
 async function mountHeader() {
   const router = createRouter({
     history: createMemoryHistory(),
@@ -107,10 +113,13 @@ describe('ShopHeader 移动端适配（P1 回归）', () => {
     expect(btn!.className).toContain('lg:flex')
   })
 
-  it('公告条文案 truncate（配合父级 min-w-0 单行收敛）', async () => {
-    const { getByText } = await mountHeader()
+  it('公告条展示后台公告且文案 truncate（动态内容，替换原写死的促销语）', async () => {
+    const { findByText } = await mountHeader()
 
-    expect(getByText(/全场满 99 元包邮/).className).toContain('truncate')
+    const span = await findByText('系统维护通知')
+    const link = span.closest('a')!
+    expect(link.className).toContain('truncate')
+    expect(link.getAttribute('href')).toBe('/announcements/abc123')
   })
 
   it('公告条账号入口窄屏隐藏（≥sm 才显示），避免与公告文案互相挤压', async () => {

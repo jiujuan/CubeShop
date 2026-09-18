@@ -183,6 +183,12 @@ const router = createRouter({
           meta: { title: '营销管理', menu: true, icon: 'Ticket', permission: 'marketing.manage' },
         },
         {
+          path: 'announcements',
+          name: 'announcements',
+          component: () => import('@/views/operation/AnnouncementListView.vue'),
+          meta: { title: '公告管理', menu: true, icon: 'Megaphone', permission: 'announcement.manage' },
+        },
+        {
           path: 'cs/tickets',
           name: 'cs-tickets',
           component: () => import('@/views/cs/CsTicketView.vue'),

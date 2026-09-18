@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { Bell, ChevronDown, ClipboardList, Clock, Heart, House, MapPin, Package, ShoppingCart, SquareUser, Ticket, UserRound, Volume2 } from 'lucide-vue-next'
 import { getCategories, type CategoryNode } from '@/api/shop'
+import { getAnnouncements, type AnnouncementListItem } from '@/api/announcement'
 import { getCartCount } from '@/api/user'
 import NotificationBell from '@/components/NotificationBell.vue'
 import { useAuthStore } from '@/stores/auth'
@@ -24,6 +25,14 @@ const categories = ref<CategoryNode[]>([])
 const cartCount = ref(0)
 const userMenuOpen = ref(false)
 
+/** 顶部公告条（P-Announcement）：拉取后台已发布公告，置顶优先轮播 */
+const announcements = ref<AnnouncementListItem[]>([])
+const topIndex = ref(0)
+let rotateTimer: ReturnType<typeof setInterval> | null = null
+const topAnnouncement = computed<AnnouncementListItem | null>(
+  () => announcements.value[topIndex.value] ?? null,
+)
+
 onMounted(async () => {
   try {
     const { data } = await getCategories()
@@ -32,6 +41,22 @@ onMounted(async () => {
     categories.value = []
   }
   refreshCartCount()
+
+  try {
+    const { data } = await getAnnouncements({ per_page: 5 })
+    announcements.value = data.data.list
+    if (announcements.value.length > 1) {
+      rotateTimer = setInterval(() => {
+        topIndex.value = (topIndex.value + 1) % announcements.value.length
+      }, 3500)
+    }
+  } catch {
+    /* 公告加载失败不影响顶栏其余功能 */
+  }
+})
+
+onBeforeUnmount(() => {
+  if (rotateTimer) clearInterval(rotateTimer)
 })
 
 /** 登录态变化 / 加购后刷新角标 */
@@ -76,12 +101,16 @@ async function handleLogout() {
 
 <template>
   <header class="sticky top-0 z-40 bg-white shadow-sm">
-    <!-- 公告条 -->
+    <!-- 公告条：动态展示后台已发布公告（置顶优先轮播），点击进详情 -->
     <div class="flex h-9 items-center justify-between gap-2 bg-gradient-to-r from-[#e6f4ff] to-white px-3 text-xs text-slate-500 sm:px-6">
-      <div class="flex min-w-0 items-center gap-2">
-        <Volume2 class="h-3.5 w-3.5 shrink-0 text-[#1677ff]" />
-        <span class="truncate">全场满 99 元包邮 ｜ 会员专属积分翻倍，购物更优惠！</span>
-      </div>
+      <RouterLink
+        v-if="topAnnouncement"
+        :to="`/announcements/${topAnnouncement.id}`"
+        class="flex min-w-0 items-center gap-2 truncate text-[#1677ff] hover:opacity-80"
+      >
+        <Volume2 class="h-3.5 w-3.5 shrink-0" />
+        <span class="truncate">{{ topAnnouncement.title }}</span>
+      </RouterLink>
       <div v-if="!auth.token" class="hidden shrink-0 items-center gap-3 sm:flex">
         <RouterLink to="/login" class="hover:text-[#1677ff]">登录</RouterLink>
         <span class="text-slate-200">|</span>

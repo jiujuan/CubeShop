@@ -7,6 +7,7 @@ use App\Http\Controllers\Admin\CategoryAttributeController;
 use App\Http\Controllers\Admin\CategoryController;
 use App\Http\Controllers\Admin\AddressController as AdminAddressController;
 use App\Http\Controllers\Admin\AccountController as AdminAccountController;
+use App\Http\Controllers\Admin\AnnouncementController as AdminAnnouncementController;
 use App\Http\Controllers\Admin\ConfigController;
 use App\Http\Controllers\Admin\CouponController as AdminCouponController;
 use App\Http\Controllers\Admin\DashboardController;
@@ -26,6 +27,7 @@ use App\Http\Controllers\Admin\RoleController as AdminRoleController;
 use App\Http\Controllers\Admin\UploadController;
 use App\Http\Controllers\Admin\UserController;
 use App\Http\Controllers\AuthController;
+use App\Http\Controllers\AnnouncementController;
 use App\Http\Controllers\BalanceController;
 use App\Http\Controllers\CartController;
 use App\Http\Controllers\Admin\CsFaqController as AdminCsFaqController;
@@ -72,6 +74,10 @@ Route::get('/regions', [AddressController::class, 'regions']);
 
 // 领券中心（V1.1 二期 F06 / T-033，无需登录；登录后附带个人领取状态）
 Route::get('/coupons', [StorefrontCouponController::class, 'center']);
+
+// 公告（P-Announcement，公开无需登录：首页公告位与公告页消费）
+Route::get('/announcements', [AnnouncementController::class, 'index']);
+Route::get('/announcements/{id}', [AnnouncementController::class, 'show']);
 
 // 认证：注册 / 登录 / 验证码 / 重置密码（带限流）
 Route::middleware('throttle:auth')->group(function () {
@@ -357,6 +363,15 @@ Route::middleware(['auth:sanctum', 'account.active'])->group(function () {
         Route::get('/coupons/{id}/stats', [AdminCouponController::class, 'stats'])->middleware('permission:marketing.manage');
         Route::get('/coupons/{id}/export', [AdminCouponController::class, 'export'])->middleware(['permission:marketing.manage', 'throttle:3,1']);
         Route::put('/coupons/{id}', [AdminCouponController::class, 'update'])->middleware('permission:marketing.manage');
+
+        // 公告管理 announcement.manage（P-Announcement）—— preview 必须注册在 {id} 之前
+        Route::get('/announcements', [AdminAnnouncementController::class, 'index'])->middleware('permission:announcement.manage');
+        Route::post('/announcements', [AdminAnnouncementController::class, 'store'])->middleware('permission:announcement.manage');
+        Route::get('/announcements/{id}/preview', [AdminAnnouncementController::class, 'preview'])->middleware('permission:announcement.manage');
+        Route::put('/announcements/{id}', [AdminAnnouncementController::class, 'update'])->middleware('permission:announcement.manage');
+        Route::post('/announcements/{id}/publish', [AdminAnnouncementController::class, 'publish'])->middleware('permission:announcement.manage');
+        Route::post('/announcements/{id}/offline', [AdminAnnouncementController::class, 'offline'])->middleware('permission:announcement.manage');
+        Route::delete('/announcements/{id}', [AdminAnnouncementController::class, 'destroy'])->middleware('permission:announcement.manage');
         Route::post('/coupons/{id}/stop', [AdminCouponController::class, 'stop'])->middleware('permission:marketing.manage');
 
         Route::get('/promotions', [AdminPromotionController::class, 'index'])->middleware('permission:marketing.manage');
