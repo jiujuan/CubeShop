@@ -28,6 +28,11 @@ use App\Http\Controllers\Admin\UserController;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\BalanceController;
 use App\Http\Controllers\CartController;
+use App\Http\Controllers\Admin\CsFaqController as AdminCsFaqController;
+use App\Http\Controllers\Admin\CsQuickReplyController as AdminCsQuickReplyController;
+use App\Http\Controllers\Admin\CsTicketController as AdminCsTicketController;
+use App\Http\Controllers\CsFaqController;
+use App\Http\Controllers\CsTicketController;
 use App\Http\Controllers\FavoriteController;
 use App\Http\Controllers\HealthController;
 use App\Http\Controllers\NotificationController;
@@ -71,7 +76,8 @@ Route::get('/coupons', [StorefrontCouponController::class, 'center']);
 // 认证：注册 / 登录 / 验证码 / 重置密码（带限流）
 Route::middleware('throttle:auth')->group(function () {
     Route::post('/auth/captcha', [AuthController::class, 'captcha']);
-    Route::post('/auth/register', [AuthController::class, 'register']);
+    // SEC-08：注册单独收紧为 5 次/分钟（auth 组是 10 次/分钟），叠加服务层同 IP 每日上限
+    Route::post('/auth/register', [AuthController::class, 'register'])->middleware('throttle:5,1');
     Route::post('/auth/login', [AuthController::class, 'login'])->middleware('throttle:login');
     Route::post('/auth/reset-password', [AuthController::class, 'resetPassword']);
 });
@@ -85,6 +91,10 @@ Route::middleware(['auth:sanctum', 'account.active'])->group(function () {
     Route::post('/auth/logout', [AuthController::class, 'logout']);
     Route::get('/auth/me', [AuthController::class, 'me']);
     Route::post('/auth/password', [AuthController::class, 'changePassword']);
+    // SEC-06：Token 有效期配套能力——设备列表 / 踢下线 / 轮换
+    Route::get('/auth/devices', [AuthController::class, 'devices']);
+    Route::delete('/auth/devices/{id}', [AuthController::class, 'revokeDevice']);
+    Route::post('/auth/refresh', [AuthController::class, 'refresh']);
 
     // 个人中心（API 文档 3.1 / 3.2 / 11.5）
     Route::get('/user/profile', [ProfileController::class, 'show']);
@@ -104,6 +114,7 @@ Route::middleware(['auth:sanctum', 'account.active'])->group(function () {
     Route::get('/orders', [OrderController::class, 'index']);
     Route::post('/orders', [OrderController::class, 'store'])->middleware('throttle:order');
     Route::get('/orders/{id}', [OrderController::class, 'show']);
+    Route::get('/orders/{id}/shipping', [OrderController::class, 'shipping']);
     Route::post('/orders/{id}/cancel', [OrderController::class, 'cancel']);
     Route::post('/orders/{id}/confirm', [OrderController::class, 'confirm']);
     Route::post('/orders/{id}/rebuy', [OrderController::class, 'rebuy']);
@@ -160,6 +171,26 @@ Route::middleware(['auth:sanctum', 'account.active'])->group(function () {
     Route::get('/user/balance/recharges', [BalanceController::class, 'recharges']);
     Route::post('/user/balance/recharges', [BalanceController::class, 'storeRecharge'])->middleware('throttle:recharge');
     Route::get('/user/balance/logs', [BalanceController::class, 'logs']);
+
+    // 客户服务中心（CS-104 FAQ 用户端；CS-106 工单用户端；CS-107 上传）
+    Route::prefix('cs')->group(function () {
+        // 帮助中心 FAQ（CS-104）
+        Route::get('/faq/categories', [CsFaqController::class, 'categories']);
+        Route::get('/faq/articles', [CsFaqController::class, 'articles']);
+        Route::get('/faq/articles/{id}', [CsFaqController::class, 'detail']);
+        Route::post('/faq/articles/{id}/feedback', [CsFaqController::class, 'feedback']);
+
+        // 工单（CS-106）：建单与回复加 10/min 限流
+        Route::get('/ticket-types', [CsTicketController::class, 'ticketTypes']);
+        Route::post('/tickets', [CsTicketController::class, 'store'])->middleware('throttle:10,1');
+        Route::get('/tickets', [CsTicketController::class, 'index']);
+        Route::get('/tickets/{id}', [CsTicketController::class, 'show']);
+        Route::post('/tickets/{id}/messages', [CsTicketController::class, 'messages'])->middleware('throttle:10,1');
+        Route::post('/tickets/{id}/close', [CsTicketController::class, 'close']);
+
+        // 图片上传（CS-107）
+        Route::post('/upload-image', [CsTicketController::class, 'uploadImage'])->middleware('throttle:30,1');
+    });
 
     // 后台管理：需要登录 + 对应权限码（API 文档 8）
     Route::prefix('admin')->group(function () {
@@ -221,18 +252,31 @@ Route::middleware(['auth:sanctum', 'account.active'])->group(function () {
         Route::get('/reports/top-products', [AdminReportController::class, 'topProducts'])->middleware('permission:report.view');
         Route::get('/reports/category-share', [AdminReportController::class, 'categoryShare'])->middleware('permission:report.view');
         Route::get('/reports/users', [AdminReportController::class, 'users'])->middleware('permission:report.view');
-        Route::get('/reports/export', [AdminReportController::class, 'export'])->middleware('permission:report.view');
+        Route::get('/reports/export', [AdminReportController::class, 'export'])->middleware(['permission:report.view', 'throttle:3,1']);
 
         // 订单管理 order.*（API 文档 8.3 / Roadmap P6）—— export 必须注册在 {id} 之前
         Route::get('/orders', [AdminOrderController::class, 'index'])->middleware('permission:order.view');
-        Route::get('/orders/export', [AdminOrderController::class, 'export'])->middleware('permission:order.export');
+        Route::get('/orders/export', [AdminOrderController::class, 'export'])->middleware(['permission:order.export', 'throttle:3,1']);
+        Route::get('/orders/batch-ship/template', [\App\Http\Controllers\Admin\BatchShipController::class, 'template'])->middleware('permission:order.ship');
+        Route::post('/orders/batch-ship', [\App\Http\Controllers\Admin\BatchShipController::class, 'store'])->middleware('permission:order.ship');
+
+        // 物流管理（V1.1 T-045 / T-047）—— pull 必须注册在 {id} 类路由之外，无冲突
+        Route::post('/shippings/{id}/pull', [\App\Http\Controllers\Admin\ShippingController::class, 'pull'])->middleware('permission:order.ship')->whereNumber('id');
+        Route::get('/shippings', [\App\Http\Controllers\Admin\ShippingController::class, 'index'])->middleware('permission:order.view');
+
+        // 快递公司字典维护（V1.1 T-047，权限 shipping.manage）—— enabled 必须在 {id} 之前
+        Route::get('/shipping-companies/enabled', [\App\Http\Controllers\Admin\ExpressCompanyController::class, 'enabled'])->middleware('permission:order.ship');
+        Route::get('/shipping-companies', [\App\Http\Controllers\Admin\ExpressCompanyController::class, 'index'])->middleware('permission:shipping.manage');
+        Route::post('/shipping-companies', [\App\Http\Controllers\Admin\ExpressCompanyController::class, 'store'])->middleware('permission:shipping.manage');
+        Route::put('/shipping-companies/{id}', [\App\Http\Controllers\Admin\ExpressCompanyController::class, 'update'])->middleware('permission:shipping.manage')->whereNumber('id');
+        Route::delete('/shipping-companies/{id}', [\App\Http\Controllers\Admin\ExpressCompanyController::class, 'destroy'])->middleware('permission:shipping.manage')->whereNumber('id');
         Route::get('/orders/{id}', [AdminOrderController::class, 'show'])->middleware('permission:order.view');
         Route::post('/orders/{id}/ship', [AdminOrderController::class, 'ship'])->middleware('permission:order.ship');
         Route::post('/orders/{id}/accept', [AdminOrderController::class, 'accept'])->middleware('permission:order.ship');
 
         // 支付管理 payment.view / payment.manage（API 文档 8.11）—— export 必须注册在 {id} 之前
         Route::get('/payments', [AdminPaymentController::class, 'index'])->middleware('permission:payment.view');
-        Route::get('/payments/export', [AdminPaymentController::class, 'export'])->middleware('permission:payment.view');
+        Route::get('/payments/export', [AdminPaymentController::class, 'export'])->middleware(['permission:payment.view', 'throttle:3,1']);
         Route::get('/payments/{id}', [AdminPaymentController::class, 'show'])->middleware('permission:payment.view');
         Route::post('/payments/{id}/close', [AdminPaymentController::class, 'close'])->middleware('permission:payment.manage');
         Route::post('/payments/{id}/review', [AdminPaymentController::class, 'review'])->middleware('permission:payment.offline.review');
@@ -247,7 +291,7 @@ Route::middleware(['auth:sanctum', 'account.active'])->group(function () {
 
         // 余额充值单管理 balance.recharge.view（核账需 payment.offline.review，§5.2 / §6.5）
         Route::get('/balance-recharges', [AdminBalanceRechargeController::class, 'index'])->middleware('permission:balance.recharge.view');
-        Route::get('/balance-recharges/export', [AdminBalanceRechargeController::class, 'export'])->middleware('permission:balance.recharge.view');
+        Route::get('/balance-recharges/export', [AdminBalanceRechargeController::class, 'export'])->middleware(['permission:balance.recharge.view', 'throttle:3,1']);
         Route::get('/balance-recharges/{id}', [AdminBalanceRechargeController::class, 'show'])->middleware('permission:balance.recharge.view');
         Route::post('/balance-recharges/{id}/review', [AdminBalanceRechargeController::class, 'review'])->middleware('permission:payment.offline.review');
 
@@ -270,13 +314,48 @@ Route::middleware(['auth:sanctum', 'account.active'])->group(function () {
         Route::post('/reviews/{id}/approve', [AdminReviewController::class, 'approve'])->middleware('permission:review.manage');
         Route::post('/reviews/{id}/reject', [AdminReviewController::class, 'reject'])->middleware('permission:review.manage');
         Route::post('/reviews/{id}/reply', [AdminReviewController::class, 'reply'])->middleware('permission:review.manage');
+        Route::post('/reviews/{id}/hidden', [AdminReviewController::class, 'setHidden'])->middleware('permission:review.manage');
         Route::delete('/reviews/{id}', [AdminReviewController::class, 'destroy'])->middleware('permission:review.manage');
+
+        // 客户服务中心后台（CS-108/109 工单管理；CS-110 FAQ 管理）
+        // sort 必须注册在 {id} 之前，避免被 {id} 路由捕获
+        Route::get('/cs/faq/categories', [AdminCsFaqController::class, 'categories'])->middleware('permission:cs.faq.manage');
+        Route::post('/cs/faq/categories', [AdminCsFaqController::class, 'storeCategory'])->middleware('permission:cs.faq.manage');
+        Route::post('/cs/faq/categories/sort', [AdminCsFaqController::class, 'sortCategories'])->middleware('permission:cs.faq.manage');
+        Route::put('/cs/faq/categories/{id}', [AdminCsFaqController::class, 'updateCategory'])->middleware('permission:cs.faq.manage');
+        Route::delete('/cs/faq/categories/{id}', [AdminCsFaqController::class, 'destroyCategory'])->middleware('permission:cs.faq.manage');
+
+        Route::get('/cs/faq/articles', [AdminCsFaqController::class, 'articles'])->middleware('permission:cs.faq.manage');
+        Route::post('/cs/faq/articles', [AdminCsFaqController::class, 'storeArticle'])->middleware('permission:cs.faq.manage');
+        Route::get('/cs/faq/articles/{id}/preview', [AdminCsFaqController::class, 'previewArticle'])->middleware('permission:cs.faq.manage');
+        Route::post('/cs/faq/articles/{id}/publish', [AdminCsFaqController::class, 'publishArticle'])->middleware('permission:cs.faq.manage');
+        Route::post('/cs/faq/articles/{id}/offline', [AdminCsFaqController::class, 'offlineArticle'])->middleware('permission:cs.faq.manage');
+        Route::put('/cs/faq/articles/{id}', [AdminCsFaqController::class, 'updateArticle'])->middleware('permission:cs.faq.manage');
+        Route::delete('/cs/faq/articles/{id}', [AdminCsFaqController::class, 'destroyArticle'])->middleware('permission:cs.faq.manage');
+
+        Route::get('/cs/ticket-types', [AdminCsTicketController::class, 'ticketTypes'])->middleware('permission:cs.ticket.view');
+        Route::get('/cs/assignees', [AdminCsTicketController::class, 'assignees'])->middleware('permission:cs.ticket.handle');
+
+        // 客户服务中心 · 快捷回复模板（CS-203 / CS-204）
+        // 读取挂 role_or_permission：客服（cs.ticket.handle）可取用下拉，管理员/客服主管（cs.faq.manage）可取用+管理
+        // 写入挂 permission:cs.faq.manage：仅可管理角色可维护
+        Route::get('/cs/quick-replies', [AdminCsQuickReplyController::class, 'index'])->middleware('role_or_permission:cs.faq.manage|cs.ticket.handle');
+        Route::post('/cs/quick-replies', [AdminCsQuickReplyController::class, 'store'])->middleware('permission:cs.faq.manage');
+        Route::put('/cs/quick-replies/{id}', [AdminCsQuickReplyController::class, 'update'])->middleware('permission:cs.faq.manage');
+        Route::delete('/cs/quick-replies/{id}', [AdminCsQuickReplyController::class, 'destroy'])->middleware('permission:cs.faq.manage');
+        Route::get('/cs/tickets', [AdminCsTicketController::class, 'index'])->middleware('permission:cs.ticket.view');
+        Route::get('/cs/tickets/{id}', [AdminCsTicketController::class, 'show'])->middleware('permission:cs.ticket.view');
+        Route::post('/cs/tickets/{id}/messages', [AdminCsTicketController::class, 'messages'])->middleware('permission:cs.ticket.handle');
+        Route::put('/cs/tickets/{id}/status', [AdminCsTicketController::class, 'status'])->middleware('permission:cs.ticket.handle');
+        Route::put('/cs/tickets/{id}/assign', [AdminCsTicketController::class, 'assign'])->middleware('permission:cs.ticket.handle');
+        Route::put('/cs/tickets/{id}/priority', [AdminCsTicketController::class, 'priority'])->middleware('permission:cs.ticket.handle');
+        Route::post('/cs/tickets/batch-assign', [AdminCsTicketController::class, 'batchAssign'])->middleware('permission:cs.ticket.handle');
 
         // 营销管理 marketing.manage（V1.1 二期 F06 / T-032）—— export 必须注册在 {id} 之前
         Route::get('/coupons', [AdminCouponController::class, 'index'])->middleware('permission:marketing.manage');
         Route::post('/coupons', [AdminCouponController::class, 'store'])->middleware('permission:marketing.manage');
         Route::get('/coupons/{id}/stats', [AdminCouponController::class, 'stats'])->middleware('permission:marketing.manage');
-        Route::get('/coupons/{id}/export', [AdminCouponController::class, 'export'])->middleware('permission:marketing.manage');
+        Route::get('/coupons/{id}/export', [AdminCouponController::class, 'export'])->middleware(['permission:marketing.manage', 'throttle:3,1']);
         Route::put('/coupons/{id}', [AdminCouponController::class, 'update'])->middleware('permission:marketing.manage');
         Route::post('/coupons/{id}/stop', [AdminCouponController::class, 'stop'])->middleware('permission:marketing.manage');
 
@@ -312,6 +391,17 @@ Route::middleware(['auth:sanctum', 'account.active'])->group(function () {
     });
 });
 
-// 支付回调 / 沙箱模拟渠道（无需用户 Token，验签保护；API 文档 7.2）
+// 支付回调（无需用户 Token，由各渠道网关验签保护；API 文档 7.2）
 Route::post('/payments/callback/{channel}', [PaymentController::class, 'callback']);
-Route::post('/payments/sandbox/{paymentNo}', [PaymentController::class, 'sandbox']);
+
+// 沙箱模拟渠道通知（SEC-01）：**仅非生产环境注册**。
+// 生产环境该路由根本不存在（404），即使 PAYMENT_SANDBOX 被误配为 true 也无法调用；
+// 服务层 PaymentService::sandboxNotify() 另有一道环境断言兜底。
+if (app()->environment(['local', 'testing', 'staging'])) {
+    $sandbox = Route::post('/payments/sandbox/{paymentNo}', [PaymentController::class, 'sandbox']);
+
+    // 限流防批量枚举支付单号（测试环境不加，避免用例间限流计数互相干扰）
+    if (! app()->environment('testing')) {
+        $sandbox->middleware('throttle:60,1');
+    }
+}
