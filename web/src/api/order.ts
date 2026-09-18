@@ -59,6 +59,8 @@ export interface OrderItemView {
     id: string
     rating: number
     content: string | null
+    /** 评价图片（URL 数组） */
+    images?: string[]
     status: 'pending' | 'approved' | 'rejected'
     can_edit: boolean
   } | null

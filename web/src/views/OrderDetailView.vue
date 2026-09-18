@@ -160,9 +160,12 @@ async function doRebuy() {
 const reviewingItemId = ref<string | number | null>(null)
 /** 修改模式下的评价对象（含 order_item_id，用于定位行项目） */
 const editingReview = ref<ReviewItem | null>(null)
+/** 评价操作的就近行内提示（定位到具体行项目，不再飘到页面顶部） */
+const reviewTip = ref<{ itemId: string | number; message: string } | null>(null)
 
 function openReview(item: OrderItemView) {
   editingReview.value = null
+  reviewTip.value = null
   reviewingItemId.value = item.id ?? null
 }
 
@@ -171,19 +174,25 @@ async function openEditReview(item: OrderItemView) {
   if (!item.id) return
   reviewingItemId.value = null
   tip.value = ''
+  reviewTip.value = null
   try {
     const { data } = await getMyReviews({ page: 1, page_size: 50 })
+    // P2-11：order_item_id 与 item.id 均为 public_id 字符串
     const found = data.data.list.find((r) => r.order_item_id === item.id) ?? null
-    if (found) editingReview.value = found
-    else tip.value = '未找到该评价，可能已超过修改期限'
+    if (found) {
+      editingReview.value = found
+    } else {
+      reviewTip.value = { itemId: item.id, message: '未找到该评价，可能已超过修改期限' }
+    }
   } catch (e) {
-    tip.value = e instanceof Error ? e.message : '加载评价失败'
+    reviewTip.value = { itemId: item.id, message: e instanceof Error ? e.message : '加载评价失败' }
   }
 }
 
 async function onReviewSubmitted() {
   reviewingItemId.value = null
   editingReview.value = null
+  reviewTip.value = null
   await load()
 }
 </script>
@@ -253,20 +262,46 @@ async function onReviewSubmitted() {
                 <p class="truncate text-sm text-slate-700">{{ item.product_title }}</p>
                 <p class="mt-1 text-xs text-slate-400">{{ Object.values(item.sku_specs).join(' / ') || '默认规格' }}</p>
 
-                <!-- 已评价展示（V1.1 T-016） -->
-                <div v-if="item.review" class="mt-2 flex flex-wrap items-center gap-2 text-xs" data-testid="item-reviewed">
-                  <span class="flex items-center gap-0.5 text-[#ffb400]">
-                    <Star v-for="n in 5" :key="n" class="h-3 w-3" :fill="n <= item.review.rating ? '#ffb400' : 'none'" :class="n <= item.review.rating ? '' : 'text-slate-200'" />
-                  </span>
-                  <span class="text-slate-400">
-                    {{ item.review.status === 'pending' ? '评价审核中' : item.review.status === 'rejected' ? '评价未通过' : '已评价' }}
-                  </span>
-                  <button
-                    v-if="item.review.can_edit && item.id"
-                    class="text-[#1677ff] hover:underline"
-                    :data-testid="`edit-review-${item.id}`"
-                    @click="openEditReview(item)"
-                  >修改评价</button>
+                <!-- 已评价展示（V1.1 T-016；P2-11 补：展示评价内容与图片） -->
+                <div v-if="item.review" class="mt-2 text-xs" data-testid="item-reviewed">
+                  <div class="flex flex-wrap items-center gap-2">
+                    <span class="flex items-center gap-0.5 text-[#ffb400]">
+                      <Star v-for="n in 5" :key="n" class="h-3 w-3" :fill="n <= item.review.rating ? '#ffb400' : 'none'" :class="n <= item.review.rating ? '' : 'text-slate-200'" />
+                    </span>
+                    <span class="text-slate-400">
+                      {{ item.review.status === 'pending' ? '评价审核中' : item.review.status === 'rejected' ? '评价未通过' : '已评价' }}
+                    </span>
+                    <button
+                      v-if="item.review.can_edit && item.id"
+                      class="text-[#1677ff] hover:underline"
+                      :data-testid="`edit-review-${item.id}`"
+                      @click="openEditReview(item)"
+                    >修改评价</button>
+                  </div>
+                  <p
+                    v-if="item.review.content"
+                    class="mt-1 whitespace-pre-wrap break-words text-slate-600"
+                    :data-testid="`item-review-content-${item.id}`"
+                  >{{ item.review.content }}</p>
+                  <div
+                    v-if="item.review.images?.length"
+                    class="mt-2 flex flex-wrap gap-2"
+                    :data-testid="`item-review-images-${item.id}`"
+                  >
+                    <img
+                      v-for="(url, i) in item.review.images"
+                      :key="`rv-img-${i}`"
+                      :src="url"
+                      class="h-14 w-14 rounded border border-slate-200 object-cover"
+                      alt="评价图"
+                    />
+                  </div>
+                  <!-- 就近行内提示（如「修改评价」未找到对应评价） -->
+                  <p
+                    v-if="reviewTip && reviewTip.itemId === item.id"
+                    class="mt-2 rounded-md bg-red-50 px-3 py-2 text-xs text-red-500"
+                    :data-testid="`review-inline-tip-${item.id}`"
+                  >{{ reviewTip.message }}</p>
                 </div>
               </div>
               <div class="text-right text-sm">

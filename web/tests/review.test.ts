@@ -359,4 +359,90 @@ describe('订单详情评价入口', () => {
     // 不再显示「评价」按钮
     expect(screen.queryByTestId('review-item-502')).toBeNull()
   })
+
+  const ITEM_PID = '01M2V91KBWXB2WV1MVCAB4TZKB'
+
+  function orderWithReviewedItem() {
+    return orderWithItem({
+      items: [
+        {
+          id: ITEM_PID,
+          product_id: '01M2RHD3YAMXBK8T1NZ2MXGYEC',
+          sku_id: '01M2RJBZT880BCF71XZZMM2ZKR',
+          product_title: '笔记本电脑支架',
+          sku_specs: { 颜色: '黑色' },
+          sku_image: null,
+          price: '25.00',
+          quantity: 1,
+          total_amount: '25.00',
+          review: {
+            id: '01M2VACNTGTKXH55R4NHQ807W0',
+            rating: 5,
+            content: '会场满意的啊\n就是很慢',
+            images: ['https://cdn.example.com/r.png'],
+            status: 'approved',
+            can_edit: true,
+          },
+        },
+      ],
+    })
+  }
+
+  async function renderDetail() {
+    const router = makeRouter()
+    router.push('/orders/100')
+    await router.isReady()
+    render(OrderDetailView, { global: { plugins: [router] } })
+    await waitFor(() => expect(screen.getByTestId('item-reviewed')).toBeTruthy())
+  }
+
+  it('已评价行展示评价文字内容与图片（P2-11 修复）', async () => {
+    getOrderMock.mockResolvedValue({ data: { data: orderWithReviewedItem() } })
+    await renderDetail()
+
+    expect(screen.getByTestId(`item-review-content-${ITEM_PID}`).textContent).toContain('会场满意的啊')
+    const imgs = screen.getByTestId(`item-review-images-${ITEM_PID}`)
+    expect(imgs.querySelector('img[src="https://cdn.example.com/r.png"]')).toBeTruthy()
+  })
+
+  it('点「修改评价」按 public_id 匹配行项目并回填编辑表单', async () => {
+    getOrderMock.mockResolvedValue({ data: { data: orderWithReviewedItem() } })
+    getMyReviewsMock.mockResolvedValue({
+      data: {
+        data: {
+          list: [
+            reviewRow({
+              id: '01M2VACNTGTKXH55R4NHQ807W0',
+              rating: 4,
+              content: '不错',
+              order_item_id: ITEM_PID,
+              can_edit: true,
+            }),
+          ],
+          pagination: { page: 1, page_size: 50, total: 1, total_pages: 1 },
+        },
+      },
+    })
+    await renderDetail()
+
+    await fireEvent.click(screen.getByTestId(`edit-review-${ITEM_PID}`))
+
+    await waitFor(() => expect(screen.getByTestId('review-form')).toBeTruthy())
+    expect((screen.getByTestId('review-content') as HTMLTextAreaElement).value).toBe('不错')
+    // 不应出现「未找到该评价」提示
+    expect(screen.queryByTestId(`review-inline-tip-${ITEM_PID}`)).toBeNull()
+  })
+
+  it('修改评价未匹配到行项目时就近行内提示（不再飘到页面顶部）', async () => {
+    getOrderMock.mockResolvedValue({ data: { data: orderWithReviewedItem() } })
+    getMyReviewsMock.mockResolvedValue({
+      data: { data: { list: [], pagination: { page: 1, page_size: 50, total: 0, total_pages: 1 } } },
+    })
+    await renderDetail()
+
+    await fireEvent.click(screen.getByTestId(`edit-review-${ITEM_PID}`))
+
+    const tip = await screen.findByTestId(`review-inline-tip-${ITEM_PID}`)
+    expect(tip.textContent).toContain('未找到该评价')
+  })
 })

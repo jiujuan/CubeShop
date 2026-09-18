@@ -314,7 +314,7 @@ function goReview(order: OrderBrief) {
             </div>
 
             <div
-              class="flex items-center gap-4 px-5 py-3"
+              class="flex cursor-pointer items-center gap-4 px-5 py-3 transition-colors hover:bg-slate-50"
               @click="$router.push(`/orders/${order.id}`)"
             >
               <!-- 缩略图组：前 3 + 更多 -->
