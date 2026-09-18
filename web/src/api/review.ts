@@ -5,7 +5,8 @@ import type { ApiResult, Pagination } from './types'
 export type ReviewStatus = 'pending' | 'approved' | 'rejected'
 
 export interface ReviewItem {
-  id: number
+  /** P2-11：评价对外标识（public_id 字符串，非自增主键） */
+  id: string
   rating: number
   content: string | null
   images: string[]
@@ -19,11 +20,11 @@ export interface ReviewItem {
   nickname: string
   avatar: string | null
   // 仅「我的评价」返回
-  product_id?: number
-  order_id?: number
-  order_item_id?: number
+  product_id?: string | number | null
+  order_id?: string
+  order_item_id?: string
   can_edit?: boolean
-  product?: { id: number; title: string; main_image: string | null } | null
+  product?: { id: string | number; title: string; main_image: string | null } | null
 }
 
 export interface ReviewSummary {
@@ -47,15 +48,15 @@ export interface ReviewPayload {
 }
 
 /** 提交评价（已完成订单的行项目，V1.1 F01 / T-015） */
-export function submitReview(orderId: number, itemId: number, payload: ReviewPayload) {
-  return request.post<ApiResult<{ id: number; rating: number; status: ReviewStatus }>>(
+export function submitReview(orderId: string | number, itemId: string | number, payload: ReviewPayload) {
+  return request.post<ApiResult<{ id: string; rating: number; status: ReviewStatus }>>(
     `/orders/${orderId}/items/${itemId}/review`,
     payload,
   )
 }
 
-/** 修改评价（30 天内且未修改过） */
-export function updateReview(id: number, payload: ReviewPayload) {
+/** 修改评价（30 天内且未修改过；P2-11：id 为 public_id 字符串） */
+export function updateReview(id: string, payload: ReviewPayload) {
   return request.put<ApiResult<ReviewItem>>(`/reviews/${id}`, payload)
 }
 

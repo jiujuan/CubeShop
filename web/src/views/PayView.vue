@@ -70,7 +70,7 @@ const canPay = computed(
 )
 
 async function load() {
-  const { data } = await getOrder(Number(route.params.id))
+  const { data } = await getOrder(route.params.id as string)
   order.value = data.data
   if (order.value.status === 'pending_payment') {
     startCountdown()

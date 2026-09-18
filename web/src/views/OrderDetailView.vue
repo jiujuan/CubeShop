@@ -14,6 +14,7 @@ import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import LoadingSpinner from '@/components/LoadingSpinner.vue'
 import OrderTimeline from '@/components/OrderTimeline.vue'
 import ReviewForm from '@/components/ReviewForm.vue'
+import ShippingCard from '@/components/ShippingCard.vue'
 import ShopFooter from '@/components/ShopFooter.vue'
 import ShopHeader from '@/components/ShopHeader.vue'
 import { useAuthStore } from '@/stores/auth'
@@ -39,7 +40,7 @@ const rebuying = ref(false)
 async function load() {
   loading.value = true
   try {
-    const { data } = await getOrder(Number(route.params.id))
+    const { data } = await getOrder(route.params.id as string)
     order.value = data.data
   } finally {
     loading.value = false
@@ -126,7 +127,7 @@ async function doRebuy() {
 // ---------- 评价（V1.1 F01 / T-016） ----------
 
 /** 当前展开评价表单的行项目 */
-const reviewingItemId = ref<number | null>(null)
+const reviewingItemId = ref<string | number | null>(null)
 /** 修改模式下的评价对象（含 order_item_id，用于定位行项目） */
 const editingReview = ref<ReviewItem | null>(null)
 
@@ -191,9 +192,11 @@ async function onReviewSubmitted() {
           </div>
         </section>
 
-        <!-- 订单进度时间轴（V1.1 T-005；<template #shipping> 预留给二期 T-046 物流卡片） -->
+        <!-- 订单进度时间轴（V1.1 T-005）+ 物流卡片插槽（V1.1 T-046：已发货/已完成时渲染） -->
         <OrderTimeline :logs="order.logs ?? []" :status="order.status">
-          <template #shipping />
+          <template #shipping>
+            <ShippingCard v-if="['shipped', 'completed'].includes(order.status)" :order-id="order.id" />
+          </template>
         </OrderTimeline>
 
         <!-- 收货信息 -->
@@ -335,6 +338,11 @@ async function onReviewSubmitted() {
             data-testid="apply-refund"
             @click="$router.push(`/orders/${order.id}/refund`)"
           >申请退款</button>
+          <button
+            class="rounded-full border border-slate-200 px-6 py-2 text-sm text-slate-500 hover:border-[#1677ff] hover:text-[#1677ff]"
+            data-testid="contact-service"
+            @click="$router.push({ path: '/service-center/tickets/new', query: { order_id: order.id } })"
+          >联系客服</button>
         </div>
 
         <!-- 确认收货二次确认 -->

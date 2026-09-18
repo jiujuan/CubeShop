@@ -23,7 +23,7 @@ const submitting = ref(false)
 const tip = ref('')
 const order = ref<OrderDetail | null>(null)
 
-const orderId = computed(() => Number(route.params.id))
+const orderId = computed(() => route.params.id as string)
 
 /** 服务类型（二期扩展退换货时在此追加） */
 const SERVICE_TYPES = [

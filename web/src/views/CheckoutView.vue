@@ -48,7 +48,7 @@ const couponDialogOpen = ref(false)
 /** 券失效降级：提交被拒（券已过期/占用/停发）时的提示与降级入口 */
 const couponFailedTip = ref('')
 /** 服务端金额与前端预览不一致时的待确认订单 */
-const mismatch = ref<{ preview: string; server: string; orderId: number; orderNo: string } | null>(null)
+const mismatch = ref<{ preview: string; server: string; orderId: string; orderNo: string } | null>(null)
 
 const selectedCoupon = computed(() =>
   usableCoupons.value.find((c) => c.user_coupon_id === selectedCouponId.value) ?? null,

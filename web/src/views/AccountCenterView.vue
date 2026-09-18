@@ -2,7 +2,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import {
-  Bell, ChevronRight, Clock, Heart, KeyRound, LogOut, MapPin, PackageCheck,
+  Bell, ChevronRight, Clock, Heart, KeyRound, LifeBuoy, LogOut, MapPin, PackageCheck,
   ClipboardList, ShieldCheck, Ticket, UserRound, Wallet,
 } from 'lucide-vue-next'
 import { changePassword, getProfile, updateProfile, uploadImage, type UserProfile } from '@/api/user'
@@ -82,6 +82,7 @@ const entries = computed(() => [
   { key: 'histories', label: '浏览足迹', icon: Clock, path: '/account/histories' },
   { key: 'addresses', label: '收货地址', icon: MapPin, path: '/account/addresses' },
   { key: 'notifications', label: '消息通知', icon: Bell, path: '/notifications', badge: unread.value },
+  { key: 'service-center', label: '客户服务', icon: LifeBuoy, path: '/service-center' },
 ])
 
 const maskedPhone = computed(() => {
