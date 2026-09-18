@@ -133,11 +133,24 @@ export interface OrderDetail extends OrderBrief {
 
 export interface RefundBrief {
   refund_no: string
+  type?: 'refund' | 'return_refund'
   amount: string
   reason: string | null
   status: 'pending' | 'approved' | 'rejected' | 'success' | 'failed'
+  return_status?: 'waiting_return' | 'shipping' | 'received' | 'exception' | null
+  return_details?: { sku_id: number; product_title?: string | null; sku_specs?: Record<string, string> | null; quantity: number }[] | null
+  return_tracking_no?: string | null
+  return_express_company?: string | null
   admin_remark: string | null
   created_at: string
+}
+
+export interface ApplyRefundPayload {
+  reason?: string
+  type?: 'refund' | 'return_refund'
+  return_details?: { sku_id: number; quantity: number; product_title?: string; sku_specs?: Record<string, string> }[]
+  return_tracking_no?: string
+  return_express_company?: string
 }
 
 export interface OrderListResult {
@@ -248,10 +261,17 @@ export function rebuyOrder(id: string | number) {
 }
 
 /** 申请退款（API 文档 6.5） */
-export function applyRefund(id: string | number, reason?: string) {
-  return request.post<ApiResult<{ refund_id: string; refund_no: string; amount: string; status: string }>>(
+export function applyRefund(id: string | number, payload: ApplyRefundPayload = {}) {
+  return request.post<ApiResult<{
+    refund_id: string
+    refund_no: string
+    type: string
+    amount: string
+    status: string
+    return_status: string | null
+  }>>(
     `/orders/${id}/refund`,
-    { reason },
+    payload,
   )
 }
 

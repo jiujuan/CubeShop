@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { MapPin, RotateCcw } from 'lucide-vue-next'
 import { applyRefund, getOrder, type OrderDetail } from '@/api/order'
@@ -9,9 +9,10 @@ import ShopHeader from '@/components/ShopHeader.vue'
 import { useAuthStore } from '@/stores/auth'
 
 /**
- * 售后申请页（当前为「申请退款」）
- * 预留扩展：后续增加「退货退款 / 换货」类型时，把下面的
- * SERVICE_TYPES 与 REASONS 扩展为按类型分组即可，页面骨架无需改动。
+ * 售后申请页（退款 / 退货退款）
+ * - 仅退款：原流程，审核通过即退款。
+ * - 退货退款：需勾选退货商品与数量、填写寄回物流单号；商家确认收货后退款（先收货后退款）。
+ * 字段对齐后端 RefundService::apply（type / return_details / return_tracking_no / return_express_company）。
  */
 
 const route = useRoute()
@@ -25,11 +26,10 @@ const order = ref<OrderDetail | null>(null)
 
 const orderId = computed(() => route.params.id as string)
 
-/** 服务类型（二期扩展退换货时在此追加） */
+/** 服务类型：仅退款 / 退货退款（退货退款为 WMS 退货闭环打基础） */
 const SERVICE_TYPES = [
   { value: 'refund', label: '仅退款' },
-  // { value: 'return_refund', label: '退货退款' },
-  // { value: 'exchange', label: '换货' },
+  { value: 'return_refund', label: '退货退款' },
 ] as const
 const serviceType = ref<string>('refund')
 
@@ -52,7 +52,63 @@ const otherReason = ref<string>('')
 const isOther = computed(() => selectedReason.value === OTHER)
 /** 最终提交的原因：其它时取输入框内容 */
 const finalReason = computed(() => (isOther.value ? otherReason.value.trim() : selectedReason.value))
-const canSubmit = computed(() => !submitting.value && (selectedReason.value !== '') && (!isOther.value || otherReason.value.trim().length > 0))
+
+/** 退货退款：逐行退货明细（由订单商品初始化，quantity=0 表示不退货） */
+const returnItems = ref<Array<{
+  sku_id: string | number | null
+  product_title: string
+  sku_specs: Record<string, string>
+  sku_image: string | null
+  max: number
+  quantity: number
+}>>([])
+
+/** 寄回物流 */
+const returnTrackingNo = ref<string>('')
+const returnExpressCompany = ref<string>('')
+
+const isReturn = computed(() => serviceType.value === 'return_refund')
+
+/** 组装后端需要的 return_details（仅退货退款、且数量>0 的行） */
+const returnDetails = computed(() =>
+  returnItems.value
+    .filter((it) => it.quantity > 0)
+    .map((it) => ({
+      sku_id: it.sku_id,
+      quantity: it.quantity,
+      product_title: it.product_title,
+      sku_specs: it.sku_specs,
+    })),
+)
+
+const canSubmit = computed(() => {
+  if (submitting.value) return false
+  if (selectedReason.value === '') return false
+  if (isOther.value && otherReason.value.trim().length === 0) return false
+  if (isReturn.value) {
+    if (returnDetails.value.length === 0) return false
+    if (returnTrackingNo.value.trim().length === 0) return false
+  }
+  return true
+})
+
+/** 切到退货退款时初始化明细，切回仅退款清空 */
+watch(isReturn, (on) => {
+  if (on && order.value) {
+    returnItems.value = order.value.items.map((it) => ({
+      sku_id: it.sku_id ?? null,
+      product_title: it.product_title,
+      sku_specs: it.sku_specs,
+      sku_image: it.sku_image,
+      max: it.quantity,
+      quantity: it.quantity, // 默认整件退，用户可改
+    }))
+  } else {
+    returnItems.value = []
+    returnTrackingNo.value = ''
+    returnExpressCompany.value = ''
+  }
+})
 
 async function load() {
   loading.value = true
@@ -74,10 +130,19 @@ async function doSubmit() {
   submitting.value = true
   tip.value = ''
   try {
-    await applyRefund(order.value.id, finalReason.value || undefined)
+    const payload: Record<string, unknown> = {
+      reason: finalReason.value || undefined,
+      type: serviceType.value,
+    }
+    if (isReturn.value) {
+      payload.return_details = returnDetails.value
+      payload.return_tracking_no = returnTrackingNo.value.trim() || undefined
+      payload.return_express_company = returnExpressCompany.value.trim() || undefined
+    }
+    await applyRefund(order.value.id, payload)
     router.push({ path: `/orders/${order.value.id}`, query: { refund_ok: '1' } })
   } catch (e) {
-    tip.value = e instanceof Error ? e.message : '申请退款失败，请稍后重试'
+    tip.value = e instanceof Error ? e.message : '申请失败，请稍后重试'
   } finally {
     submitting.value = false
   }
@@ -92,7 +157,7 @@ async function doSubmit() {
       <div class="mb-6 flex items-center gap-3">
         <button class="text-sm text-slate-400 hover:text-[#1677ff]" @click="router.back()">← 返回</button>
         <h1 class="flex items-center gap-2 text-xl font-bold text-slate-800">
-          <RotateCcw class="h-5 w-5 text-[#1677ff]" /> 申请退款
+          <RotateCcw class="h-5 w-5 text-[#1677ff]" /> 申请售后
         </h1>
       </div>
 
@@ -129,7 +194,7 @@ async function doSubmit() {
 
         <!-- 申请表单 -->
         <section class="rounded-xl border border-slate-100 bg-white p-5">
-          <!-- 服务类型（二期扩展退换货时放开） -->
+          <!-- 服务类型 -->
           <div class="mb-5">
             <label class="mb-2 block text-sm font-medium text-slate-700">服务类型</label>
             <div class="flex gap-2">
@@ -141,6 +206,69 @@ async function doSubmit() {
                 @click="serviceType = t.value"
               >{{ t.label }}</button>
             </div>
+            <p v-if="isReturn" class="mt-2 rounded-md bg-[#fff7e6] px-3 py-2 text-xs text-[#d46b08]">
+              退货退款需先将商品寄回并填写物流单号；商家确认收货后，退款将原路退回。
+            </p>
+          </div>
+
+          <!-- 退货商品明细（仅退货退款） -->
+          <div v-if="isReturn" class="mb-5">
+            <label class="mb-2 block text-sm font-medium text-slate-700">退货商品</label>
+            <div class="space-y-2">
+              <div
+                v-for="(it, i) in returnItems"
+                :key="it.sku_id ?? i"
+                class="flex items-center gap-3 rounded-lg border border-slate-100 px-3 py-2"
+              >
+                <div class="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-md bg-gradient-to-br from-[#f0f7ff] to-[#e6f4ff] text-lg">
+                  <img v-if="it.sku_image" :src="it.sku_image" class="h-full w-full object-cover" alt="" />
+                  <span v-else>📦</span>
+                </div>
+                <div class="min-w-0 flex-1">
+                  <p class="truncate text-sm text-slate-700">{{ it.product_title }}</p>
+                  <p class="text-xs text-slate-400">{{ Object.values(it.sku_specs).join(' / ') || '默认规格' }}</p>
+                </div>
+                <div class="flex items-center gap-1 text-sm">
+                  <span class="text-slate-400">退</span>
+                  <input
+                    v-model.number="it.quantity"
+                    type="number"
+                    min="0"
+                    :max="it.max"
+                    class="w-16 rounded-md border border-slate-300 px-2 py-1 text-center text-sm outline-none focus:border-[#1677ff]"
+                    :data-testid="`return-qty-${i}`"
+                  />
+                  <span class="text-slate-400">/ {{ it.max }}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 退货物流（仅退货退款） -->
+          <div v-if="isReturn" class="mb-5 grid gap-3 sm:grid-cols-2">
+            <div>
+              <label class="mb-2 block text-sm font-medium text-slate-700" for="return-company">快递公司</label>
+              <input
+                id="return-company"
+                v-model="returnExpressCompany"
+                type="text"
+                maxlength="64"
+                placeholder="如：顺丰速运"
+                class="w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-700 outline-none focus:border-[#1677ff]"
+              />
+            </div>
+            <div>
+              <label class="mb-2 block text-sm font-medium text-slate-700" for="return-tracking">物流单号 <span class="text-red-500">*</span></label>
+              <input
+                id="return-tracking"
+                v-model="returnTrackingNo"
+                type="text"
+                maxlength="64"
+                placeholder="寄回包裹的运单号"
+                class="w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-700 outline-none focus:border-[#1677ff]"
+                data-testid="return-tracking-no"
+              />
+            </div>
           </div>
 
           <!-- 退款原因下拉框 -->
@@ -149,6 +277,7 @@ async function doSubmit() {
             <select
               id="refund-reason"
               v-model="selectedReason"
+              data-testid="refund-reason"
               class="w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-700 outline-none focus:border-[#1677ff]"
             >
               <option value="" disabled>请选择退款原因</option>
@@ -164,7 +293,7 @@ async function doSubmit() {
               v-model="otherReason"
               rows="3"
               maxlength="200"
-              placeholder="请输入具体退款原因（200 字以内）"
+              placeholder="请输入具体原因（200 字以内）"
               class="w-full resize-none rounded-lg border border-slate-300 px-3 py-2.5 text-sm text-slate-700 outline-none focus:border-[#1677ff]"
             ></textarea>
             <p class="mt-1 text-right text-xs text-slate-400">{{ otherReason.length }}/200</p>
@@ -173,7 +302,10 @@ async function doSubmit() {
           <!-- 说明 -->
           <div class="mb-6 flex items-start gap-2 rounded-lg bg-[#f0f7ff] px-3 py-2.5 text-xs text-slate-500">
             <MapPin class="mt-0.5 h-3.5 w-3.5 shrink-0 text-[#1677ff]" />
-            <p>提交后商家将尽快审核；退款金额以商家审核结果为准，退款将原路退回。</p>
+            <p>
+              <template v-if="isReturn">提交后请尽快寄回商品；退款金额以商家审核结果为准，确认收货后原路退回。</template>
+              <template v-else>提交后商家将尽快审核；退款金额以商家审核结果为准，退款将原路退回。</template>
+            </p>
           </div>
 
           <button

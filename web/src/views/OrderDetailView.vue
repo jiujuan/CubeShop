@@ -72,6 +72,36 @@ const actions = computed(() => {
   return { ...fallback, ...(order.value?.actions ?? {}) }
 })
 
+/** 退款类型 / 退货状态中文映射（与后端 Refund 常量对齐） */
+const REFUND_TYPE_LABELS: Record<string, string> = {
+  refund: '仅退款',
+  return_refund: '退货退款',
+}
+const REFUND_STATUS_LABELS: Record<string, string> = {
+  pending: '待审核',
+  approved: '已同意',
+  rejected: '已拒绝',
+  success: '退款成功',
+  failed: '退款失败',
+}
+const RETURN_STATUS_LABELS: Record<string, string> = {
+  waiting_return: '待退货',
+  shipping: '退货中',
+  received: '已收货',
+  exception: '异常',
+}
+
+/** 退款记录单行中文说明（含类型与退货状态） */
+function refundLineText(r: { type?: string; status: string; return_status?: string | null }) {
+  const typeLabel = r.type && REFUND_TYPE_LABELS[r.type] ? `【${REFUND_TYPE_LABELS[r.type]}】` : ''
+  const statusLabel = REFUND_STATUS_LABELS[r.status] ?? r.status
+  let s = `状态：${statusLabel}`
+  if (r.type === 'return_refund' && r.return_status && RETURN_STATUS_LABELS[r.return_status]) {
+    s += `｜退货状态：${RETURN_STATUS_LABELS[r.return_status]}`
+  }
+  return typeLabel + s
+}
+
 /** 确认收货：先二次确认，成功后局部刷新详情与时间轴 */
 async function doConfirm() {
   if (!order.value) return
@@ -294,11 +324,14 @@ async function onReviewSubmitted() {
           </h2>
           <div v-for="r in order.refunds" :key="r.refund_no" class="border-b border-slate-50 py-3 text-sm last:border-0">
             <div class="flex items-center justify-between">
-              <span class="text-slate-600">{{ r.refund_no }}</span>
+              <span class="text-slate-600">
+                {{ r.refund_no }}
+                <span v-if="r.type && REFUND_TYPE_LABELS[r.type]" class="ml-1 rounded bg-[#f0f7ff] px-1.5 py-0.5 text-[10px] text-[#1677ff]">{{ REFUND_TYPE_LABELS[r.type] }}</span>
+              </span>
               <span class="font-medium text-[#ff4d4f]">¥{{ r.amount }}</span>
             </div>
             <p class="mt-1 text-xs text-slate-400">
-              状态：{{ { pending: '待审核', approved: '已同意', rejected: '已拒绝', success: '退款成功', failed: '退款失败' }[r.status] }}
+              {{ refundLineText(r) }}
               <template v-if="r.reason">｜原因：{{ r.reason }}</template>
               <template v-if="r.admin_remark">｜商家备注：{{ r.admin_remark }}</template>
               ｜申请时间：{{ r.created_at }}
