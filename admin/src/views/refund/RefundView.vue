@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { ExternalLink, ImagePlus, X } from 'lucide-vue-next'
 
 import {
@@ -18,6 +18,7 @@ import {
   type ReturnCondition,
   type ReturnReceivedDetail,
 } from '@/api/refund'
+import { formatRefundLogFields } from '@/lib/refundLog'
 import { uploadImage } from '@/api/product'
 import LoadingSpinner from '@/components/LoadingSpinner.vue'
 import TablePagination from '@/components/TablePagination.vue'
@@ -83,6 +84,35 @@ async function openDetail(refund: Refund) {
 function closeDetail() {
   detailState.value = null
 }
+
+// ---------- 图片灯箱（图层内放大，不跳转） ----------
+
+const lightboxUrl = ref<string>('')
+
+function openLightbox(url: string) {
+  lightboxUrl.value = url
+}
+
+function closeLightbox() {
+  lightboxUrl.value = ''
+}
+
+function onEsc(e: KeyboardEvent) {
+  if (e.key === 'Escape') closeLightbox()
+}
+
+onMounted(() => window.addEventListener('keydown', onEsc))
+onUnmounted(() => window.removeEventListener('keydown', onEsc))
+
+/** 处理流水：把每条 content 转成中文键值行（含图片），供模板渲染 */
+const detailLogs = computed(() =>
+  (detailState.value?.data?.logs ?? []).map((log) => ({
+    log,
+    fields: formatRefundLogFields(log.content, log.content_data),
+    actor: log.actor_type === 'customer' ? '用户' : '管理员',
+    operatorName: log.operator?.nickname || log.operator?.username || '',
+  })),
+)
 
 // ---------- 审核弹层（同意/拒绝 + 理由 + 图片） ----------
 
@@ -344,15 +374,16 @@ async function doReceive() {
           <section v-if="detailState.data.images?.length" class="mt-4 rounded-lg border border-slate-100 p-3" data-testid="detail-user-images">
             <h4 class="mb-2 text-xs font-semibold text-slate-500">用户凭证图片（{{ detailState.data.images.length }}）</h4>
             <div class="flex flex-wrap gap-2">
-              <a
+              <button
                 v-for="(url, i) in detailState.data.images"
                 :key="`u-${i}`"
-                :href="url"
-                target="_blank"
-                class="block h-20 w-20 overflow-hidden rounded border border-slate-200"
+                type="button"
+                class="block h-20 w-20 overflow-hidden rounded border border-slate-200 transition-shadow hover:shadow-md"
+                data-testid="user-image"
+                @click="openLightbox(url)"
               >
                 <img :src="url" class="h-full w-full object-cover" alt="凭证图" />
-              </a>
+              </button>
             </div>
           </section>
 
@@ -414,33 +445,69 @@ async function doReceive() {
             <p class="text-black">处理人：{{ detailState.data.processed_by_name || '-' }}｜处理时间：{{ detailState.data.processed_at || '-' }}</p>
             <p class="mt-1 text-black">处理理由：{{ detailState.data.admin_remark || '-' }}</p>
             <div v-if="detailState.data.admin_images?.length" class="mt-2 flex flex-wrap gap-2" data-testid="detail-admin-images">
-              <a
+              <button
                 v-for="(url, i) in detailState.data.admin_images"
                 :key="`a-${i}`"
-                :href="url"
-                target="_blank"
-                class="block h-20 w-20 overflow-hidden rounded border border-slate-200"
+                type="button"
+                class="block h-20 w-20 overflow-hidden rounded border border-slate-200 transition-shadow hover:shadow-md"
+                data-testid="admin-image"
+                @click="openLightbox(url)"
               >
                 <img :src="url" class="h-full w-full object-cover" alt="处理说明图" />
-              </a>
+              </button>
             </div>
           </section>
 
           <!-- 处理流水 -->
           <section class="mt-4 rounded-lg border border-slate-100 p-3" data-testid="detail-logs">
             <h4 class="mb-2 text-xs font-semibold text-slate-500">处理记录</h4>
-            <ol class="space-y-2 text-[13px]">
-              <li v-for="log in detailState.data.logs" :key="log.id" class="flex items-start gap-2">
-                <span class="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-[#1677ff]"></span>
-                <div class="min-w-0">
+            <ol class="space-y-3 text-[13px]">
+              <li v-for="entry in detailLogs" :key="entry.log.id" class="flex items-start gap-2">
+                <span class="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-[#1677ff]"></span>
+                <div class="min-w-0 flex-1">
                   <p class="text-black">
-                    {{ REFUND_ACTION_LABELS[log.action] || log.action }}
+                    {{ REFUND_ACTION_LABELS[entry.log.action] || entry.log.action }}
                     <span class="text-slate-400">
-                      · {{ log.actor_type === 'customer' ? '用户' : '管理员' }}{{ log.operator?.nickname || log.operator?.username || '' ? `（${log.operator?.nickname || log.operator?.username}）` : '' }}
-                      · {{ log.created_at }}
+                      · {{ entry.actor }}{{ entry.operatorName ? `（${entry.operatorName}）` : '' }}
+                      · {{ entry.log.created_at }}
                     </span>
                   </p>
-                  <p v-if="log.content" class="mt-0.5 break-all text-xs text-slate-400">{{ log.content }}</p>
+
+                  <!-- 结构化字段：中文键值 + 图片缩略图 -->
+                  <dl
+                    v-if="entry.fields.length"
+                    class="mt-1.5 space-y-1 rounded-md bg-slate-50 px-2.5 py-2 text-xs"
+                    data-testid="log-fields"
+                  >
+                    <div v-for="f in entry.fields" :key="f.key" class="flex gap-2">
+                      <dt v-if="f.label" class="w-24 shrink-0 text-slate-400">{{ f.label }}</dt>
+                      <dd class="min-w-0 flex-1 text-slate-600">
+                        <!-- 图片 -->
+                        <div v-if="f.kind === 'images'" class="flex flex-wrap gap-1.5">
+                          <button
+                            v-for="(url, i) in f.images"
+                            :key="i"
+                            type="button"
+                            class="h-14 w-14 overflow-hidden rounded border border-slate-200 transition-shadow hover:shadow-md"
+                            data-testid="log-image"
+                            @click="openLightbox(url)"
+                          >
+                            <img :src="url" class="h-full w-full object-cover" alt="" />
+                          </button>
+                        </div>
+                        <!-- 多行明细 -->
+                        <ul v-else-if="f.kind === 'lines'" class="list-inside list-disc space-y-0.5">
+                          <li v-for="(line, i) in f.lines" :key="i">{{ line }}</li>
+                        </ul>
+                        <!-- 金额 -->
+                        <span v-else-if="f.kind === 'money'" class="font-medium text-[#ff4d4f]">{{ f.text }}</span>
+                        <!-- 兜底 JSON -->
+                        <pre v-else-if="f.kind === 'json'" class="whitespace-pre-wrap break-all font-mono text-[11px] text-slate-500">{{ f.raw }}</pre>
+                        <!-- 文本 -->
+                        <span v-else>{{ f.text }}</span>
+                      </dd>
+                    </div>
+                  </dl>
                 </div>
               </li>
               <li v-if="!detailState.data.logs.length" class="text-slate-400">暂无处理记录</li>
@@ -485,20 +552,20 @@ async function doReceive() {
         <div class="mb-4">
           <label class="mb-1 block text-xs text-slate-500">说明图片（可选，最多 {{ MAX_IMAGES }} 张）</label>
           <div class="flex flex-wrap items-center gap-2">
-            <a
+            <div
               v-for="(url, i) in processState.images"
               :key="`p-${i}`"
-              :href="url"
-              target="_blank"
               class="relative block h-16 w-16 overflow-hidden rounded border border-slate-200"
             >
-              <img :src="url" class="h-full w-full object-cover" alt="" />
+              <button type="button" class="block h-full w-full" data-testid="process-thumb" @click="openLightbox(url)">
+                <img :src="url" class="h-full w-full object-cover" alt="" />
+              </button>
               <button
                 class="absolute right-0 top-0 rounded-bl bg-black/50 px-1 text-[10px] text-white"
                 type="button"
-                @click.prevent="removeProcessImage(i)"
+                @click="removeProcessImage(i)"
               >×</button>
-            </a>
+            </div>
             <label
               class="flex h-16 w-16 cursor-pointer flex-col items-center justify-center gap-1 rounded border border-dashed border-slate-300 text-[11px] text-slate-400 hover:border-[#1677ff] hover:text-[#1677ff]"
             >
@@ -601,6 +668,24 @@ async function doReceive() {
           >{{ receiveState.loading ? '处理中…' : '确认收货' }}</button>
         </div>
       </div>
+    </div>
+
+    <!-- 图片灯箱：图层内放大查看，不跳转 -->
+    <div
+      v-if="lightboxUrl"
+      class="fixed inset-0 z-[60] flex items-center justify-center bg-black/75 p-6"
+      data-testid="image-lightbox"
+      @click.self="closeLightbox"
+    >
+      <button
+        type="button"
+        class="absolute right-5 top-5 rounded-full bg-white/15 p-2 text-white transition-colors hover:bg-white/30"
+        data-testid="lightbox-close"
+        @click="closeLightbox"
+      >
+        <X class="h-5 w-5" />
+      </button>
+      <img :src="lightboxUrl" class="max-h-[85vh] max-w-[85vw] rounded-lg object-contain shadow-2xl" alt="图片预览" />
     </div>
   </div>
 </template>

@@ -70,7 +70,10 @@ export interface RefundDetailLog {
   actor_type: 'admin' | 'customer'
   operator: { id: number; username: string | null; nickname: string | null } | null
   action: string
+  /** 原始 content（JSON 字符串或纯文本） */
   content: string | null
+  /** 后端解码后的结构（用于中文键值 + 图片渲染） */
+  content_data: unknown
   created_at: string | null
 }
 

@@ -98,6 +98,22 @@ const listResult = {
 }
 
 function mockDetail() {
+  const applyData = {
+    order_no: 'CS20260919001',
+    refund_no: 'RF20260919001',
+    type: 'refund',
+    amount: '88.00',
+    reason: '商品破损',
+    images: ['/storage/uploads/products/20260919/u1.jpg'],
+  }
+  const approveData = {
+    refund_no: 'RF20260919001',
+    order_no: 'CS20260919001',
+    type: 'refund',
+    amount: '88.00',
+    admin_remark: '核对无误，同意退款',
+    admin_images: ['/storage/uploads/products/20260919/ok.jpg'],
+  }
   getRefundDetailMock.mockResolvedValue({
     data: {
       data: {
@@ -111,7 +127,16 @@ function mockDetail() {
           },
         ],
         logs: [
-          { id: 1, actor_type: 'customer' as const, operator: { id: 3, username: 'buyer', nickname: '买家甲' }, action: 'apply', content: '{"reason":"商品破损"}', created_at: '2026-09-19 10:00:00' },
+          {
+            id: 1, actor_type: 'customer' as const, operator: { id: 3, username: 'buyer', nickname: '买家甲' },
+            action: 'apply', content: JSON.stringify(applyData), content_data: applyData,
+            created_at: '2026-09-19 10:00:00',
+          },
+          {
+            id: 2, actor_type: 'admin' as const, operator: { id: 1, username: 'admin', nickname: '管理员' },
+            action: 'process_approve', content: JSON.stringify(approveData), content_data: approveData,
+            created_at: '2026-09-19 10:05:00',
+          },
         ],
       },
     },
@@ -152,6 +177,64 @@ describe('后台退款处理 RefundView', () => {
     expect(wrapper.find('[data-testid="detail-logs"]').text()).toContain('用户提交申请')
     // 产品链接指向后台商品详情
     expect(wrapper.find('[data-testid="detail-items"] a[href="/products/77"]').exists()).toBe(true)
+  })
+
+  it('处理记录把 content JSON 转成中文键值，图片渲染为缩略图（不再展示原始 JSON）', async () => {
+    const wrapper = mount(RefundView, { global: globalCfg(freshPinia()) })
+    await flushPromises()
+    await wrapper.find('[data-testid="detail-21"]').trigger('click')
+    await flushPromises()
+
+    const logs = wrapper.find('[data-testid="detail-logs"]')
+    // 中文标签 + 值
+    expect(logs.text()).toContain('退款理由')
+    expect(logs.text()).toContain('商品破损')
+    expect(logs.text()).toContain('退款类型')
+    expect(logs.text()).toContain('仅退款')
+    expect(logs.text()).toContain('退款金额')
+    expect(logs.text()).toContain('¥88.00')
+    expect(logs.text()).toContain('处理理由')
+    expect(logs.text()).toContain('核对无误，同意退款')
+    // 不再直接吐原始 JSON
+    expect(logs.text()).not.toContain('{"')
+    // 两条流水的图片（用户凭证图 + 后台说明图）共 2 张缩略图，且无跳转链接
+    expect(logs.findAll('[data-testid="log-image"]').length).toBe(2)
+    expect(logs.findAll('a').length).toBe(0)
+  })
+
+  it('点击处理记录中的图片在图层灯箱中放大，不跳转页面', async () => {
+    const wrapper = mount(RefundView, { global: globalCfg(freshPinia()) })
+    await flushPromises()
+    await wrapper.find('[data-testid="detail-21"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="image-lightbox"]').exists()).toBe(false)
+
+    await wrapper.find('[data-testid="log-image"]').trigger('click')
+    await flushPromises()
+    const box = wrapper.find('[data-testid="image-lightbox"]')
+    expect(box.exists()).toBe(true)
+    expect(box.find('img').attributes('src')).toBe('/storage/uploads/products/20260919/u1.jpg')
+
+    await wrapper.find('[data-testid="lightbox-close"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-testid="image-lightbox"]').exists()).toBe(false)
+  })
+
+  it('用户凭证图为按钮并走灯箱预览（无 target=_blank 链接）', async () => {
+    const wrapper = mount(RefundView, { global: globalCfg(freshPinia()) })
+    await flushPromises()
+    await wrapper.find('[data-testid="detail-21"]').trigger('click')
+    await flushPromises()
+
+    const thumb = wrapper.find('[data-testid="user-image"]')
+    expect(thumb.exists()).toBe(true)
+    expect(thumb.element.tagName).toBe('BUTTON')
+    expect(wrapper.find('[data-testid="detail-user-images"] a').exists()).toBe(false)
+
+    await thumb.trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-testid="image-lightbox"]').exists()).toBe(true)
   })
 
   it('点击同意弹出审核弹层，提交携带同意理由与图片', async () => {
