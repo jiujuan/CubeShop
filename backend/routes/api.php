@@ -84,6 +84,9 @@ Route::get('/announcements/{id}', [AnnouncementController::class, 'show']);
 // 首页广告位（P-HomeBanner，公开无需登录：首页轮播图/中部广告/底部广告消费）
 Route::get('/banners', [HomeBannerController::class, 'index']);
 
+// 运费预估（T-053 Stage 3，公开无需登录：详情页/购物车运费预估；登录后传 address_id 可按省精确计算）
+Route::post('/freight/estimate', [OrderController::class, 'freightPreview'])->middleware('throttle:60,1');
+
 // 认证：注册 / 登录 / 验证码 / 重置密码（带限流）
 Route::middleware('throttle:auth')->group(function () {
     Route::post('/auth/captcha', [AuthController::class, 'captcha']);

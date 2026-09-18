@@ -43,6 +43,8 @@ export interface AdminProduct {
   brand_id?: number | null
   brand?: { id: number; name: string } | null
   weight?: number
+  /** 运费升级 Stage 2（T-053）：绑定运费模板，null = 全局默认规则 */
+  freight_template_id?: number | null
   video_url?: string | null
   keywords?: string | null
   sort?: number
@@ -63,6 +65,8 @@ export interface ProductPayload {
   /** V1.1 E01 新增 */
   brand_id?: number | null
   weight?: number
+  /** 运费升级 Stage 2（T-053）：绑定运费模板，null/省略 = 全局默认规则 */
+  freight_template_id?: number | null
   video_url?: string | null
   keywords?: string | null
   attribute_values?: Array<{ attribute_id: number; value: string }>

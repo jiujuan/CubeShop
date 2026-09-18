@@ -174,10 +174,22 @@ export interface FreightPreview {
  * not_support=true 表示该地区不可配送（不抛错，前端禁用提交并提示）。
  */
 export function previewFreight(data: {
-  items: Array<{ sku_id: number; quantity: number }>
+  items: Array<{ sku_id: string | number; quantity: number }>
   address_id?: number
 }) {
   return request.post<ApiResult<FreightPreview>>('/orders/freight-preview', data)
+}
+
+/**
+ * 运费预估（T-053 Stage 3，公开接口，游客可用）：详情页/购物车预估展示。
+ * 与下单同一套引擎；游客不带 address_id 时 region 模板无法按省匹配，
+ * not_support=true 仅表示「需按收货地址进一步确认」，前端展示引导文案即可。
+ */
+export function estimateFreight(data: {
+  items: Array<{ sku_id: string | number; quantity: number }>
+  address_id?: number
+}) {
+  return request.post<ApiResult<FreightPreview>>('/freight/estimate', data)
 }
 
 /** 创建订单（cart_item_ids 不传则结算全部有效项；V1.1 T-035/T-039 支持 user_coupon_id） */

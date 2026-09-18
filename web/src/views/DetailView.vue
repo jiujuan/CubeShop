@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { Heart, Minus, Plus, ShoppingCart, Truck } from 'lucide-vue-next'
 import { getProduct, type ProductDetail } from '@/api/shop'
 import { addToCart } from '@/api/user'
+import { estimateFreight, type FreightPreview } from '@/api/order'
 import { favoriteProduct, trackProduct, unfavoriteProduct } from '@/api/favorite'
 import { getCouponCenter, type ReceivableCoupon } from '@/api/coupon'
 import { couponConditionText, couponValueText } from '@/utils/coupon'
@@ -87,6 +88,37 @@ const paramRows = computed(() => {
   return rows
 })
 
+/**
+ * 运费预估（T-053 Stage 3）：公开预估接口，与下单同一套引擎。
+ * 规格未选全时按首个有库存 SKU 估；region 无 default 模板游客无法按省匹配 → 引导文案。
+ */
+const freightEstimate = ref<FreightPreview | null>(null)
+
+/** 运费预估文案（替代旧「全场满 99 元包邮」硬编码） */
+const freightText = computed(() => {
+  const est = freightEstimate.value
+  if (!est) return ''
+  if (est.not_support) return '运费以下单地址为准，部分地区可能不支持配送'
+  if (est.free_shipping) return '该商品包邮'
+  const gap = est.free_shipping_gap && Number(est.free_shipping_gap) > 0 ? `，再买 ¥${est.free_shipping_gap} 包邮` : ''
+  return `运费约 ¥${est.freight_amount}${gap}`
+})
+
+async function refreshFreightEstimate() {
+  const sku = matchedSku.value
+    ?? (product.value?.skus ?? []).find((s) => (s.stock ?? 0) > 0)
+    ?? (product.value?.skus ?? [])[0]
+  if (!sku) return
+  try {
+    const { data } = await estimateFreight({ items: [{ sku_id: sku.id, quantity: quantity.value }] })
+    freightEstimate.value = data.data
+  } catch {
+    freightEstimate.value = null // 预估失败静默，不误导购买
+  }
+}
+
+watch([matchedSku, quantity], () => void refreshFreightEstimate())
+
 onMounted(load)
 
 async function load() {
@@ -105,6 +137,8 @@ async function load() {
     if (auth.token) {
       trackProduct(data.data.id).catch(() => {})
     }
+    // 运费预估首算（无规格商品 matchedSku 恒为 null，watch 不触发，这里兜底一次）
+    void refreshFreightEstimate()
   } catch (e) {
     errorMsg.value = e instanceof Error ? e.message : '商品不存在或已下架'
   } finally {
@@ -362,8 +396,12 @@ const emojiByIndex = ['👕', '🎧', '🥤', '⌨️', '👟', '🧴', '💻', 
               </button>
             </div>
 
-            <div class="mt-6 flex items-center gap-2 text-xs text-slate-400">
-              <Truck class="h-4 w-4" /> 全场满 99 元包邮 · 7 天无理由退换
+            <div class="mt-6 flex items-center gap-2 text-xs text-slate-400" data-testid="detail-freight">
+              <Truck class="h-4 w-4 shrink-0" />
+              <span>
+                <span v-if="freightText" data-testid="detail-freight-text">{{ freightText }} · </span>
+                7 天无理由退换
+              </span>
             </div>
           </div>
         </div>

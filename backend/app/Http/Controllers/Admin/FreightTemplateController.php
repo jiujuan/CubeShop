@@ -73,10 +73,18 @@ class FreightTemplateController extends Controller
         return $this->success($this->toArray($template), '已更新');
     }
 
-    /** DELETE /api/admin/freight-templates/{id} —— 删除（Stage2 起删除前校验商品引用） */
+    /** DELETE /api/admin/freight-templates/{id} —— 删除（仍有商品绑定时拒绝，fail-closed） */
     public function destroy(Request $request, int $id): JsonResponse
     {
         $template = FreightTemplate::findOrFail($id);
+
+        $boundCount = \App\Models\Product::withTrashed()->where('freight_template_id', $id)->count();
+        if ($boundCount > 0) {
+            throw \App\Exceptions\BusinessException::conflict(
+                "仍有 {$boundCount} 个商品绑定该运费模板，请先在商品编辑中解绑或改绑后再删除"
+            );
+        }
+
         $template->delete();
         $this->log($request, 'freight_template_delete', 'freight_templates', $id, '删除运费模板 '.$template->name);
 
