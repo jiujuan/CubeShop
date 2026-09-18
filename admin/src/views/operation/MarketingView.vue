@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { ref } from 'vue'
-import { Ticket } from 'lucide-vue-next'
 import CouponPanel from '@/components/marketing/CouponPanel.vue'
 import PromotionPanel from '@/components/marketing/PromotionPanel.vue'
 
@@ -19,11 +18,10 @@ const tabs: Array<{ key: Tab; label: string }> = [
 </script>
 
 <template>
-  <div>
+  <div class="rounded-lg bg-white p-5 shadow-sm">
+    <!-- 标题 + Tab（Tab 位置与样式沿用原实现，仅整体纳入页面卡片） -->
     <div class="mb-4 flex items-center gap-3">
-      <h1 class="flex items-center gap-2 text-lg font-semibold text-slate-800">
-        <Ticket class="h-5 w-5 text-[#1677ff]" /> 营销管理
-      </h1>
+      <h2 class="text-lg font-semibold text-slate-800">营销管理</h2>
       <div class="flex gap-1 rounded-lg bg-slate-100 p-1 text-sm" data-testid="marketing-tabs">
         <button
           v-for="t in tabs" :key="t.key"
