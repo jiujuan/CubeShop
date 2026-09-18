@@ -1,0 +1,42 @@
+CS-117 缺陷 #4 / P2 复验：客服角色登录落地与 /dashboard 守卫回退
+========================================================================
+生成方式：docs/testing/evidence/cs/CS-117/ui/verify-agent-redirect.sh
+账号：kefu01（昵称「客服小美」，内置角色 cs_agent）
+环境：admin Vite http://127.0.0.1:5173 + backend http://127.0.0.1:8000（开发库 PG cubeshop）
+时间：2026-09-17
+
+背景
+----
+仅凭「/cs/tickets 页面截图」无法证明重定向真的发生过——截图里看不到 URL，
+一张 /cs/tickets 的截图既可能来自「跳转成功」也可能来自「直接访问 /cs/tickets」。
+故本证据改用 agent-browser eval 读取 location.pathname 实测，作为可证伪的直接证据。
+
+原始输出
+--------
+== 账号: kefu01 ==
+captcha=YQVK
+登录后 pathname : "/cs/tickets"
+直接访问 /dashboard 后 pathname : "/cs/tickets"
+侧栏是否出现「工作台」入口 : false
+== done ==
+
+结论
+----
+1. 登录落地：csrf 客服登录成功后落在 /cs/tickets（而非 /dashboard）——landingPath() 权限回退生效。
+   cs_agent 不持有 dashboard.view，故 candidates 依次回退到 cs.ticket.view → /cs/tickets。
+2. 守卫回退：登录态下显式访问 /dashboard，浏览器最终地址仍为 /cs/tickets，
+   即 admin/src/router/index.ts 的 beforeEach 兜底把无 dashboard.view 的账号送回自己的入口，
+   用户不会看到 403 空页。
+3. 侧栏显隐：document.body.innerText 中不含「工作台」→ AdminLayout 的 menuGroups 按
+   permission:'dashboard.view' 隐藏了进不去的入口（避免点了才报 403）。
+
+补充：截图证据
+--------------
+ui/ui-CS-117-cs-agent-tickets.png —— 客服视角侧栏仅「服务工单 / 帮助中心」，无经营数据入口（此图有效）。
+ui/ui-CS-117-cs-agent-dashboard-redirect.png —— 已删除：与上一张字节完全相同（md5 均为
+66f04b9f715e18d11e3f60f735dae65d），无法独立证明重定向，属重复证据，改由本文件的 pathname 实测替代。
+
+自动化用例（不依赖浏览器，常态回归）
+------------------------------------
+admin/tests/router-landing.test.ts —— 5 例：各角色 landingPath 回退顺序，含客服 → /cs/tickets。
+backend/tests/Feature/CsAgentRoleTest.php —— 客服账号可用客服接口、拿不到经营数据（dashboard.view）。

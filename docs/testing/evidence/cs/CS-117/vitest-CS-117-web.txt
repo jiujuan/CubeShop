@@ -1,0 +1,80 @@
+===== CS 一期 WEB 前端测试（vitest）=====
+
+
+[1m[30m[46m RUN [49m[39m[22m [36mv5.0.1 [39m[90mD:/codeproject/PHP/CubeShop/web[39m
+
+[90mstderr[2m | tests/service-center.test.ts[2m > [22m[2m服务中心首页 ServiceCenterView（CS-111）[2m > [22m[2m渲染分类与热门问题条数正确
+[22m[39m[Vue Router warn]: No match found for location with path "/account"
+
+[90mstderr[2m | tests/service-center.test.ts[2m > [22m[2m服务中心首页 ServiceCenterView（CS-111）[2m > [22m[2m最近工单最多渲染 3 条，「查看全部」跳转正确
+[22m[39m[Vue Router warn]: No match found for location with path "/account"
+
+[90mstderr[2m | tests/faq.test.ts[2m > [22m[2m帮助中心（CS-112）[2m > [22m[2m分类列表渲染与计数正确
+[22m[39m[Vue Router warn]: No match found for location with path "/account"
+
+[90mstderr[2m | tests/cs-ticket.test.ts[2m > [22m[2m提交工单 TicketCreateView（CS-113）[2m > [22m[2m必填订单类型未选订单时提交被拦截并提示
+[22m[39m[Vue Router warn]: No match found for location with path "/account"
+
+[90mstderr[2m | tests/service-center.test.ts[2m > [22m[2m服务中心首页 ServiceCenterView（CS-111）[2m > [22m[2m无工单时展示空态
+[22m[39m[Vue Router warn]: No match found for location with path "/account"
+
+[90mstderr[2m | tests/faq.test.ts[2m > [22m[2m帮助中心（CS-112）[2m > [22m[2m搜索防抖：连续输入只触发一次请求
+[22m[39m[Vue Router warn]: No match found for location with path "/account"
+
+[90mstderr[2m | tests/faq.test.ts[2m > [22m[2m帮助中心（CS-112）[2m > [22m[2m搜索防抖：连续输入只触发一次请求
+[22m[39mUsing "fireEvent.input" may lead to unexpected results. Please use fireEvent.update() instead.
+
+[90mstderr[2m | tests/faq.test.ts[2m > [22m[2m帮助中心（CS-112）[2m > [22m[2m搜索防抖：连续输入只触发一次请求
+[22m[39mUsing "fireEvent.input" may lead to unexpected results. Please use fireEvent.update() instead.
+
+[90mstderr[2m | tests/service-center.test.ts[2m > [22m[2m服务中心首页 ServiceCenterView（CS-111）[2m > [22m[2m快捷工具点击跳转目标正确
+[22m[39m[Vue Router warn]: No match found for location with path "/account"
+
+[90mstderr[2m | tests/faq.test.ts[2m > [22m[2m帮助中心（CS-112）[2m > [22m[2m搜索防抖：连续输入只触发一次请求
+[22m[39m[Vue Router warn]: No match found for location with path "/account"
+
+[90mstderr[2m | tests/faq.test.ts[2m > [22m[2m帮助中心（CS-112）[2m > [22m[2m关键词高亮渲染（<mark> 数量正确）
+[22m[39m[Vue Router warn]: No match found for location with path "/account"
+
+[90mstderr[2m | tests/cs-ticket.test.ts[2m > [22m[2m提交工单 TicketCreateView（CS-113）[2m > [22m[2m凭证选择超过 9 张被拦截
+[22m[39m[Vue Router warn]: No match found for location with path "/account"
+
+[90mstderr[2m | tests/service-center.test.ts[2m > [22m[2m服务中心首页 ServiceCenterView（CS-111）[2m > [22m[2m接口失败时区块降级不白屏（热门问题展示重试）
+[22m[39m[Vue Router warn]: No match found for location with path "/account"
+
+[90mstderr[2m | tests/faq.test.ts[2m > [22m[2m帮助中心（CS-112）[2m > [22m[2m空结果展示引导与「联系客服」按钮
+[22m[39m[Vue Router warn]: No match found for location with path "/account"
+
+ [32m✓[39m tests/service-center.test.ts [2m([22m[2m5 tests[22m[2m)[22m[32m 181[2mms[22m[39m
+[90mstderr[2m | tests/faq.test.ts[2m > [22m[2m帮助中心（CS-112）[2m > [22m[2m「是否有帮助」提交后置灰且只提交一次
+[22m[39m[Vue Router warn]: No match found for location with path "/account"
+
+[90mstderr[2m | tests/faq.test.ts[2m > [22m[2m帮助中心（CS-112）[2m > [22m[2m相关推荐不含当前文章
+[22m[39m[Vue Router warn]: No match found for location with path "/account"
+
+[90mstderr[2m | tests/faq.test.ts[2m > [22m[2m帮助中心（CS-112）[2m > [22m[2m正文含 <script> 时不产生 XSS（以文本转义渲染）
+[22m[39m[Vue Router warn]: No match found for location with path "/account"
+
+[90mstderr[2m | tests/cs-ticket.test.ts[2m > [22m[2m提交工单 TicketCreateView（CS-113）[2m > [22m[2m上传失败提示且不阻塞提交流程
+[22m[39m[Vue Router warn]: No match found for location with path "/account"
+
+ [32m✓[39m tests/faq.test.ts [2m([22m[2m7 tests[22m[2m)[22m[32m 201[2mms[22m[39m
+[90mstderr[2m | tests/cs-ticket.test.ts[2m > [22m[2m我的工单列表 TicketListView（CS-113）[2m > [22m[2m状态 Tab 切换请求参数正确
+[22m[39m[Vue Router warn]: No match found for location with path "/account"
+
+[90mstderr[2m | tests/cs-ticket.test.ts[2m > [22m[2m工单详情 TicketDetailView（CS-113）[2m > [22m[2m消息流区分 我/客服/系统 三种发送方
+[22m[39m[Vue Router warn]: No match found for location with path "/account"
+
+[90mstderr[2m | tests/cs-ticket.test.ts[2m > [22m[2m工单详情 TicketDetailView（CS-113）[2m > [22m[2m内部备注即使返回也不渲染（前端兜底）
+[22m[39m[Vue Router warn]: No match found for location with path "/account"
+
+[90mstderr[2m | tests/cs-ticket.test.ts[2m > [22m[2m工单详情 TicketDetailView（CS-113）[2m > [22m[2m已关闭工单隐藏输入区与关闭按钮
+[22m[39m[Vue Router warn]: No match found for location with path "/account"
+
+ [32m✓[39m tests/cs-ticket.test.ts [2m([22m[2m7 tests[22m[2m)[22m[32m 262[2mms[22m[39m
+
+[2m Test Files [22m [1m[32m3 passed[39m[22m[90m (3)[39m
+[2m      Tests [22m [1m[32m19 passed[39m[22m[90m (19)[39m
+[2m   Start at [22m 17:27:17
+[2m   Duration [22m 2.04s[2m (environment 48%, import 22%, transform 16%, tests 12%, setup 1%, worker 1%)[22m
+

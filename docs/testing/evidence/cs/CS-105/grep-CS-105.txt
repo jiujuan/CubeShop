@@ -1,0 +1,28 @@
+===== CS-105 状态写入点唯一性检查 =====
+
+--- [1] 控制器层是否存在直接写 status（应为空）---
+(无：控制器不直接写状态 ✓)
+
+--- [2] transitionTo 的唯一实现 + 全部调用点 ---
+app/Http/Controllers/Admin/CsTicketController.php:161:        $ticket = $this->service->transitionTo($ticket, $data['status'], $request->user()->id);
+app/Http/Controllers/CsTicketController.php:134:        $ticket = $this->service->transitionTo($ticket, CsTicket::STATUS_CLOSED, null, CsTicket::CLOSE_REASON_USER);
+app/Services/Cs/CsTicketService.php:175:    public function transitionTo(CsTicket $ticket, string $to, ?int $operatorId = null, string $reason = ''): CsTicket
+
+--- [3] 客服模块内 status 写入点全扫描（含服务层）---
+app/Services/Cs/CsTicketService.php:20: *    控制器/命令不得直接 update(['status' => ...])，否则绕过流转矩阵与副作用（决策 D5）。
+app/Services/Cs/CsTicketService.php:329:            $ticket->update(['status' => $target]);
+app/Models/CsTicket.php:15: *    控制器禁止直接 update(['status' => ...])，否则绕过流转校验与副作用（决策 D5）。
+
+--- [4] 工单日志/系统消息唯一写入点 ---
+app/Services/Cs/CsTicketService.php:73:            $ticket->messages()->create([
+app/Services/Cs/CsTicketService.php:137:            $message = $locked->messages()->create([
+app/Services/Cs/CsTicketService.php:201:            $locked->messages()->create([
+app/Services/Cs/CsTicketService.php:202:                'sender_type' => CsTicketMessage::SENDER_SYSTEM,
+app/Services/Cs/CsTicketService.php:222:            $ticket->messages()->create([
+app/Services/Cs/CsTicketService.php:223:                'sender_type' => CsTicketMessage::SENDER_SYSTEM,
+app/Services/Cs/CsTicketService.php:245:            $ticket->messages()->create([
+app/Services/Cs/CsTicketService.php:246:                'sender_type' => CsTicketMessage::SENDER_SYSTEM,
+
+--- [5] 结论 ---
+控制器层 0 处直接写 status；服务层仅两处：transitionTo()（事务+锁+矩阵+系统消息+操作日志）
+与 applyAutoTransition()（消息驱动的自动流转，经 canTransitTo 守卫，不写系统消息）。

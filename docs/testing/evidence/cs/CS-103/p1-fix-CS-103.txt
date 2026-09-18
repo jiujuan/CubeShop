@@ -1,0 +1,73 @@
+# CS-103 缺陷 #3（P1）：operator 客服权限双路径不一致 —— 修复记录
+
+## 一、问题
+
+| 项 | 内容 |
+|----|------|
+| 现象 | 同一角色在两种环境下权限不同：跑过迁移的存量库中 `operator` 持有 `cs.ticket.view/handle`、`cs.faq.manage` 可进后台客服工作台；全新安装（只跑 Seeder）的 `operator` 一个都没有 |
+| 连带后果 | 新工单通知走 `sendToRole('operator')`，通知已写入但 `operator` 无 `cs.ticket.view` → 点开 403（「有通知打不开」） |
+| 根因 | 同源双路径：`RolePermissionSeeder`（决定全新安装）未给 operator 任何 `cs.*`；迁移 `2026_09_17_000039`（决定存量升级）授予全部 3 个 |
+| 既有契约 | `AdminCsTicketApiTest` / `AdminCsFaqApiTest` 的注释与断言明确锁定「operator 未授予 CS 权限，用于校验 403 分支」→ 运营与客服是两条职责线 |
+
+## 二、修复方向的选择
+
+两条路径都能改，本修复选 **「operator 不持有 `cs.*`」**，理由：
+
+1. 后端两处测试 + 一处注释已把「operator 无客服权限」当作既有契约（写于 CS-108/110 阶段，晚于 CS-103 的迁移）；
+2. 运营（operator）现有职责是商品/订单/发货/退款/报表/营销/支付核账，客服工单属独立职责线；
+3. 独立客服角色属二期范围（验收报告遗留缺陷 #4），一期由超管兜底即可满足「能否进入模块」的阶段目标。
+
+> 如果后续产品决策改为「由运营直接处理工单」，只需反向操作三步：给 Seeder 的 operator 列表补 3 个权限码、
+> 新增一个迁移回补授权、把通知收件人从「按权限」改为按角色。当前实现已把这三处集中标注。
+
+## 三、改动清单
+
+| 文件 | 改动 |
+|------|------|
+| `backend/database/migrations/2026_09_17_000040_revoke_cs_permissions_from_operator.php` | **新增**：从 operator 回收 3 个 `cs.*` 权限（幂等、带 `permissionTablesExist()` 守卫），把存量库纠回与 Seeder 一致；`down()` 不做反向授权（避免恢复错误状态） |
+| `backend/app/Services/Notification/NotificationService.php` | **新增** `sendToPermission()`：向「持有某权限的后台管理员」投递，与既有 `sendToRole()` 对称；收件人为 0 时记 warning（避免静默丢通知） |
+| `backend/app/Services/Cs/CsNotificationService.php` | 新工单通知由 `sendToRole('operator')` 改为 `sendToPermission('cs.ticket.view')`：谁有权处理谁能收到，二期新增客服角色授予该权限即自动覆盖 |
+| `backend/database/seeders/RolePermissionSeeder.php` | 仅补注释，明确「客服权限不授予 operator」及其原因（防止有人再次加回导致双路径分叉） |
+| `backend/tests/Feature/CsPermissionSyncTest.php` | **新增** 6 例回归（见下） |
+
+## 四、回归用例（`CsPermissionSyncTest.php`，6 例 17 assertions）
+
+| 用例 | 锁定的不变量 |
+|------|--------------|
+| 权限码清单 | `RolePermissionSeeder::PERMISSIONS` 含三个 `cs.*`（超管始终能拿到） |
+| 全新安装 | Seeder 后超管有、operator 无 |
+| 存量库升级 | 跑过 000039 + 000040 后 operator 权限集合与全新安装**逐项相同** |
+| 回收迁移幂等 | 000040 连续 `up()` 两次结果稳定 |
+| 通知按权限投递 | 新工单 → 超管收到 1 条（`receiver_type=admin`），operator 收到 0 条 |
+| 无收件人降级 | 无人持有 `cs.ticket.view` 时不抛异常，返回 0 |
+
+### 变异验证（证明用例不是空转）
+
+把 000040 的回收动作注释掉后再跑：
+
+```
+✓ 权限码清单
+✓ 全新安装
+⨯ 存量库升级：跑过 000039 与 000040 后，operator 权限与全新安装一致
+✓ 回收迁移幂等
+✓ 新工单通知按权限投递
+✓ 按权限投递的降级
+Tests: 1 failed, 5 passed
+```
+
+失败用例正是「双路径一致性」——确认它能捕获真实缺陷；已恢复回收动作。
+
+## 五、执行与验证
+
+```bash
+# 存量开发库（PG cubeshop）纠回一致
+php artisan migrate --force
+#  2026_09_17_000040_revoke_cs_permissions_from_operator ... DONE
+
+# SQLite 全量
+php vendor/bin/pest --filter="(Cs|Faq)"     # 150 passed / 481 assertions
+# PG 测试库全量
+php vendor/bin/pest -c phpunit.pgsql.xml --filter="(Cs|Faq)"
+```
+
+完整输出见同目录 `pest-CS-103-p1fix.txt`、`pest-pgsql-CS-103-p1fix.txt`。

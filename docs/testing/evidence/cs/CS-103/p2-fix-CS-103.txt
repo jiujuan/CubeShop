@@ -1,0 +1,82 @@
+# CS-103 缺陷 #4 修复记录：独立「客服」角色 `cs_agent`（P2）
+
+- 任务：CS-103（权限码与角色）
+- 关联缺陷：`CS-117/acceptance-CS-117.md` §6 #4（P2 · 角色模型缺口）
+- 修复日期：2026-09-17
+- 结论：**已修复并复验**（角色 + 两条落地路径 + 后台可分配 + 转交名单接口 + 登录落地页）
+
+---
+
+## 1. 缺陷回顾
+
+- 一期只有 `super_admin` / `operator` 两个后台角色，且 `operator` 明确不持有 `cs.*`（见 P1 修复）。
+  结果是客服工作台只能由超管使用：想给客服开号，就得把商品/订单/退款/营销权限一起放出去。
+- CS-103 的权限矩阵与 README §5 都假定「客服」是独立角色，但生产角色缺失。
+
+## 2. 设计决策
+
+| 决策 | 取值 | 理由 |
+|------|------|------|
+| 角色标识 | `cs_agent` | 与 `cs.*` 权限前缀同源；「客服主管」留位 |
+| 中文名 | 客服 | 后台展示用（`roles.display_name`） |
+| 权限集 | `cs.ticket.view`、`cs.ticket.handle`、`cs.faq.manage` | 只覆盖客服工作台与帮助中心 |
+| 是否给 `dashboard.view` | **不给** | 工作台含今日销售额等经营数据；改为「登录落地页按权限回退」 |
+| 是否给 `order.view` 等 | **不给** | 工单详情里的订单摘要是 CS 接口内嵌返回的，无需订单模块权限 |
+| 是否预置客服账号 | **不预置** | 避免多发一套默认口令；由超管在「系统 → 管理员账号」按需创建 |
+
+## 3. 改动清单
+
+| 文件 | 改动 |
+|------|------|
+| `backend/app/Support/AdminRole.php`（新增） | 后台角色的**唯一标识来源**：`SUPER_ADMIN`/`OPERATOR`/`CS_AGENT` 常量、`BUILTIN` 内置清单、`LABELS` 中文名 |
+| `backend/database/seeders/RolePermissionSeeder.php` | 引用 `AdminRole`；新增 `CS_AGENT_PERMISSIONS` 常量并在 Seeder 中创建角色 + 授权（全新安装路径）；补注释说明「客服权限不授予 operator」 |
+| `backend/database/migrations/2026_09_17_000041_add_cs_agent_role.php`（新增） | 存量库升级路径：`Permission::findOrCreate` + 角色 `findOrCreate` + `givePermissionTo`（只补不撤，不覆盖超管手工调整）；`down()` 仅在角色无账号时删除 |
+| `backend/app/Http/Controllers/Admin/AccountController.php` | `ADMIN_ROLES` 改为引用 `AdminRole::BUILTIN`，校验规则同步 → 可创建/筛选/编辑客服账号 |
+| `backend/app/Http/Controllers/Admin/RoleController.php` | `BUILTIN_ROLES`/`ROLE_LABELS` 引用 `AdminRole`；权限模块标签补 `cs => 客服中心` |
+| `backend/app/Http/Controllers/Admin/CsTicketController.php` | 新增 `assignees()`：返回持有 `cs.ticket.view` 且启用的账号（客服无需 `account.manage` 即可转交） |
+| `backend/routes/api.php` | 新增 `GET /api/admin/cs/assignees`（`permission:cs.ticket.handle`） |
+| `admin/src/api/cs.ts` + `admin/src/views/cs/CsTicketView.vue` | 转交名单改调新接口（不再依赖账号管理接口），下拉显示「昵称优先」 |
+| `admin/src/api/account.ts` + `admin/src/views/system/AccountView.vue` | 角色选项改由共享 `ROLE_LABELS` 生成（新增角色无需再改页面）；编辑账号不再过滤角色 |
+| `admin/src/router/index.ts` + `admin/src/views/login/LoginView.vue` | 新增 `landingPath()`：按「首个有权限的入口」回退；登录跳转与 `/dashboard` 守卫兜底 |
+| `admin/src/layouts/AdminLayout.vue` | 「工作台」菜单补 `permission: 'dashboard.view'`（客服看不到进不去的入口） |
+| `docs/design/plan/CS/CS_Acceptance.md` | AC-103.2 按现状更新（`cs_agent` 持有、`operator` 不持有） |
+| `docs/design/CubeShop_Customer_Service_v1.0.md` | §2.2 补角色落地情况与正文渲染说明 |
+
+## 4. 两条落地路径（与 CS-103 的 P1 问题同源，必须同时改）
+
+| 路径 | 载体 | 覆盖场景 |
+|------|------|----------|
+| 全新安装 | `RolePermissionSeeder`（`AdminRole` 标识 + `CS_AGENT_PERMISSIONS`） | `migrate --seed` |
+| 存量库升级 | 迁移 `2026_09_17_000041_add_cs_agent_role.php` | 已上线的库 |
+
+一致性由 `tests/Feature/CsPermissionSyncTest.php` 的两个用例锁定：
+「角色身份唯一来源」断言库中角色集合恰为 `AdminRole::BUILTIN`、中文名与 `LABELS` 一致；
+「客服角色双路径一致」删掉角色后只跑迁移，断言结果与 Seeder 完全一致。
+
+## 5. 权限边界（实测断言）
+
+| 账号 | `/admin/cs/tickets` | `/admin/cs/faq/*` | `/admin/cs/assignees` | `/admin/dashboard` | `/admin/orders` | `/admin/products` | `/admin/accounts` |
+|------|--------------------|-------------------|----------------------|--------------------|-----------------|-------------------|-------------------|
+| 超管 `admin` | 200 | 200 | 200 | 200 | 200 | 200 | 200 |
+| 客服 `cs_agent` | **200** | **200** | **200** | 403 | 403 | 403 | 403 |
+| 运营 `operator` | 403 | 403 | 403 | 200 | 200 | 200 | 403 |
+
+## 6. 测试与证据
+
+| 类型 | 文件 | 结果 |
+|------|------|------|
+| 集成（角色/权限/边界） | `backend/tests/Feature/CsAgentRoleTest.php`（新） | 7 passed / 51 assertions |
+| 一致性（双路径 + 幂等） | `backend/tests/Feature/CsPermissionSyncTest.php`（+3 例） | 9 passed / 25 assertions |
+| 前端（落地页） | `admin/tests/router-landing.test.ts`（新） | 5 passed |
+| 前端（转交名单 + 侧栏显隐） | `admin/tests/cs-ticket.test.ts` | 通过（含「客服视角不显示工作台」） |
+| 双库回归 | `pest-CS-103-p2fix.txt` / `pest-pgsql-CS-103-p2fix.txt` | 均 **206 passed / 694 assertions** |
+| 变异验证 | 注释掉迁移 000041 的 `givePermissionTo` | 「双路径一致」用例精确失败（1 failed / 8 passed） |
+| 迁移实测（PG 开发库） | `ROLE=cs_agent / 客服`、`ROLE_PERMS=cs.ticket.view,cs.ticket.handle,cs.faq.manage` | 见 `CS-117/acceptance-CS-117.md` §9 |
+| 浏览器复验 | `CS-117/ui/ui-CS-117-cs-agent-tickets.png`、`ui-CS-117-cs-agent-dashboard-redirect.png` | 客服侧栏仅「服务工单 / 帮助中心」；访问 `/dashboard` 被回退 |
+
+## 7. 行为变化须知
+
+- 「系统 → 管理员账号」新增账号时多出「客服」选项；角色列表多出内置角色 `cs_agent`（不可删除/重命名）。
+- 客服账号登录后落在 `/cs/tickets`；直接访问 `/dashboard` 会被守卫回退（不会看到 403 空页）。
+- 侧栏「工作台」对无 `dashboard.view` 的角色不再显示。
+- 遗留（二期 CS-201）：客服主管角色（看全部工单 + 处理量排行）、按处理人的可见性隔离。

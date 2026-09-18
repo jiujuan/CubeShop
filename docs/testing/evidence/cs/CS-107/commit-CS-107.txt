@@ -1,0 +1,51 @@
+# CS-107 提交记录（commit evidence）
+
+| 项 | 值 |
+|----|----|
+| 任务 | CS-107（客服中心一期） |
+| 提交 | `849d171` feat(cs): 客服中心一期（CS-101~CS-117）后端 + 前端 + 测试 + 证据 |
+| 完整哈希 | `849d171d85458a0d3450642a9be155b44344d812` |
+| 提交时间 | 2026-09-17 17:33:44 +0800 |
+| 证据生成时间 | 2026-09-17 17:34:43 |
+
+> 说明：CS-101 ~ CS-117 属同一期连续交付，代码与文档存在双向依赖（例如 `CsTicketService` 同时服务 CS-105/106/109），故整体落在单次提交中；下表为该任务涉及文件在本次提交内的快照统计。
+
+## 本任务涉及文件
+
+- `backend/app/Services/Cs/CsNotificationService.php`
+- `backend/tests/Feature/CsTicketApiTest.php`
+- `backend/app/Services/Notification/NotificationService.php`（补提交 `b77cb05`，见下）
+
+## 提交统计（git show --stat）
+
+```text
+849d171 feat(cs): 客服中心一期（CS-101~CS-117）后端 + 前端 + 测试 + 证据
+ backend/app/Services/Cs/CsNotificationService.php | 109 +++++++++++
+ backend/tests/Feature/CsTicketApiTest.php         | 226 ++++++++++++++++++++++
+ 2 files changed, 335 insertions(+)
+```
+
+## 补提交（遗漏修正）
+
+| 项 | 值 |
+|----|----|
+| 提交 | `b77cb05` fix(cs): 补交 NotificationService 客户服务通知类型常量（CS-107 遗漏） |
+| 原因 | 三个 CS 通知类型常量定义在 `backend/app/Services/Notification/NotificationService.php`（文件名不含 `cs`），首次按文件名筛选暂存时被遗漏；`849d171` 上 `CsNotificationService` 会因常量未定义而报错，CS 通知链路不自洽 |
+| 修正内容 | 仅新增 `TYPE_CS_TICKET_NEW` / `TYPE_CS_TICKET_REPLY` / `TYPE_CS_TICKET_STATUS`，无其他改动 |
+
+```text
+b77cb05 fix(cs): 补交 NotificationService 客户服务通知类型常量（CS-107 遗漏）
+ backend/app/Services/Notification/NotificationService.php | 5 +++++
+ 1 file changed, 5 insertions(+)
+```
+
+**自洽性复验**：补提交后在干净 HEAD 上执行 `php vendor/bin/pest --filter="(Cs|Faq)"`
+→ **144 passed / 464 assertions**（CS 后端全量绿，说明提交内容完整）。
+
+## 复核命令
+
+```bash
+git show --stat 849d171 -- backend/app/Services/Cs/CsNotificationService.php backend/tests/Feature/CsTicketApiTest.php
+git show --stat b77cb05 -- backend/app/Services/Notification/NotificationService.php
+git show 849d171:backend/app/Services/Cs/CsNotificationService.php   # 查看某文件在该提交的完整内容
+```

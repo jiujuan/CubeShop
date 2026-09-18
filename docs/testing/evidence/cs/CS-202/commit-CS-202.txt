@@ -1,0 +1,39 @@
+# CS-202 提交记录
+
+- 提交：`e8eeab3` feat(cs): CS-202 工单关联订单快照（订单/物流/退款聚合）
+- 时间：2026-09-17 21:40:38 +0800
+
+## 变更文件（git show --stat）
+
+```
+e8eeab3 feat(cs): CS-202 工单关联订单快照（订单/物流/退款聚合）
+
+ admin/src/api/cs.ts                                |  54 ++++
+ admin/src/views/cs/CsTicketView.vue                |  67 +++-
+ admin/tests/cs-ticket.test.ts                      |  87 +++++-
+ .../Http/Controllers/Admin/CsTicketController.php  |  40 +--
+ .../app/Http/Controllers/CsTicketController.php    |  41 +--
+ backend/app/Services/Cs/CsTicketService.php        | 175 +++++++++++
+ backend/tests/Feature/AdminCsTicketApiTest.php     |   2 +-
+ backend/tests/Feature/CsTicketApiTest.php          |   2 +-
+ .../tests/Feature/CsTicketOrderSnapshotApiTest.php | 306 +++++++++++++++++++
+ backend/tests/Unit/CsOrderSnapshotTest.php         | 338 +++++++++++++++++++++
+ docs/testing/evidence/cs/CS-202/curl-CS-202.md     | 174 +++++++++++
+ docs/testing/evidence/cs/CS-202/curl-CS-202.sh     | 117 +++++++
+ .../evidence/cs/CS-202/dump-sql-snapshot.php       |  99 ++++++
+ docs/testing/evidence/cs/CS-202/pest-CS-202.txt    |   8 +
+ docs/testing/evidence/cs/CS-202/pg-CS-202.txt      |   6 +
+ .../evidence/cs/CS-202/seed-demo-snapshot.php      | 107 +++++++
+ docs/testing/evidence/cs/CS-202/sql-CS-202.md      |  51 ++++
+ 17 files changed, 1597 insertions(+), 77 deletions(-)
+```
+
+## 复核命令
+
+```bash
+git show --stat e8eeab3
+cd backend && php artisan test --filter="CsOrderSnapshot|CSTicketOrderSnapshot|CSTicket"
+# PG 双库
+php artisan test -c phpunit.pgsql.xml --filter="CsOrderSnapshot|CSTicketOrderSnapshot"
+cd ../admin && npx vitest run tests/cs-ticket.test.ts
+```

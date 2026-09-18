@@ -1,0 +1,17 @@
+
+[1m[30m[46m RUN [49m[39m[22m [36mv5.0.1 [39m[90mD:/codeproject/PHP/CubeShop/admin[39m
+
+ [32m✓[39m tests/cs-faq.test.ts[2m > [22mFAQ 管理页 CsFaqView（CS-115）[2m > [22m无 cs.faq.manage 时隐藏所有写操作入口[32m 57[2mms[22m[39m
+ [32m✓[39m tests/cs-faq.test.ts[2m > [22mFAQ 管理页 CsFaqView（CS-115）[2m > [22m文章状态标签（草稿/已发布/已下架）渲染正确[32m 13[2mms[22m[39m
+ [32m✓[39m tests/cs-faq.test.ts[2m > [22mFAQ 管理页 CsFaqView（CS-115）[2m > [22m有帮助率分母为 0 时展示「—」[32m 10[2mms[22m[39m
+ [32m✓[39m tests/cs-faq.test.ts[2m > [22mFAQ 管理页 CsFaqView（CS-115）[2m > [22m有帮助率有数据时展示百分比[32m 6[2mms[22m[39m
+ [32m✓[39m tests/cs-faq.test.ts[2m > [22mFAQ 管理页 CsFaqView（CS-115）[2m > [22m分类删除被拒时展示后端返回的冲突原因[32m 13[2mms[22m[39m
+ [32m✓[39m tests/cs-faq.test.ts[2m > [22mFAQ 管理页 CsFaqView（CS-115）[2m > [22m发布操作触发二次确认并调用发布接口[32m 11[2mms[22m[39m
+ [32m✓[39m tests/cs-faq.test.ts[2m > [22mFAQ 管理页 CsFaqView（CS-115）[2m > [22m下架操作触发二次确认并调用下架接口[32m 15[2mms[22m[39m
+ [32m✓[39m tests/cs-faq.test.ts[2m > [22mFAQ 管理页 CsFaqView（CS-115）[2m > [22m新增文章保存调用创建接口[32m 14[2mms[22m[39m
+
+[2m Test Files [22m [1m[32m1 passed[39m[22m[90m (1)[39m
+[2m      Tests [22m [1m[32m8 passed[39m[22m[90m (8)[39m
+[2m   Start at [22m 16:23:44
+[2m   Duration [22m 1.54s[2m (environment 56%, transform 17%, import 16%, tests 11%, setup 1%, worker 1%)[22m
+

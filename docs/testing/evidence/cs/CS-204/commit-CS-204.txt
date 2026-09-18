@@ -1,0 +1,84 @@
+================================================================================
+CS-204 [ADMIN] 快捷回复管理页 + 工作台一键插入 —— 提交归档
+================================================================================
+
+提交哈希（commit）: 920da0f963bf6b6f6181745b8d8a74a7a2862b00
+提交信息: CS-204 [ADMIN] 快捷回复管理页 + 工作台一键插入
+提交时间: 2026-09-17 23:13:08 +0800
+作者: jiujuan <45460739+jiujuan@users.noreply.github.com>
+
+紧随其后: 4737f2d (docs) 为同一批次文档提交。
+
+--------------------------------------------------------------------------------
+一、变更文件清单（git show --stat 920da0f）
+--------------------------------------------------------------------------------
+ admin/src/api/cs.ts                               |  46 +++++
+ admin/src/layouts/AdminLayout.vue                 |   1 +
+ admin/src/router/index.ts                         |   6 +
+ admin/src/utils/csTemplate.ts                     |  27 +++
+ admin/src/views/cs/CsQuickReplyView.vue           | 231 ++++++++++++++++++++++
+ admin/src/views/cs/CsTicketView.vue               |  92 ++++++++-
+ admin/tests/cs-quick-reply.test.ts                | 145 ++++++++++++++
+ admin/tests/cs-ticket.test.ts                     |  61 +++++-
+ docs/testing/evidence/cs/CS-204/vitest-CS-204.txt |  11 ++
+ 9 files changed, 615 insertions(+), 5 deletions(-)
+
+--------------------------------------------------------------------------------
+二、核心交付（按内容）
+--------------------------------------------------------------------------------
+1. API 层（admin/src/api/cs.ts）
+   - 接口 CsQuickReplyRow / CsQuickReplyPayload
+   - getCsQuickReplies / getCsQuickRepliesByType(typeId) / createCsQuickReply /
+     updateCsQuickReply / deleteCsQuickReply
+
+2. 变量替换工具（admin/src/utils/csTemplate.ts）
+   - renderCsTemplate(tpl, ctx) 与后端 CsQuickReplyService::render() 同口径
+     （{user_nickname}/{ticket_no}/{order_no}，缺失填空串），保证插入结果一致
+
+3. 工作台一键插入（admin/src/views/cs/CsTicketView.vue）
+   - 回复框「快捷回复」下拉：按当前工单类型取用、光标处插入、变量替换、
+     空态提示跳转管理页（RouterLink to=/cs/quick-replies）
+
+4. 快捷回复管理页（admin/src/views/cs/CsQuickReplyView.vue，新）
+   - 按「通用/各类型」分组渲染、类型筛选、新增/编辑弹窗、删除二次确认
+   - data-testid: cs-qr-filter / cs-qr-create / cs-qr-group-{key} / cs-qr-row-{id} /
+     cs-qr-edit / cs-qr-delete / cs-qr-modal / cs-qr-form-* / cs-qr-empty
+
+5. 路由与菜单（router/index.ts + AdminLayout.vue）
+   - 注册 /cs/quick-replies 路由（name cs-quick-replies，permission cs.faq.manage，icon MessageSquare）
+   - 运营管理组新增「快捷回复」菜单项（MessageSquare 已在 import + icons map 注册）
+
+6. 测试
+   - cs-ticket.test.ts (+2 例): 下拉按类型取用 + 光标插入 + 变量替换 + 发送内容；
+     无模板空态 + 跳转
+   - cs-quick-reply.test.ts (6 例): 分组渲染/类型筛选/新增/编辑/删除 ConfirmDialog/
+     renderCsTemplate 工具
+
+--------------------------------------------------------------------------------
+三、验收证据（本目录）
+--------------------------------------------------------------------------------
+ - vitest-CS-204.txt : admin 全量 vitest 166 passed（含 CS-204 新增 8 例）
+   注：UI 截图 ui-CS-204-manage.png / ui-CS-204-insert.png 因 agent-browser
+   沙箱文件系统隔离未能落盘，相关 UI 行为由前端单测 + 集成测覆盖。
+
+--------------------------------------------------------------------------------
+四、复验命令
+--------------------------------------------------------------------------------
+# 前端类型检查（应当 0 error）
+cd admin && npx vue-tsc -b
+
+# 前端单测（CS 相关）
+cd admin && npx vitest run tests/cs-ticket.test.ts tests/cs-quick-reply.test.ts
+
+# 前端全量单测（应当 166 passed）
+cd admin && npx vitest run
+
+--------------------------------------------------------------------------------
+五、提交边界说明
+--------------------------------------------------------------------------------
+- 本提交严格只包含 CS-204 前端相关文件；未纳入并行工作线
+  （review.ts / *Review*.vue / order/* / product/* / refund / TablePagination.vue
+   / table-pagination.test.ts / 2026_09_17_000037_* 迁移 等）。
+- 共享文件 admin/src/router/index.ts 与 admin/src/layouts/AdminLayout.vue
+  在本提交中仅新增 CS-204 路由/菜单片段，经 git diff 确认不含其他改动。
+- 后端接口由 CS-203(758e25a) 提供，本提交为纯前端消费侧。

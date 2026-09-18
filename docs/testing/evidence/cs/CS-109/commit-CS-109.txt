@@ -1,0 +1,32 @@
+# CS-109 提交记录（commit evidence）
+
+| 项 | 值 |
+|----|----|
+| 任务 | CS-109（客服中心一期） |
+| 提交 | `849d171` feat(cs): 客服中心一期（CS-101~CS-117）后端 + 前端 + 测试 + 证据 |
+| 完整哈希 | `849d171d85458a0d3450642a9be155b44344d812` |
+| 提交时间 | 2026-09-17 17:33:44 +0800 |
+| 证据生成时间 | 2026-09-17 17:34:43 |
+
+> 说明：CS-101 ~ CS-117 属同一期连续交付，代码与文档存在双向依赖（例如 `CsTicketService` 同时服务 CS-105/106/109），故整体落在单次提交中；下表为该任务涉及文件在本次提交内的快照统计。
+
+## 本任务涉及文件
+
+- `backend/app/Http/Controllers/Admin/CsTicketController.php`
+- `backend/tests/Feature/CsTicketStateMachineApiTest.php`
+
+## 提交统计（git show --stat）
+
+```text
+849d171 feat(cs): 客服中心一期（CS-101~CS-117）后端 + 前端 + 测试 + 证据
+ .../Http/Controllers/Admin/CsTicketController.php  | 325 +++++++++++++++++++++
+ .../tests/Feature/CsTicketStateMachineApiTest.php  | 148 ++++++++++
+ 2 files changed, 473 insertions(+)
+```
+
+## 复核命令
+
+```bash
+git show --stat 849d171 -- backend/app/Http/Controllers/Admin/CsTicketController.php backend/tests/Feature/CsTicketStateMachineApiTest.php
+git show 849d171:backend/app/Http/Controllers/Admin/CsTicketController.php   # 查看某文件在该提交的完整内容
+```

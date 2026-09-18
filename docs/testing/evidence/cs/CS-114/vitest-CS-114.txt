@@ -1,0 +1,32 @@
+
+[1m[30m[46m RUN [49m[39m[22m [36mv5.0.1 [39m[90mD:/codeproject/PHP/CubeShop/admin[39m
+
+ [32m✓[39m tests/cs-ticket.test.ts[2m > [22m客服工单工作台 CsTicketView（CS-114）[2m > [22m列表渲染与待处理红点数字与接口一致[32m 42[2mms[22m[39m
+ [32m✓[39m tests/cs-ticket.test.ts[2m > [22m客服工单工作台 CsTicketView（CS-114）[2m > [22m筛选条件变化触发列表重新请求且参数正确[32m 17[2mms[22m[39m
+ [32m✓[39m tests/cs-ticket.test.ts[2m > [22m客服工单工作台 CsTicketView（CS-114）[2m > [22m详情：消息流区分发送方，内部备注带「仅客服可见」标记[32m 17[2mms[22m[39m
+ [32m✓[39m tests/cs-ticket.test.ts[2m > [22m客服工单工作台 CsTicketView（CS-114）[2m > [22m状态变更按钮按状态矩阵给出可选目标[32m 12[2mms[22m[39m
+ [32m✓[39m tests/cs-ticket.test.ts[2m > [22m客服工单工作台 CsTicketView（CS-114）[2m > [22m无 cs.ticket.handle 权限时隐藏回复框与操作按钮[32m 13[2mms[22m[39m
+[90mstderr[2m | tests/cs-ticket.test.ts[2m > [22m[2m侧栏客服菜单权限显隐（CS-114 / R7）[2m > [22m[2m无 cs.ticket.view / cs.faq.manage 时不渲染客服菜单
+[22m[39m[Vue Router warn]: No match found for location with path "/dashboard"
+[Vue Router warn]: No match found for location with path "/reviews"
+[Vue Router warn]: No match found for location with path "/dashboard"
+[Vue Router warn]: No match found for location with path "/reviews"
+
+[90mstderr[2m | tests/cs-ticket.test.ts[2m > [22m[2m侧栏客服菜单权限显隐（CS-114 / R7）[2m > [22m[2m有权限时渲染「服务工单」「帮助中心」菜单
+[22m[39m[Vue Router warn]: No match found for location with path "/dashboard"
+[Vue Router warn]: No match found for location with path "/cs/tickets"
+[Vue Router warn]: No match found for location with path "/cs/faq"
+[Vue Router warn]: No match found for location with path "/dashboard"
+[Vue Router warn]: No match found for location with path "/cs/tickets"
+[Vue Router warn]: No match found for location with path "/cs/faq"
+
+ [32m✓[39m tests/cs-ticket.test.ts[2m > [22m客服工单工作台 CsTicketView（CS-114）[2m > [22m有 handle 权限时展示回复框，可发送回复[32m 15[2mms[22m[39m
+ [32m✓[39m tests/cs-ticket.test.ts[2m > [22m客服工单工作台 CsTicketView（CS-114）[2m > [22m转交客服调用接口并刷新列表[32m 12[2mms[22m[39m
+ [32m✓[39m tests/cs-ticket.test.ts[2m > [22m侧栏客服菜单权限显隐（CS-114 / R7）[2m > [22m无 cs.ticket.view / cs.faq.manage 时不渲染客服菜单[32m 17[2mms[22m[39m
+ [32m✓[39m tests/cs-ticket.test.ts[2m > [22m侧栏客服菜单权限显隐（CS-114 / R7）[2m > [22m有权限时渲染「服务工单」「帮助中心」菜单[32m 10[2mms[22m[39m
+
+[2m Test Files [22m [1m[32m1 passed[39m[22m[90m (1)[39m
+[2m      Tests [22m [1m[32m9 passed[39m[22m[90m (9)[39m
+[2m   Start at [22m 16:23:38
+[2m   Duration [22m 1.63s[2m (environment 53%, transform 18%, import 17%, tests 11%, setup 1%, worker 1%)[22m
+

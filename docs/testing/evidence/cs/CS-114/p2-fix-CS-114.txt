@@ -1,0 +1,30 @@
+# CS-114 衍修记录：转交名单改按权限过滤（P2 缺陷 #4 配套）
+
+- 任务：CS-114（后台工单工作台）
+- 关联缺陷：`CS-117/acceptance-CS-117.md` §6 #4
+- 日期：2026-09-17
+
+## 问题
+
+工作台的「转交客服」下拉原先调用 `GET /api/admin/accounts`（需 `account.manage`）。
+新增客服角色 `cs_agent` 后该角色没有账号管理权限，`getAccounts` 必然 403，
+前端 `catch` 成空数组 → **转交功能对客服静默失效**（下拉只有「未分配」）。
+
+## 修复
+
+| 层 | 改动 |
+|----|------|
+| 后端 | 新增 `Admin\CsTicketController::assignees()`：返回**持有 `cs.ticket.view` 且状态启用**的账号（id / username / nickname） |
+| 路由 | `GET /api/admin/cs/assignees`，守卫 `permission:cs.ticket.handle` |
+| 前端 | `admin/src/api/cs.ts` 新增 `getCsAssignees()`；`CsTicketView.vue` 改用它装载名单，下拉文案改为「昵称优先，回退用户名」 |
+
+设计取舍：可见范围 = 可转交范围。既让客服无需账号管理权限即可转交，又不会顺带把后台全部账号暴露给客服。
+
+## 验证
+
+| 类型 | 内容 | 结果 |
+|------|------|------|
+| 集成 | `CsAgentRoleTest`「转交名单按权限过滤」：客服读到（含自己与超管、不含 operator）；operator 403 | 通过 |
+| 前端 | `admin/tests/cs-ticket.test.ts`：断言调用 `getCsAssignees`、下拉选项为 `['未分配', '客服小美']`、按值转交仍调用 `assignCsTicket(1, 5)` | 通过 |
+| 双库回归 | `CS-103/pest-CS-103-p2fix.txt`、`CS-103/pest-pgsql-CS-103-p2fix.txt` | 均 206 passed / 694 assertions |
+| 浏览器 | 服务工单页（客服视角）正常渲染列表 | `CS-117/ui/ui-CS-117-cs-agent-tickets.png` |
