@@ -4,6 +4,7 @@ import { useRouter } from 'vue-router'
 import { Heart, Trash2 } from 'lucide-vue-next'
 import { batchRemoveFavorites, getFavorites, type FavoriteItem } from '@/api/favorite'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
+import Pagination from '@/components/Pagination.vue'
 import LoadingSpinner from '@/components/LoadingSpinner.vue'
 import ShopFooter from '@/components/ShopFooter.vue'
 import ShopHeader from '@/components/ShopHeader.vue'
@@ -20,7 +21,7 @@ const loading = ref(true)
 const tip = ref('')
 const list = ref<FavoriteItem[]>([])
 const pagination = ref({ page: 1, page_size: 20, total: 0, total_pages: 1 })
-const selected = ref<Set<number>>(new Set())
+const selected = ref<Set<string>>(new Set())
 const confirmOpen = ref(false)
 
 const allSelected = computed(() => list.value.length > 0 && list.value.every((i) => selected.value.has(i.id)))
@@ -38,7 +39,7 @@ async function load(page = 1) {
   }
 }
 
-function toggle(id: number) {
+function toggle(id: string) {
   const next = new Set(selected.value)
   if (next.has(id)) next.delete(id)
   else next.add(id)
@@ -124,11 +125,11 @@ onMounted(() => {
           >{{ item.unavailable_reason || '已失效' }}</span>
 
           <div
-            class="flex aspect-square cursor-pointer items-center justify-center bg-gradient-to-br from-[#f5faff] to-[#e6f4ff]"
+            class="relative aspect-square cursor-pointer overflow-hidden bg-gradient-to-br from-[#f5faff] to-[#e6f4ff]"
             @click="goDetail(item)"
           >
-            <img v-if="item.main_image" :src="item.main_image" class="h-full w-full object-cover" :class="!item.is_available && 'grayscale'" alt="" />
-            <span v-else class="text-5xl">{{ !item.is_available ? '💤' : '📦' }}</span>
+            <img v-if="item.main_image" :src="item.main_image" class="absolute inset-0 h-full w-full object-cover object-center" :class="!item.is_available && 'grayscale'" alt="" />
+            <span v-else class="absolute inset-0 flex items-center justify-center text-5xl">{{ !item.is_available ? '💤' : '📦' }}</span>
           </div>
 
           <div class="flex flex-1 flex-col gap-1 p-3">
@@ -146,15 +147,8 @@ onMounted(() => {
         </div>
       </div>
 
-      <!-- 分页 -->
-      <div v-if="pagination.total_pages > 1" class="mt-6 flex justify-center gap-2">
-        <button
-          v-for="p in pagination.total_pages" :key="p"
-          class="h-8 min-w-8 rounded border px-2 text-[13px]"
-          :class="p === pagination.page ? 'border-[#1677ff] bg-[#1677ff] text-white' : 'border-slate-200 bg-white hover:border-[#1677ff]'"
-          @click="load(p)"
-        >{{ p }}</button>
-      </div>
+      <!-- 分页（统一分页条，风格与后台一致） -->
+      <Pagination v-if="pagination.total_pages > 1" :pagination="pagination" @change="(p: number) => load(p)" />
     </main>
     <ShopFooter />
 

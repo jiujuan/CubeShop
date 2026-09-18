@@ -118,11 +118,11 @@ onMounted(() => {
                 style="margin: 8px;"
               >已失效</span>
               <div
-                class="flex aspect-square cursor-pointer items-center justify-center bg-gradient-to-br from-[#f5faff] to-[#e6f4ff]"
+                class="relative aspect-square cursor-pointer overflow-hidden bg-gradient-to-br from-[#f5faff] to-[#e6f4ff]"
                 @click="goDetail(item)"
               >
-                <img v-if="item.main_image" :src="item.main_image" class="h-full w-full object-cover" :class="!item.is_available && 'grayscale'" alt="" />
-                <span v-else class="text-5xl">📦</span>
+                <img v-if="item.main_image" :src="item.main_image" class="absolute inset-0 h-full w-full object-cover object-center" :class="!item.is_available && 'grayscale'" alt="" />
+                <span v-else class="absolute inset-0 flex items-center justify-center text-5xl">📦</span>
               </div>
               <div class="flex flex-1 flex-col gap-1 p-3">
                 <div class="truncate text-sm font-semibold text-slate-800" :title="item.title">{{ item.title }}</div>

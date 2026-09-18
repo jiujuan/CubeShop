@@ -2,7 +2,7 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
-  ArrowUpDown, BadgeCheck, Bike, ChevronDown, ChevronLeft, ChevronRight, ChevronUp,
+  ArrowUpDown, BadgeCheck, Bike, ChevronDown, ChevronRight, ChevronUp,
   Flame, Gem, Headphones, Home as HomeIcon, House, LayoutGrid, List, PackageOpen,
   Shirt, SlidersHorizontal, Smartphone, Sparkles, Truck, X,
 } from 'lucide-vue-next'
@@ -10,7 +10,9 @@ import {
   getAttributes, getBrands, getCategories, getProducts,
   type AttributeOption, type BrandOption, type CategoryNode, type ProductBrief,
 } from '@/api/shop'
+import type { PublicPagination } from '@/api/types'
 import ProductCard from '@/components/ProductCard.vue'
+import Pagination from '@/components/Pagination.vue'
 import ShopFooter from '@/components/ShopFooter.vue'
 import ShopHeader from '@/components/ShopHeader.vue'
 import LoadingSpinner from '@/components/LoadingSpinner.vue'
@@ -24,11 +26,12 @@ const route = useRoute()
 const router = useRouter()
 
 const keyword = ref((route.query.keyword as string) || '')
-const categoryId = ref<number | undefined>(route.params.id ? Number(route.params.id) : undefined)
+const categoryId = ref<string | undefined>(route.params.id ? String(route.params.id) : undefined)
 const sort = ref((route.query.sort as string) || 'newest')
 const categories = ref<CategoryNode[]>([])
 const list = ref<ProductBrief[]>([])
-const pagination = ref({ page: 1, page_size: 20, total: 0, total_pages: 1 })
+// SEC-04：公开商品列表不返回精确总量，total / total_pages 为 null，翻页用 has_more
+const pagination = ref<PublicPagination>({ page: 1, page_size: 20, total: null, total_pages: null, has_more: false })
 const loading = ref(false)
 const viewMode = ref<'grid' | 'list'>('grid')
 
@@ -41,13 +44,13 @@ const maxPrice = ref('')
 const filterOpen = ref(false)
 const brands = ref<BrandOption[]>([])
 const filterAttributes = ref<AttributeOption[]>([])
-const selectedBrands = ref<number[]>([])
+const selectedBrands = ref<string[]>([])
 const selectedAttrs = ref<Record<number, string[]>>({})
 
 /** 从 URL query 还原筛选态（可分享复现） */
 function parseFiltersFromQuery() {
   const brandQ = (route.query.brand as string) || ''
-  selectedBrands.value = brandQ ? brandQ.split(',').map(Number).filter(Boolean) : []
+  selectedBrands.value = brandQ ? brandQ.split(',').map((x) => x.trim()).filter(Boolean) : []
 
   const raw = route.query.attr
   const arr = Array.isArray(raw) ? raw : raw ? [raw] : []
@@ -117,7 +120,7 @@ watch(
   () => route.fullPath,
   async () => {
     keyword.value = (route.query.keyword as string) || ''
-    categoryId.value = route.params.id ? Number(route.params.id) : undefined
+    categoryId.value = route.params.id ? String(route.params.id) : undefined
     sort.value = (route.query.sort as string) || 'newest'
     priceFilterOpen.value = false
     parseFiltersFromQuery()
@@ -128,11 +131,11 @@ watch(
 
 /* ---------- 筛选交互 ---------- */
 
-function isBrandSelected(id: number) {
+function isBrandSelected(id: string) {
   return selectedBrands.value.includes(id)
 }
 
-function toggleBrand(id: number) {
+function toggleBrand(id: string) {
   selectedBrands.value = isBrandSelected(id)
     ? selectedBrands.value.filter((x) => x !== id)
     : [...selectedBrands.value, id]
@@ -205,7 +208,7 @@ const activeName = computed(() => {
 })
 
 /** 点击分类 → 跳转分类列表页（URL 驱动） */
-function goCategory(id?: number) {
+function goCategory(id?: string) {
   if (id) router.push(`/category/${id}`)
 }
 
@@ -238,27 +241,10 @@ const hasPriceFilter = computed(() => minPrice.value !== '' || maxPrice.value !=
 
 /* ---------- 分页 ---------- */
 
-/** 页码窗口：1 … (p-2..p+2) … 末页 */
-const pageItems = computed<(number | '…')[]>(() => {
-  const tp = pagination.value.total_pages
-  const cur = pagination.value.page
-  if (tp <= 7) return Array.from({ length: tp }, (_, i) => i + 1)
-  let start = Math.max(2, cur - 2)
-  const end = Math.min(tp - 1, start + 4)
-  start = Math.max(2, end - 4)
-  const items: (number | '…')[] = [1]
-  if (start > 2) items.push('…')
-  for (let p = start; p <= end; p++) items.push(p)
-  if (end < tp - 1) items.push('…')
-  items.push(tp)
-  return items
-})
-
-function goPage(page: number) {
-  if (page >= 1 && page <= pagination.value.total_pages && page !== pagination.value.page) {
-    load(page)
-    window.scrollTo({ top: 0, behavior: 'smooth' })
-  }
+/** 翻页：交给统一分页组件，跳页时回顶 */
+function onPage(page: number) {
+  load(page)
+  window.scrollTo({ top: 0, behavior: 'smooth' })
 }
 
 /* ---------- 展示辅助 ---------- */
@@ -441,9 +427,8 @@ function clearAllFilters() {
               <span v-if="filterCount" class="rounded-full bg-[#1677ff] px-1.5 text-[11px] leading-4 text-white">{{ filterCount }}</span>
             </button>
 
-            <!-- 右侧：总数 + 视图切换 -->
+              <!-- 右侧：视图切换 -->
             <div class="ml-auto flex items-center gap-3 text-[13px] text-slate-500">
-              共 {{ pagination.total }} 件商品
               <div class="flex overflow-hidden rounded-md border border-slate-200">
                 <button
                   class="flex h-7 w-8 items-center justify-center"
@@ -550,27 +535,8 @@ function clearAllFilters() {
             >去首页逛逛</button>
           </div>
 
-          <!-- 分页 -->
-          <div v-if="pagination.total_pages > 1" class="mt-6 flex items-center justify-center gap-1.5 pb-4 text-sm">
-            <button
-              class="flex h-8 w-8 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-500 hover:border-[#1677ff] hover:text-[#1677ff] disabled:opacity-40"
-              :disabled="pagination.page <= 1" @click="goPage(pagination.page - 1)"
-            ><ChevronLeft class="h-4 w-4" /></button>
-            <template v-for="(item, i) in pageItems" :key="i">
-              <span v-if="item === '…'" class="px-1 text-slate-400">…</span>
-              <button
-                v-else
-                class="h-8 min-w-8 rounded-md border px-2"
-                :class="item === pagination.page ? 'border-[#1677ff] bg-[#1677ff] font-medium text-white' : 'border-slate-200 bg-white text-slate-600 hover:border-[#1677ff] hover:text-[#1677ff]'"
-                @click="goPage(item)"
-              >{{ item }}</button>
-            </template>
-            <button
-              class="flex h-8 items-center gap-0.5 rounded-md border border-slate-200 bg-white px-3 text-slate-500 hover:border-[#1677ff] hover:text-[#1677ff] disabled:opacity-40"
-              :disabled="pagination.page >= pagination.total_pages" @click="goPage(pagination.page + 1)"
-            >下一页 <ChevronRight class="h-3.5 w-3.5" /></button>
-            <span class="ml-2 text-xs text-slate-400">共 {{ pagination.total_pages }} 页</span>
-          </div>
+          <!-- 分页（统一分页条，风格与后台一致） -->
+          <Pagination v-if="pagination.has_more || pagination.page > 1 || pagination.total_pages != null" :pagination="pagination" @change="onPage" />
         </section>
       </div>
     </main>

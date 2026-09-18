@@ -5,6 +5,7 @@ import { Ticket } from 'lucide-vue-next'
 import { getMyCoupons, type UserCouponItem, type UserCouponStatus } from '@/api/coupon'
 import { couponConditionText, couponValueText } from '@/utils/coupon'
 import LoadingSpinner from '@/components/LoadingSpinner.vue'
+import Pagination from '@/components/Pagination.vue'
 import ShopFooter from '@/components/ShopFooter.vue'
 import ShopHeader from '@/components/ShopHeader.vue'
 import { useAuthStore } from '@/stores/auth'
@@ -169,20 +170,8 @@ function gotoOrder(c: UserCouponItem) {
           </div>
         </div>
 
-        <!-- 分页 -->
-        <div v-if="pagination.total_pages > 1" class="mt-4 flex items-center justify-center gap-1 text-sm" data-testid="mycoupon-pager">
-          <button
-            class="rounded border border-slate-200 px-3 py-1 disabled:opacity-40"
-            data-testid="mycoupon-prev"
-            :disabled="pagination.page <= 1" @click="goPage(pagination.page - 1)"
-          >上一页</button>
-          <span class="px-3 text-slate-400">{{ pagination.page }} / {{ pagination.total_pages }}</span>
-          <button
-            class="rounded border border-slate-200 px-3 py-1 disabled:opacity-40"
-            data-testid="mycoupon-next"
-            :disabled="pagination.page >= pagination.total_pages" @click="goPage(pagination.page + 1)"
-          >下一页</button>
-        </div>
+        <!-- 分页（统一分页条，风格与后台一致） -->
+        <Pagination v-if="pagination.total_pages > 1" :pagination="pagination" @change="goPage" />
       </template>
     </main>
 
