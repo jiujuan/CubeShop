@@ -3,10 +3,12 @@
 namespace App\Http\Controllers;
 
 use App\Exceptions\BusinessException;
+use App\Http\Resources\OrderResource;
 use App\Models\Order;
 use App\Services\Order\OrderService;
 use App\Services\Refund\RefundService;
 use App\Support\ApiResponse;
+use App\Support\PublicId;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
@@ -21,6 +23,25 @@ class OrderController extends Controller
 
     public function __construct(private OrderService $orders)
     {
+    }
+
+    /**
+     * 解析订单对外标识（P2-11 终态）：对外只暴露 public_id（ULID），兼容历史 int 主键；
+     * 解析不出一律 404，且始终带 user_id 过滤，避免 public_id 替换过程中引入越权。
+     */
+    private function ownOrder(Request $request, string $id): Order
+    {
+        $orderId = PublicId::resolve(PublicId::SCOPE_ORDER, $id);
+        if ($orderId === null) {
+            throw BusinessException::notFound('订单不存在');
+        }
+
+        $order = Order::where('user_id', $request->user()->id)->find($orderId);
+        if (! $order) {
+            throw BusinessException::notFound('订单不存在');
+        }
+
+        return $order;
     }
 
     /** 创建订单（结算；V1.1 F06 / T-035 支持 user_coupon_id / promotion_id） */
@@ -47,7 +68,7 @@ class OrderController extends Controller
         );
 
         return $this->success([
-            'order_id' => $order->id,
+            'order_id' => $order->public_id,
             'order_no' => $order->order_no,
             'total_amount' => $order->total_amount,
             'discount_amount' => $order->discount_amount,
@@ -104,11 +125,11 @@ class OrderController extends Controller
         }
 
         $paginator = $query
-            ->with('items')
+            ->with('items.product', 'items.sku', 'items.review')
             ->orderByDesc('id')
             ->paginate(min($data['page_size'] ?? 20, 100), ['*'], 'page', $data['page'] ?? 1);
 
-        $paginator->through(fn (Order $order) => $this->brief($order));
+        $paginator->through(fn (Order $order) => new OrderResource($order));
 
         return $this->paginated($paginator);
     }
@@ -140,12 +161,9 @@ class OrderController extends Controller
     }
 
     /** 再次购买（V1.1 E02-D / T-004）：按历史订单行项目加入购物车 */
-    public function rebuy(Request $request, int $id): JsonResponse
+    public function rebuy(Request $request, string $id): JsonResponse
     {
-        $order = Order::where('user_id', $request->user()->id)->find($id);
-        if (! $order) {
-            throw BusinessException::notFound('订单不存在');
-        }
+        $order = $this->ownOrder($request, $id);
 
         $result = $this->orders->rebuy($order, $request->user()->id);
 
@@ -157,17 +175,42 @@ class OrderController extends Controller
     }
 
     /** 订单详情（仅本人） */
-    public function show(Request $request, int $id): JsonResponse
+    public function show(Request $request, string $id): JsonResponse
     {
-        $order = Order::where('user_id', $request->user()->id)
-            ->with('items')
-            ->find($id);
+        $order = $this->ownOrder($request, $id);
+        $order->load('items.product', 'items.sku', 'items.review', 'refunds', 'logs');
 
-        if (! $order) {
-            throw BusinessException::notFound('订单不存在');
+        return $this->success(new OrderResource($order));
+    }
+
+    /**
+     * 订单物流信息（仅本人，V1.1 T-046）
+     * GET /orders/{id}/shipping
+     */
+    public function shipping(Request $request, string $id): JsonResponse
+    {
+        $order = $this->ownOrder($request, $id);
+
+        $shipping = $order->shipping()->first();
+
+        if (! $shipping) {
+            return $this->success(null);
         }
 
-        return $this->success($this->detail($order));
+        $traces = $shipping->traces()->orderByDesc('occurred_at')->orderByDesc('id')->get();
+
+        return $this->success([
+            'express_company' => $shipping->company_name,
+            'tracking_no' => $shipping->tracking_no,
+            'trace_status' => $shipping->trace_status,
+            'shipped_at' => $shipping->shipped_at?->toDateTimeString(),
+            'delivered_at' => $shipping->delivered_at?->toDateTimeString(),
+            'has_trace' => $traces->isNotEmpty(),
+            'traces' => $traces->map(fn ($t) => [
+                'context' => $t->context,
+                'occurred_at' => $t->occurred_at->toDateTimeString(),
+            ])->all(),
+        ]);
     }
 
     /** 订单详情（按订单号，仅本人） */
@@ -175,45 +218,41 @@ class OrderController extends Controller
     {
         $order = Order::where('user_id', $request->user()->id)
             ->where('order_no', $orderNo)
-            ->with('items')
+            ->with('items.product', 'items.sku', 'items.review', 'refunds', 'logs')
             ->first();
 
         if (! $order) {
             throw BusinessException::notFound('订单不存在');
         }
 
-        return $this->success($this->detail($order));
+        return $this->success(new OrderResource($order));
     }
 
     /** 取消订单（释放库存） */
-    public function cancel(Request $request, int $id): JsonResponse
+    public function cancel(Request $request, string $id): JsonResponse
     {
         $data = $request->validate([
             'reason' => ['nullable', 'string', 'max:100'],
         ]);
 
-        $order = Order::where('user_id', $request->user()->id)->find($id);
-        if (! $order) {
-            throw BusinessException::notFound('订单不存在');
-        }
+        $order = $this->ownOrder($request, $id);
 
         $order = $this->orders->cancel($order, $request->user()->id, $data['reason'] ?? null);
 
-        return $this->success($this->detail($order->load('items')), '订单已取消');
+        $order->load('items.product', 'items.sku', 'items.review', 'refunds', 'logs');
+
+        return $this->success(new OrderResource($order), '订单已取消');
     }
 
     /** 确认收货（V1.1 E02-A / T-002）：shipped → completed，幂等 */
-    public function confirm(Request $request, int $id): JsonResponse
+    public function confirm(Request $request, string $id): JsonResponse
     {
-        $order = Order::where('user_id', $request->user()->id)->find($id);
-        if (! $order) {
-            throw BusinessException::notFound('订单不存在');
-        }
+        $order = $this->ownOrder($request, $id);
 
         $order = $this->orders->confirm($order, $request->user()->id);
 
         return $this->success([
-            'id' => $order->id,
+            'id' => $order->public_id,
             'order_no' => $order->order_no,
             'status' => $order->status,
             'status_label' => Order::STATUS_LABELS[$order->status] ?? $order->status,
@@ -222,7 +261,7 @@ class OrderController extends Controller
     }
 
     /** 提交评价（V1.1 F01 / T-015）：POST /orders/{orderId}/items/{itemId}/review */
-    public function review(Request $request, int $orderId, int $itemId, \App\Services\Review\ReviewService $reviews): JsonResponse
+    public function review(Request $request, string $orderId, string $itemId, \App\Services\Review\ReviewService $reviews): JsonResponse
     {
         $data = $request->validate([
             'rating' => ['required', 'integer', 'min:1', 'max:5'],
@@ -232,12 +271,12 @@ class OrderController extends Controller
             'is_anonymous' => ['nullable', 'boolean'],
         ]);
 
-        $order = Order::where('user_id', $request->user()->id)->find($orderId);
-        if (! $order) {
-            throw BusinessException::notFound('订单不存在');
-        }
+        $order = $this->ownOrder($request, $orderId);
 
-        $item = \App\Models\OrderItem::where('order_id', $order->id)->find($itemId);
+        $itemId = PublicId::resolve(PublicId::SCOPE_ORDER_ITEM, $itemId);
+        $item = $itemId === null
+            ? null
+            : \App\Models\OrderItem::where('order_id', $order->id)->find($itemId);
         if (! $item) {
             throw BusinessException::notFound('订单行项目不存在');
         }
@@ -249,24 +288,21 @@ class OrderController extends Controller
             : '评价成功';
 
         return $this->success([
-            'id' => $review->id,
+            'id' => $review->public_id,
             'rating' => $review->rating,
             'status' => $review->status,
         ], $message);
     }
 
     /** 申请退款（API 文档 6.5 / Roadmap P5） */
-    public function refund(Request $request, int $id, RefundService $refunds): JsonResponse
+    public function refund(Request $request, string $id, RefundService $refunds): JsonResponse
     {
         $data = $request->validate([
             'reason' => ['nullable', 'string', 'max:200'],
             'amount' => ['nullable', 'numeric', 'min:0.01'],
         ]);
 
-        $order = Order::where('user_id', $request->user()->id)->find($id);
-        if (! $order) {
-            throw BusinessException::notFound('订单不存在');
-        }
+        $order = $this->ownOrder($request, $id);
 
         $refund = $refunds->apply(
             order: $order,
@@ -276,102 +312,10 @@ class OrderController extends Controller
         );
 
         return $this->success([
-            'refund_id' => $refund->id,
+            'refund_id' => $refund->public_id,
             'refund_no' => $refund->refund_no,
             'amount' => (string) $refund->amount,
             'status' => $refund->status,
         ], '退款申请已提交，等待审核');
-    }
-
-    /** 列表项简要结构 */
-    private function brief(Order $order): array
-    {
-        $items = $order->items->map(fn ($item) => [
-            'id' => $item->id,
-            'product_id' => $item->product_id,
-            'sku_id' => $item->sku_id,
-            'product_title' => $item->product_title,
-            'sku_specs' => $item->sku_specs ?? [],
-            'sku_image' => $item->sku_image,
-            'price' => $item->price,
-            'quantity' => $item->quantity,
-            'total_amount' => $item->total_amount,
-            // V1.1 F06 / T-035：行级优惠分摊（退款按行实付计算，T-036 使用）
-            'coupon_share' => $item->coupon_share,
-            'promotion_share' => $item->promotion_share,
-            'payable_amount' => number_format($item->payableAmount(), 2, '.', ''),
-        ])->all();
-
-        // V1.1 T-004：前 3 个商品缩略预览（避免列表页传输整单明细）
-        $preview = array_slice(array_map(fn ($i) => [
-            'product_id' => $i['product_id'],
-            'product_title' => $i['product_title'],
-            'sku_image' => $i['sku_image'],
-            'quantity' => $i['quantity'],
-        ], $items), 0, 3);
-
-        return [
-            'id' => $order->id,
-            'order_no' => $order->order_no,
-            'status' => $order->status,
-            'status_label' => Order::STATUS_LABELS[$order->status] ?? $order->status,
-            'total_amount' => $order->total_amount,
-            'freight_amount' => $order->freight_amount,
-            'pay_amount' => $order->pay_amount,
-            // V1.1 F06 / T-035：优惠汇总与分摊快照（历史无券订单为 0 / null，前端兼容）
-            'coupon_id' => $order->coupon_id,
-            'discount_amount' => $order->discount_amount ?? '0.00',
-            'promotion_discount' => $order->promotion_discount ?? '0.00',
-            'amount_details' => $order->amount_details,
-            'item_count' => (int) $order->items->sum('quantity'),
-            'items_preview' => $preview,
-            'items' => $items,
-            'actions' => $order->actions(),
-            'created_at' => $order->created_at?->format('Y-m-d H:i:s'),
-        ];
-    }
-
-    /** 详情结构 */
-    private function detail(Order $order): array
-    {
-        $refunds = $order->refunds()->orderByDesc('id')->get()->map(fn ($r) => [
-            'refund_no' => $r->refund_no,
-            'amount' => (string) $r->amount,
-            'reason' => $r->reason,
-            'status' => $r->status,
-            'admin_remark' => $r->admin_remark,
-            'created_at' => $r->created_at?->format('Y-m-d H:i:s'),
-        ])->all();
-
-        // V1.1 T-001/T-005：状态流水，供前端时间轴渲染
-        $logs = app(\App\Services\Order\OrderLogService::class)->timeline($order);
-
-        // V1.1 F01 / T-016：行项目评价状态（用于「评价 / 修改评价」按钮）
-        $reviews = \App\Models\Review::where('order_id', $order->id)->get()->keyBy('order_item_id');
-        $detail = $this->brief($order);
-        $detail['items'] = array_map(function ($item) use ($reviews) {
-            $review = $reviews->get($item['id']);
-            $item['review'] = $review ? [
-                'id' => $review->id,
-                'rating' => $review->rating,
-                'content' => $review->content,
-                'status' => $review->status,
-                'can_edit' => $review->canEdit(),
-            ] : null;
-
-            return $item;
-        }, $detail['items']);
-
-        return $detail + [
-            'remark' => $order->remark,
-            'address_snapshot' => $order->address_snapshot,
-            'cancel_reason' => $order->cancel_reason,
-            'refunds' => $refunds,
-            'logs' => $logs,
-            'paid_at' => $order->paid_at?->format('Y-m-d H:i:s'),
-            'shipped_at' => $order->shipped_at?->format('Y-m-d H:i:s'),
-            'completed_at' => $order->completed_at?->format('Y-m-d H:i:s'),
-            'cancelled_at' => $order->cancelled_at?->format('Y-m-d H:i:s'),
-        ];
     }
 }

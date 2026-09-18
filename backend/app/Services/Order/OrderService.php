@@ -3,11 +3,13 @@
 namespace App\Services\Order;
 
 use App\Exceptions\BusinessException;
+use App\Events\OrderShipped;
 use App\Models\CartItem;
 use App\Models\Order;
 use App\Models\OrderItem;
 use App\Models\OrderLog;
 use App\Models\ProductSku;
+use App\Models\Shipping;
 use App\Models\UserAddress;
 use App\Models\UserCoupon;
 use App\Services\Common\ConfigService;
@@ -321,8 +323,56 @@ class OrderService
     }
 
     /**
-     * 再次购买（V1.1 E02-D / T-004）
+     * 发货（V1.1 T-043，E03）：pending_ship → shipped，写入物流记录与订单冗余双号
      *
+     * - `paid → shipped` 状态机流转复用 transitionTo（重复发货/非法状态由其拒绝）；
+     * - 同一事务内写 `shippings`（公司名称快照）并回填 `orders.express_company`/`tracking_no`；
+     * - 运单号唯一约束（同公司组合唯一）由表级索引兜底，业务层先行校验给友好错误。
+     */
+    public function shipForShipment(
+        Order $order,
+        string $companyCode,
+        string $companyName,
+        string $trackingNo,
+        ?string $reason = null,
+        ?int $operatorId = null,
+        string $operatorType = OrderLog::OPERATOR_ADMIN,
+    ): Order {
+        $shipped = DB::transaction(function () use ($order, $companyCode, $companyName, $trackingNo, $reason, $operatorId, $operatorType) {
+            $result = $this->transitionTo(
+                $order,
+                Order::STATUS_SHIPPED,
+                $reason ?? '商家已发货',
+                'ship',
+                $operatorId,
+                $operatorType,
+            );
+
+            Shipping::create([
+                'order_id' => $result->id,
+                'company_code' => $companyCode,
+                'company_name' => $companyName,
+                'tracking_no' => $trackingNo,
+                'trace_status' => Shipping::TRACE_PENDING,
+                'shipped_at' => $result->shipped_at ?? now(),
+            ]);
+
+            // 冗余双号（列表/导出直接用）
+            $result->express_company = $companyName;
+            $result->tracking_no = $trackingNo;
+            $result->save();
+
+            return $result;
+        });
+
+        // 事务提交后发通知（单笔发货与批量发货共用，T-044）
+        OrderShipped::dispatch($shipped);
+
+        return $shipped;
+    }
+
+    /**
+     * 再次购买（V1.1 E02-D / T-004）
      * 按历史订单行项目批量加入购物车：
      * - 逐行校验商品上架状态、SKU 启用状态与可用库存；
      * - 失效行跳过并返回原因；

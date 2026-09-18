@@ -184,6 +184,13 @@ class PaymentController extends Controller
         ]);
 
         $payments = $this->buildQuery($data)->orderByDesc('id')->limit(5000)->get();
+
+        // SEC-09：导出审计
+        $this->opLog->record($request->user()->id, 'payment', 'export', 'payments', null, [
+            'count' => $payments->count(),
+            'filter' => $data,
+        ]);
+
         $filename = 'payments-'.now()->format('YmdHis').'.csv';
 
         return response()->streamDownload(function () use ($payments) {

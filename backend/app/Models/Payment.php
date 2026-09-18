@@ -71,6 +71,7 @@ class Payment extends Model
         'biz_type', 'biz_no',
         'payer_name', 'payer_account', 'transfer_no', 'transferred_at', 'voucher_url',
         'review_remark', 'reviewed_by', 'reviewed_at',
+        'submitted_by', 'submitted_by_type',
     ];
 
     protected $casts = [
@@ -79,6 +80,10 @@ class Payment extends Model
         'transferred_at' => 'datetime',
         'reviewed_at' => 'datetime',
     ];
+
+    /** 提交人身份域：买家（users）或管理员（sys_user） */
+    public const SUBMITTER_USER = 'user';
+    public const SUBMITTER_ADMIN = 'sys_user';
 
     protected $attributes = [
         'biz_type' => self::BIZ_TYPE_ORDER,
