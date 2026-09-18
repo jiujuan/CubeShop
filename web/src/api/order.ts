@@ -136,6 +136,8 @@ export interface RefundBrief {
   type?: 'refund' | 'return_refund'
   amount: string
   reason: string | null
+  /** 用户上传的凭证图片（URL 数组） */
+  images?: string[]
   status: 'pending' | 'approved' | 'rejected' | 'success' | 'failed'
   return_status?: 'waiting_return' | 'shipping' | 'received' | 'exception' | null
   return_details?: { sku_id: number; product_title?: string | null; sku_specs?: Record<string, string> | null; quantity: number }[] | null
@@ -148,9 +150,11 @@ export interface RefundBrief {
 export interface ApplyRefundPayload {
   reason?: string
   type?: 'refund' | 'return_refund'
-  return_details?: { sku_id: number; quantity: number; product_title?: string; sku_specs?: Record<string, string> }[]
+  return_details?: { sku_id: number | string | null; quantity: number; product_title?: string; sku_specs?: Record<string, string> }[]
   return_tracking_no?: string
   return_express_company?: string
+  /** 凭证图片（先经 /user/upload 上传得到 URL） */
+  images?: string[]
 }
 
 export interface OrderListResult {

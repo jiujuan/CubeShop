@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { MapPin, RotateCcw } from 'lucide-vue-next'
+import { ImagePlus, MapPin, RotateCcw } from 'lucide-vue-next'
 import { applyRefund, getOrder, type OrderDetail } from '@/api/order'
+import { uploadImage } from '@/api/user'
 import LoadingSpinner from '@/components/LoadingSpinner.vue'
 import ShopFooter from '@/components/ShopFooter.vue'
 import ShopHeader from '@/components/ShopHeader.vue'
@@ -66,6 +67,36 @@ const returnItems = ref<Array<{
 /** 寄回物流 */
 const returnTrackingNo = ref<string>('')
 const returnExpressCompany = ref<string>('')
+
+/** 凭证图片（商品实拍等，≤9 张） */
+const MAX_IMAGES = 9
+const images = ref<string[]>([])
+const uploading = ref(false)
+
+async function onPickImage(e: Event) {
+  const input = e.target as HTMLInputElement
+  const file = input.files?.[0]
+  input.value = ''
+  if (!file) return
+  if (images.value.length >= MAX_IMAGES) {
+    tip.value = `最多上传 ${MAX_IMAGES} 张图片`
+    return
+  }
+  uploading.value = true
+  tip.value = ''
+  try {
+    const { data } = await uploadImage(file)
+    images.value.push(data.data.url)
+  } catch (err) {
+    tip.value = err instanceof Error ? err.message : '图片上传失败'
+  } finally {
+    uploading.value = false
+  }
+}
+
+function removeImage(i: number) {
+  images.value.splice(i, 1)
+}
 
 const isReturn = computed(() => serviceType.value === 'return_refund')
 
@@ -138,6 +169,9 @@ async function doSubmit() {
       payload.return_details = returnDetails.value
       payload.return_tracking_no = returnTrackingNo.value.trim() || undefined
       payload.return_express_company = returnExpressCompany.value.trim() || undefined
+    }
+    if (images.value.length) {
+      payload.images = images.value
     }
     await applyRefund(order.value.id, payload)
     router.push({ path: `/orders/${order.value.id}`, query: { refund_ok: '1' } })
@@ -297,6 +331,36 @@ async function doSubmit() {
               class="w-full resize-none rounded-lg border border-slate-300 px-3 py-2.5 text-sm text-slate-700 outline-none focus:border-[#1677ff]"
             ></textarea>
             <p class="mt-1 text-right text-xs text-slate-400">{{ otherReason.length }}/200</p>
+          </div>
+
+          <!-- 凭证图片 -->
+          <div class="mb-5">
+            <label class="mb-2 block text-sm font-medium text-slate-700">凭证图片（可选，最多 {{ MAX_IMAGES }} 张）</label>
+            <div class="flex flex-wrap items-center gap-2">
+              <div
+                v-for="(url, i) in images"
+                :key="`img-${i}`"
+                class="relative h-20 w-20 overflow-hidden rounded-lg border border-slate-200"
+              >
+                <a :href="url" target="_blank">
+                  <img :src="url" class="h-full w-full object-cover" alt="凭证图" />
+                </a>
+                <button
+                  type="button"
+                  class="absolute right-0 top-0 rounded-bl bg-black/50 px-1 text-[10px] text-white"
+                  :data-testid="`remove-image-${i}`"
+                  @click="removeImage(i)"
+                >×</button>
+              </div>
+              <label
+                v-if="images.length < MAX_IMAGES"
+                class="flex h-20 w-20 cursor-pointer flex-col items-center justify-center gap-1 rounded-lg border border-dashed border-slate-300 text-xs text-slate-400 hover:border-[#1677ff] hover:text-[#1677ff]"
+              >
+                <ImagePlus class="h-5 w-5" />
+                {{ uploading ? '上传中' : '上传' }}
+                <input type="file" accept="image/*" class="hidden" :disabled="uploading" data-testid="refund-image-input" @change="onPickImage" />
+              </label>
+            </div>
           </div>
 
           <!-- 说明 -->

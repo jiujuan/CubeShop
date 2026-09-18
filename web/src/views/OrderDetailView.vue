@@ -336,6 +336,17 @@ async function onReviewSubmitted() {
               <template v-if="r.admin_remark">｜商家备注：{{ r.admin_remark }}</template>
               ｜申请时间：{{ r.created_at }}
             </p>
+            <div v-if="r.images?.length" class="mt-2 flex flex-wrap gap-2">
+              <a
+                v-for="(url, i) in r.images"
+                :key="`r-img-${i}`"
+                :href="url"
+                target="_blank"
+                class="block h-14 w-14 overflow-hidden rounded border border-slate-200"
+              >
+                <img :src="url" class="h-full w-full object-cover" alt="凭证图" />
+              </a>
+            </div>
           </div>
         </section>
 

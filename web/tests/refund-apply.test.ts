@@ -9,12 +9,14 @@ const {
   getCategoriesMock,
   getAnnouncementsMock,
   getCartCountMock,
+  uploadImageMock,
 } = vi.hoisted(() => ({
   getOrderMock: vi.fn(),
   applyRefundMock: vi.fn(),
   getCategoriesMock: vi.fn().mockResolvedValue({ data: { data: [] } }),
   getAnnouncementsMock: vi.fn().mockResolvedValue({ data: { data: { list: [], pagination: { page: 1, page_size: 5, total: 0, total_pages: 1 } } } }),
   getCartCountMock: vi.fn().mockResolvedValue({ data: { data: { count: 0 } } }),
+  uploadImageMock: vi.fn(),
 }))
 
 vi.mock('@/api/order', () => ({
@@ -23,7 +25,7 @@ vi.mock('@/api/order', () => ({
 }))
 vi.mock('@/api/shop', () => ({ getCategories: getCategoriesMock }))
 vi.mock('@/api/announcement', () => ({ getAnnouncements: getAnnouncementsMock }))
-vi.mock('@/api/user', () => ({ getCartCount: getCartCountMock }))
+vi.mock('@/api/user', () => ({ getCartCount: getCartCountMock, uploadImage: uploadImageMock }))
 
 import RefundApplyView from '@/views/RefundApplyView.vue'
 import { useAuthStore } from '@/stores/auth'
@@ -79,6 +81,7 @@ describe('售后申请页：仅退款 / 退货退款（WMS 退货基础）', () 
     applyRefundMock.mockResolvedValue({
       data: { data: { refund_id: 'r1', refund_no: 'RF1', type: 'refund', amount: '100.00', status: 'pending', return_status: null } },
     })
+    uploadImageMock.mockResolvedValue({ data: { data: { url: '/storage/uploads/products/20260919/u.jpg' } } })
   })
 
   it('默认「仅退款」，提交时调用 applyRefund(type=refund)', async () => {
@@ -137,5 +140,24 @@ describe('售后申请页：仅退款 / 退货退款（WMS 退货基础）', () 
 
     const submit = screen.getByTestId('refund-submit') as HTMLButtonElement
     expect(submit.disabled).toBe(true)
+  })
+
+  it('上传凭证图片后提交携带 images', async () => {
+    await renderApply()
+
+    await fireEvent.update(screen.getByTestId('refund-reason') as HTMLSelectElement, '商品质量问题')
+
+    // 模拟选择图片 → 触发上传
+    const input = screen.getByTestId('refund-image-input') as HTMLInputElement
+    Object.defineProperty(input, 'files', { value: [new File(['x'], 'a.png', { type: 'image/png' })] })
+    await fireEvent(input, new Event('change'))
+
+    await waitFor(() => expect(uploadImageMock).toHaveBeenCalled())
+
+    await fireEvent.click(screen.getByTestId('refund-submit'))
+
+    await waitFor(() => expect(applyRefundMock).toHaveBeenCalledTimes(1))
+    const [, payload] = applyRefundMock.mock.calls[0]
+    expect((payload as Record<string, unknown>).images).toEqual(['/storage/uploads/products/20260919/u.jpg'])
   })
 })
