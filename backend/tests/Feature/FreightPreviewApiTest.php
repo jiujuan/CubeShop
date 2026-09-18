@@ -113,3 +113,74 @@ test('模板停用时降级为旧口径固定运费', function () {
 test('参数缺失返回 422', function () {
     $this->postJson('/api/orders/freight-preview', [], $this->auth)->assertStatus(422);
 });
+
+// ---------- Stage 3：公开预估接口 POST /api/freight/estimate ----------
+
+test('公开预估接口：游客无模板走旧口径固定运费', function () {
+    $body = $this->postJson('/api/freight/estimate', [
+        'items' => [['sku_id' => $this->sku->id, 'quantity' => 1]],
+    ])->json();
+
+    expect($body['code'])->toBe(0)
+        ->and($body['data']['freight_amount'])->toBe('10.00')
+        ->and($body['data']['not_support'])->toBeFalse();
+});
+
+test('公开预估接口：游客 + region 模板（无 default）返回 not_support 标记', function () {
+    $tpl = FreightTemplate::create([
+        'name' => '仅北京', 'mode' => 'region', 'status' => 1,
+        'rules' => ['areas' => [['provinces' => ['110000'], 'amount' => '8.00']]],
+    ]);
+    $this->sku->product->update(['freight_template_id' => $tpl->id]);
+
+    $body = $this->postJson('/api/freight/estimate', [
+        'items' => [['sku_id' => $this->sku->id, 'quantity' => 1]],
+    ])->json('data');
+
+    // 游客无法换算省 code → 不能命中 area 且无 default → 标记不可配送（前端展示「按地区计费」）
+    expect($body['not_support'])->toBeTrue();
+});
+
+test('公开预估接口：登录用户传 address_id 可按省精确命中', function () {
+    $tpl = FreightTemplate::create([
+        'name' => '区域模板', 'mode' => 'region', 'status' => 1,
+        'rules' => ['areas' => [['provinces' => ['440000'], 'amount' => '6.00']]],
+    ]);
+    $this->sku->product->update(['freight_template_id' => $tpl->id]);
+
+    $body = $this->postJson('/api/freight/estimate', [
+        'items' => [['sku_id' => $this->sku->id, 'quantity' => 2]],
+        'address_id' => $this->addressId,
+    ], $this->auth)->json('data');
+
+    expect($body['freight_amount'])->toBe('6.00')
+        ->and($body['detail'][0]['source'])->toBe('region_area');
+});
+
+test('公开预估接口：address_id 无法伪造他人地址（游客传入被忽略）', function () {
+    $body = $this->postJson('/api/freight/estimate', [
+        'items' => [['sku_id' => $this->sku->id, 'quantity' => 1]],
+        'address_id' => 999999,
+    ])->json('data');
+
+    // 无模板 → 旧口径；他人/不存在地址不会泄露任何信息
+    expect($body['freight_amount'])->toBe('10.00');
+});
+
+test('模板删除：仍有商品绑定时拒绝删除', function () {
+    $cap = app(CaptchaService::class)->generate();
+    $adminAuth = ['Authorization' => 'Bearer '.$this->postJson('/api/auth/login', [
+        'username' => 'admin',
+        'password' => 'Admin@123',
+        'captcha_id' => $cap['captcha_id'],
+        'captcha_code' => $cap['debug_code'],
+    ])->json('data.token')];
+
+    $tpl = FreightTemplate::create(['name' => '被引用', 'mode' => 'fixed', 'rules' => ['amount' => '8.00']]);
+    $this->sku->product->update(['freight_template_id' => $tpl->id]);
+
+    $body = $this->deleteJson('/api/admin/freight-templates/'.$tpl->id, [], $adminAuth)->json();
+
+    expect($body['code'])->toBe(40009)
+        ->and(FreightTemplate::find($tpl->id))->not->toBeNull();
+});

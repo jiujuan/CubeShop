@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
-import { Minus, Plus, ShoppingCart, Trash2 } from 'lucide-vue-next'
-import { clearCart, getCart, removeCartItem, updateCartItem, type CartSummary } from '@/api/user'
+import { computed, onMounted, ref } from 'vue'
+import { Minus, Plus, ShoppingCart, Trash2, Truck } from 'lucide-vue-next'
+import { clearCart, getAddresses, getCart, removeCartItem, updateCartItem, type CartSummary } from '@/api/user'
+import { estimateFreight, type FreightPreview } from '@/api/order'
 import LoadingSpinner from '@/components/LoadingSpinner.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import ShopFooter from '@/components/ShopFooter.vue'
@@ -21,8 +22,44 @@ async function load() {
   try {
     const { data } = await getCart()
     cart.value = data.data
+    await loadFreightEstimate()
   } finally {
     loading.value = false
+  }
+}
+
+/**
+ * 运费预估（T-053 Stage 3）：按有效项 + 默认收货地址调公开预估接口，与下单同一套引擎。
+ * 失败/无地址静默隐藏，不误导金额；精确运费在结算页按所选地址实时计算。
+ */
+const freightEstimate = ref<FreightPreview | null>(null)
+
+const freightText = computed(() => {
+  const est = freightEstimate.value
+  if (!est) return ''
+  if (est.not_support) return '含暂不可配送商品'
+  if (est.free_shipping) return '已满包邮门槛'
+  return `约 ¥${est.freight_amount}`
+})
+
+async function loadFreightEstimate() {
+  freightEstimate.value = null
+  const validItems = (cart.value?.items ?? []).filter((i) => i.valid)
+  if (!validItems.length) return
+  try {
+    // 默认地址用于 region 模板按省匹配；无地址走通用预估
+    let addressId: number | undefined
+    try {
+      const { data: addrRes } = await getAddresses()
+      addressId = addrRes.data.find((a) => a.is_default)?.id
+    } catch { /* 地址拉取失败不影响预估 */ }
+    const { data } = await estimateFreight({
+      items: validItems.map((i) => ({ sku_id: i.sku_id, quantity: i.quantity })),
+      address_id: addressId,
+    })
+    freightEstimate.value = data.data
+  } catch {
+    freightEstimate.value = null
   }
 }
 
@@ -149,6 +186,16 @@ async function doClear() {
               <div class="text-sm">
                 合计：<span class="text-xl font-bold text-[#ff4d4f]">¥{{ cart.total_amount }}</span>
                 <span class="ml-1 text-xs text-slate-400">（失效商品不计入）</span>
+              </div>
+              <div
+                v-if="freightText"
+                class="flex items-center gap-1.5 text-xs text-slate-500"
+                data-testid="cart-freight-estimate"
+              >
+                <Truck class="h-3.5 w-3.5" />
+                <span :class="freightEstimate?.not_support ? 'text-orange-500' : ''">
+                  运费预估<template v-if="freightEstimate && !freightEstimate.free_shipping && !freightEstimate.not_support">（不含在合计内）</template>：{{ freightText }}
+                </span>
               </div>
               <button
                 class="rounded-full bg-[#1677ff] px-8 py-2.5 text-sm font-medium text-white transition-colors hover:bg-[#4096ff] disabled:cursor-not-allowed disabled:opacity-50"

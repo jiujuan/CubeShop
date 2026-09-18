@@ -5,7 +5,8 @@ import type { ApiResult } from './types'
 
 export interface CartItemView {
   id: number
-  sku_id: number
+  /** P2-11：后端出口为 SKU public_id（ULID 字符串） */
+  sku_id: string
   product_id: number | null
   title: string
   specs: Record<string, string>

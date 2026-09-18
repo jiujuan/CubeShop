@@ -86,7 +86,7 @@ async function loadFreight() {
   freightError.value = false
   try {
     const { data } = await previewFreight({
-      items: validItems.value.map((i) => ({ sku_id: Number(i.sku_id), quantity: i.quantity })),
+      items: validItems.value.map((i) => ({ sku_id: i.sku_id, quantity: i.quantity })),
       address_id: addressId,
     })
     // 地址在请求返回前被切换 → 丢弃过期结果

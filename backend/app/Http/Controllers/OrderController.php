@@ -89,20 +89,32 @@ class OrderController extends Controller
      *
      * 入参 items [{sku_id, quantity}]；address_id 可选——传了才能按省 code 计算 region 模板。
      * not_support 不抛错（返回标记），由前端禁用提交并提示；下单时后端仍会拒单兜底。
+     *
+     * Stage 3 起同时挂公开路由 POST /api/freight/estimate（详情页/购物车预估，游客可用；
+     * 未登录或未传 address_id 时 region 模板无法按省匹配 → 走模板 default 或返回 not_support 标记）。
      */
     public function freightPreview(Request $request): JsonResponse
     {
         $data = $request->validate([
             'items' => ['required', 'array', 'min:1'],
-            'items.*.sku_id' => ['required', 'integer'],
+            // P2-11：web 出口的 sku_id 是 public_id（ULID 字符串），兼容历史 int 主键
+            'items.*.sku_id' => ['required'],
             'items.*.quantity' => ['required', 'integer', 'min:1'],
             'address_id' => ['nullable', 'integer'],
         ]);
 
-        // 按 sku_id 归并数量（前端可能传重复行）
+        // 按 sku 归并数量（前端可能传重复行）；public_id / int 双形态解析
         $quantities = [];
         foreach ($data['items'] as $item) {
-            $quantities[(int) $item['sku_id']] = ($quantities[(int) $item['sku_id']] ?? 0) + (int) $item['quantity'];
+            $skuId = PublicId::resolve(PublicId::SCOPE_SKU, $item['sku_id']);
+            if ($skuId === null) {
+                continue;
+            }
+            $quantities[$skuId] = ($quantities[$skuId] ?? 0) + (int) $item['quantity'];
+        }
+
+        if ($quantities === []) {
+            throw BusinessException::badRequest('商品不存在或已失效');
         }
 
         $skus = ProductSku::query()
@@ -133,10 +145,12 @@ class OrderController extends Controller
             throw BusinessException::badRequest('商品不存在或已失效');
         }
 
-        // region 模式需要省 code：user_addresses.province 存省名，由 FreightService 换算
+        // region 模式需要省 code：user_addresses.province 存省名，由 FreightService 换算。
+        // 公开路由（游客）没有 user，跳过地址换算 → region 无 default 时返回 not_support 标记
         $provinceName = null;
-        if (! empty($data['address_id'])) {
-            $address = UserAddress::where('user_id', $request->user()->id)->find((int) $data['address_id']);
+        $user = $request->user();
+        if ($user !== null && ! empty($data['address_id'])) {
+            $address = UserAddress::where('user_id', $user->id)->find((int) $data['address_id']);
             if ($address) {
                 $provinceName = (string) $address->province;
             }

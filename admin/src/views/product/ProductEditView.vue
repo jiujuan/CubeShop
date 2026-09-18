@@ -10,6 +10,7 @@ import {
   getAttributes, getBrands, getCategoryTemplate, previewSkuMatrix,
   type AttributeRow, type BrandRow, type CategoryTemplate,
 } from '@/api/attribute'
+import { getFreightTemplates, type FreightTemplateRow } from '@/api/shipping'
 import { Button } from '@/components/ui/button'
 import { MdEditor } from 'md-editor-v3'
 import 'md-editor-v3/lib/style.css'
@@ -35,6 +36,8 @@ const categories = ref<CategoryNode[]>([])
 const brands = ref<BrandRow[]>([])
 const allAttributes = ref<AttributeRow[]>([])
 const template = ref<CategoryTemplate | null>(null)
+/** 运费模板下拉（T-053 Stage 3）：无 shipping.manage 权限时拉取失败 → 仅「全局默认」可选项 */
+const freightTemplates = ref<FreightTemplateRow[]>([])
 
 const form = ref({
   title: '',
@@ -42,6 +45,7 @@ const form = ref({
   category_id: null as number | null,
   brand_id: null as number | null,
   weight: 0,
+  freight_template_id: null as number | null,
   video_url: '',
   status: 0,
   sort: 100,
@@ -308,14 +312,17 @@ function formatSpecs(specs: Record<string, string> | null | undefined): string {
 
 // ---------- 加载 ----------
 onMounted(async () => {
-  const [cRes, bRes, aRes] = await Promise.all([
+  const [cRes, bRes, aRes, freightRes] = await Promise.all([
     getCategories(),
     getBrands({ page_size: 100 }),
     getAttributes({ page_size: 200 }),
+    // 拉取失败（如无 shipping.manage 权限）不阻塞商品编辑，仅下拉退化为「全局默认」
+    getFreightTemplates({ status: 1, per_page: 50 }).catch(() => null),
   ])
   categories.value = cRes.data.data
   brands.value = bRes.data.data.list
   allAttributes.value = aRes.data.data.list
+  freightTemplates.value = freightRes?.data.data.list ?? []
 
   if (productId.value) {
     const res = await getProduct(productId.value)
@@ -326,6 +333,7 @@ onMounted(async () => {
       category_id: p.category_id ?? null,
       brand_id: p.brand_id ?? null,
       weight: p.weight ?? 0,
+      freight_template_id: p.freight_template_id ?? null,
       video_url: p.video_url ?? '',
       status: p.status,
       sort: p.sort ?? 100,
@@ -454,6 +462,7 @@ function buildPayload(): ProductPayload {
     sort: form.value.sort,
     brand_id: form.value.brand_id,
     weight: Number(form.value.weight) || 0,
+    freight_template_id: form.value.freight_template_id,
     video_url: form.value.video_url || null,
     attribute_values: attributeValues,
     images: detailImages.value,
@@ -622,6 +631,17 @@ function cancel() {
             <div class="flex-1">
               <input v-model.number="form.weight" type="number" min="0" class="w-40 rounded-md border border-slate-300 px-3 py-2 outline-none focus:border-[#1677ff]" />
               <span class="ml-2 text-xs text-slate-400">用于后续按重量计算运费</span>
+            </div>
+          </div>
+          <div class="flex items-start">
+            <label class="w-28 shrink-0 pt-2 text-slate-600">运费模板</label>
+            <div class="relative flex-1">
+              <select v-model="form.freight_template_id" data-testid="freight-template-select" class="w-full appearance-none rounded-md border border-slate-300 px-3 py-2 outline-none focus:border-[#1677ff]">
+                <option :value="null">全局默认（未单独配置）</option>
+                <option v-for="t in freightTemplates" :key="t.id" :value="t.id">{{ t.name }}（{{ t.mode_label }}）</option>
+              </select>
+              <ChevronDown class="pointer-events-none absolute right-2 top-2.5 h-4 w-4 text-slate-400" />
+              <p v-if="form.freight_template_id === null" class="mt-1 text-xs text-slate-400">不选时按系统「全局默认运费规则」计费</p>
             </div>
           </div>
           <div class="flex items-start">
