@@ -92,7 +92,9 @@ class RefundController extends Controller
                 'operator' => ($log->actor_type === SysOperationLog::ACTOR_CUSTOMER ? $log->customer : $log->admin)
                     ?->only(['id', 'username', 'nickname']),
                 'action' => $log->action,
+                // content 为 JSON 字符串；content_data 为解码后的结构，供后台友好渲染（中文键值 / 图片）
                 'content' => $log->content,
+                'content_data' => $this->decodeLogContent($log->content),
                 'created_at' => $log->created_at?->format('Y-m-d H:i:s'),
             ])->all();
 
@@ -167,6 +169,23 @@ class RefundController extends Controller
         );
 
         return $this->success($this->row($refund->fresh()), '已确认收货，退款已完成');
+    }
+
+    /**
+     * 解码操作日志 content（JSON 字符串）为结构化数据
+     *
+     * 后台「处理记录」需要按中文键值渲染（含图片），直接展示原始 JSON 不可读。
+     * 非 JSON 内容返回 null，由前端回退展示原文。
+     */
+    private function decodeLogContent(?string $content): mixed
+    {
+        if ($content === null || $content === '') {
+            return null;
+        }
+
+        $decoded = json_decode($content, true);
+
+        return json_last_error() === JSON_ERROR_NONE ? $decoded : null;
     }
 
     private function row(Refund $refund): array

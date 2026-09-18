@@ -79,8 +79,15 @@ test('TC-RFD-DTL-001 申请携带凭证图片落库，详情接口返回商品�
         ->and($res->json('data.items.0.product_id'))->toBe($sku->product_id)
         ->and($res->json('data.items.0.product_title'))->not->toBeEmpty()
         ->and($res->json('data.items.0.quantity'))->toBe(1)
-        // 处理流水：至少有一条「用户提交申请」
-        ->and($res->json('data.logs'))->not->toBeEmpty();
+        // 处理流水：至少有一条「用户提交申请」，且 content JSON 已解码为 content_data（供后台中文渲染）
+        ->and($res->json('data.logs'))->not->toBeEmpty()
+        ->and($res->json('data.logs.0.action'))->toBe('apply')
+        ->and($res->json('data.logs.0.content_data'))->toBeArray()
+        ->and($res->json('data.logs.0.content_data.reason'))->toBe('商品破损')
+        ->and($res->json('data.logs.0.content_data.images'))->toBe([
+            '/storage/uploads/products/20260919/a.jpg',
+            '/storage/uploads/products/20260919/b.jpg',
+        ]);
 });
 
 test('TC-RFD-DTL-002 后台同意可附理由与说明图片', function () {
@@ -103,6 +110,14 @@ test('TC-RFD-DTL-002 后台同意可附理由与说明图片', function () {
         ->and($refund->admin_images)->toBe(['/storage/uploads/products/20260919/ok.jpg'])
         ->and($refund->processed_by)->not->toBeNull()
         ->and($order->fresh()->status)->toBe(Order::STATUS_REFUNDED);
+
+    // 处理流水应含「后台同意退款」且 content_data 携带理由与说明图片
+    $res = test()->getJson('/api/admin/refunds/'.rfid($refund->id), $this->adminAuth);
+    $res->assertOk();
+    $approveLog = collect($res->json('data.logs'))->firstWhere('action', 'process_approve');
+    expect($approveLog)->not->toBeNull()
+        ->and($approveLog['content_data']['admin_remark'])->toBe('核对无误，同意退款')
+        ->and($approveLog['content_data']['admin_images'])->toBe(['/storage/uploads/products/20260919/ok.jpg']);
 });
 
 test('TC-RFD-DTL-003 后台拒绝记录理由，订单回到已支付', function () {
