@@ -9,6 +9,7 @@ use App\Http\Controllers\Admin\AddressController as AdminAddressController;
 use App\Http\Controllers\Admin\AccountController as AdminAccountController;
 use App\Http\Controllers\Admin\AnnouncementController as AdminAnnouncementController;
 use App\Http\Controllers\Admin\ConfigController;
+use App\Http\Controllers\Admin\HomeBannerController as AdminHomeBannerController;
 use App\Http\Controllers\Admin\CouponController as AdminCouponController;
 use App\Http\Controllers\Admin\DashboardController;
 use App\Http\Controllers\Admin\OperationLogController;
@@ -28,6 +29,7 @@ use App\Http\Controllers\Admin\UploadController;
 use App\Http\Controllers\Admin\UserController;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\AnnouncementController;
+use App\Http\Controllers\HomeBannerController;
 use App\Http\Controllers\BalanceController;
 use App\Http\Controllers\CartController;
 use App\Http\Controllers\Admin\CsFaqController as AdminCsFaqController;
@@ -78,6 +80,9 @@ Route::get('/coupons', [StorefrontCouponController::class, 'center']);
 // 公告（P-Announcement，公开无需登录：首页公告位与公告页消费）
 Route::get('/announcements', [AnnouncementController::class, 'index']);
 Route::get('/announcements/{id}', [AnnouncementController::class, 'show']);
+
+// 首页广告位（P-HomeBanner，公开无需登录：首页轮播图/中部广告/底部广告消费）
+Route::get('/banners', [HomeBannerController::class, 'index']);
 
 // 认证：注册 / 登录 / 验证码 / 重置密码（带限流）
 Route::middleware('throttle:auth')->group(function () {
@@ -372,6 +377,13 @@ Route::middleware(['auth:sanctum', 'account.active'])->group(function () {
         Route::post('/announcements/{id}/publish', [AdminAnnouncementController::class, 'publish'])->middleware('permission:announcement.manage');
         Route::post('/announcements/{id}/offline', [AdminAnnouncementController::class, 'offline'])->middleware('permission:announcement.manage');
         Route::delete('/announcements/{id}', [AdminAnnouncementController::class, 'destroy'])->middleware('permission:announcement.manage');
+
+        // 首页广告位管理 home.manage（P-HomeBanner）
+        Route::get('/home-banners', [AdminHomeBannerController::class, 'index'])->middleware('permission:home.manage');
+        Route::post('/home-banners', [AdminHomeBannerController::class, 'store'])->middleware('permission:home.manage');
+        Route::put('/home-banners/{id}', [AdminHomeBannerController::class, 'update'])->middleware('permission:home.manage')->whereNumber('id');
+        Route::post('/home-banners/{id}/toggle', [AdminHomeBannerController::class, 'toggle'])->middleware('permission:home.manage')->whereNumber('id');
+        Route::delete('/home-banners/{id}', [AdminHomeBannerController::class, 'destroy'])->middleware('permission:home.manage')->whereNumber('id');
         Route::post('/coupons/{id}/stop', [AdminCouponController::class, 'stop'])->middleware('permission:marketing.manage');
 
         Route::get('/promotions', [AdminPromotionController::class, 'index'])->middleware('permission:marketing.manage');

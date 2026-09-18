@@ -59,6 +59,8 @@ class RolePermissionSeeder extends Seeder
         'marketing.manage',
         // 公告管理（P-Announcement）：运营可自助发布/管理前台公告
         'announcement.manage',
+        // 首页广告位管理（P-HomeBanner）：运营可维护首页轮播/广告图
+        'home.manage',
         // 收银台与支付渠道（payment.channel.manage 仅超管，另两个运营也有）
         'payment.channel.manage',
         'payment.offline.review',
@@ -109,6 +111,8 @@ class RolePermissionSeeder extends Seeder
             'marketing.manage',
             // 公告管理（P-Announcement）：运营可自助发布/管理前台公告
             'announcement.manage',
+            // 首页广告位管理（P-HomeBanner）：运营可维护首页轮播/广告图
+            'home.manage',
             // 支付只读（查看支付单/支付日志）+ 订单流水；关闭支付单需超管
             'payment.view', 'order.log',
             // 收银台：线下核账 + 充值单查看（渠道配置为超管专属）

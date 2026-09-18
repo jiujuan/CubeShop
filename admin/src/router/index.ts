@@ -189,6 +189,12 @@ const router = createRouter({
           meta: { title: '公告管理', menu: true, icon: 'Megaphone', permission: 'announcement.manage' },
         },
         {
+          path: 'home-banners',
+          name: 'home-banners',
+          component: () => import('@/views/operation/HomeBannerListView.vue'),
+          meta: { title: '首页广告位', menu: true, icon: 'Images', permission: 'home.manage' },
+        },
+        {
           path: 'cs/tickets',
           name: 'cs-tickets',
           component: () => import('@/views/cs/CsTicketView.vue'),

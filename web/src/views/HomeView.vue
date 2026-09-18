@@ -1,13 +1,14 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, type Component } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, type Component } from 'vue'
 import { useRouter } from 'vue-router'
 import {
-  Apple, ArrowRight, Baby, Car, ChevronRight, Crown, Dumbbell, Flame,
+  Apple, ArrowRight, Baby, Car, ChevronLeft, ChevronRight, Crown, Dumbbell, Flame,
   Headphones, House, LayoutGrid, MessageSquare, Package, RotateCcw, ShieldCheck, Shirt,
   Sparkles, Truck, WalletMinimal,
 } from 'lucide-vue-next'
 import { getCategories, getHot, type CategoryNode, type ProductBrief } from '@/api/shop'
 import { getAnnouncements, type AnnouncementListItem } from '@/api/announcement'
+import { getBanners, type HomeBannerGroups } from '@/api/banner'
 import ProductCard from '@/components/ProductCard.vue'
 import ShopFooter from '@/components/ShopFooter.vue'
 import ShopHeader from '@/components/ShopHeader.vue'
@@ -32,6 +33,26 @@ const loading = ref(true)
 /** 公告（P-Announcement）：右栏「最新公告」列表数据（顶栏全局公告条由 ShopHeader 统一展示，避免首页重复） */
 const announcements = ref<AnnouncementListItem[]>([])
 
+/** 首页广告位（P-HomeBanner）：主轮播 / 中部宫格 / 底部双图，全部后台可配 */
+const banners = ref<HomeBannerGroups>({ banner: [], promo: [], bottom: [] })
+const bannerIndex = ref(0)
+let bannerTimer: ReturnType<typeof setInterval> | null = null
+const bannerList = computed(() => banners.value.banner)
+const activeBanner = computed(() => bannerList.value[bannerIndex.value] ?? null)
+
+function prevBanner() {
+  if (bannerList.value.length) bannerIndex.value = (bannerIndex.value - 1 + bannerList.value.length) % bannerList.value.length
+}
+function nextBanner() {
+  if (bannerList.value.length) bannerIndex.value = (bannerIndex.value + 1) % bannerList.value.length
+}
+
+/** 广告位跳转：站内路由走 router，外链新窗口打开 */
+function goLink(link: string) {
+  if (link.startsWith('/')) router.push(link)
+  else window.open(link, '_blank', 'noopener')
+}
+
 onMounted(async () => {
   try {
     const [hotRes, catRes] = await Promise.all([getHot(PAGE_SIZE), getCategories()])
@@ -50,6 +71,23 @@ onMounted(async () => {
   } catch {
     /* 公告加载失败不阻断首页其它内容 */
   }
+
+  try {
+    const { data } = await getBanners()
+    banners.value = data.data.banners
+    // 多张主轮播图时自动轮播（4s）
+    if (banners.value.banner.length > 1) {
+      bannerTimer = setInterval(() => {
+        bannerIndex.value = (bannerIndex.value + 1) % banners.value.banner.length
+      }, 4000)
+    }
+  } catch {
+    /* 广告位加载失败不阻断首页其它内容 */
+  }
+})
+
+onBeforeUnmount(() => {
+  if (bannerTimer) clearInterval(bannerTimer)
 })
 
 /** 整宽商品区：热门商品 / 新品上架 / 人气推荐（同一份数据，纯前端视图切换） */
@@ -164,8 +202,58 @@ const bigPromos = [
 
         <!-- ============ 中：内容主区 ============ -->
         <div class="min-w-0 flex-1 space-y-3.5">
-          <!-- 主 Banner -->
-          <section class="relative overflow-hidden rounded-xl bg-gradient-to-r from-[#e9f3ff] via-[#e6f1ff] to-[#f2f9ff]">
+          <!-- 主 Banner（P-HomeBanner：后台可配多图轮播；未配置时回退默认专题横幅） -->
+          <section
+            v-if="bannerList.length"
+            class="relative overflow-hidden rounded-xl bg-[#e6f1ff]"
+            data-testid="home-banner-carousel"
+          >
+            <div class="relative h-[180px]">
+              <img
+                v-for="(b, i) in bannerList"
+                v-show="i === bannerIndex"
+                :key="b.id"
+                :src="b.image"
+                :alt="b.title"
+                class="absolute inset-0 h-full w-full cursor-pointer object-cover"
+                :data-testid="`home-banner-${b.id}`"
+                @click="b.link_url ? goLink(b.link_url) : undefined"
+              />
+              <!-- 渐变遮罩 + 大标题/小标题 -->
+              <div
+                v-if="activeBanner"
+                class="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/60 via-black/20 to-transparent px-5 pb-4 pt-10 text-white"
+              >
+                <div class="text-lg font-bold">{{ activeBanner.title }}</div>
+                <div v-if="activeBanner.subtitle" class="mt-0.5 text-xs text-white/85">{{ activeBanner.subtitle }}</div>
+              </div>
+              <!-- 左右切换 -->
+              <template v-if="bannerList.length > 1">
+                <button
+                  class="absolute left-2 top-1/2 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-full bg-black/25 text-white transition-colors hover:bg-black/45"
+                  aria-label="上一张"
+                  @click="prevBanner"
+                ><ChevronLeft class="h-4 w-4" /></button>
+                <button
+                  class="absolute right-2 top-1/2 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-full bg-black/25 text-white transition-colors hover:bg-black/45"
+                  aria-label="下一张"
+                  @click="nextBanner"
+                ><ChevronRight class="h-4 w-4" /></button>
+                <!-- 指示点 -->
+                <div class="absolute bottom-3 right-4 flex gap-1.5">
+                  <button
+                    v-for="(b, i) in bannerList"
+                    :key="b.id"
+                    class="h-1.5 rounded-full transition-all"
+                    :class="i === bannerIndex ? 'w-4 bg-white' : 'w-1.5 bg-white/50'"
+                    :aria-label="`第 ${i + 1} 张`"
+                    @click="bannerIndex = i"
+                  />
+                </div>
+              </template>
+            </div>
+          </section>
+          <section v-else class="relative overflow-hidden rounded-xl bg-gradient-to-r from-[#e9f3ff] via-[#e6f1ff] to-[#f2f9ff]">
             <div class="flex items-center gap-4 px-8 py-7">
               <div class="min-w-0 flex-1">
                 <div class="text-xs text-slate-400">品质好物 · 惊喜价格</div>
@@ -219,8 +307,28 @@ const bigPromos = [
             </div>
           </section>
 
-          <!-- 三个专题入口 -->
-          <section class="grid grid-cols-1 gap-3 sm:grid-cols-3">
+          <!-- 中部广告宫格（P-HomeBanner：后台可配，建议 4 张；未配置时回退默认专题入口） -->
+          <section v-if="banners.promo.length" class="grid grid-cols-2 gap-3 lg:grid-cols-4">
+            <button
+              v-for="p in banners.promo"
+              :key="p.id"
+              class="group relative overflow-hidden rounded-lg"
+              :data-testid="`home-promo-${p.id}`"
+              @click="p.link_url ? goLink(p.link_url) : undefined"
+            >
+              <img
+                :src="p.image"
+                :alt="p.title"
+                class="block h-24 w-full object-cover transition-transform duration-300 group-hover:scale-105"
+              />
+              <div class="absolute inset-0 bg-gradient-to-t from-black/60 via-black/10 to-transparent"></div>
+              <div class="absolute inset-x-0 bottom-0 p-2.5 text-left text-white">
+                <div class="truncate text-[14px] font-bold">{{ p.title }}</div>
+                <div v-if="p.subtitle" class="mt-0.5 truncate text-[11px] text-white/85">{{ p.subtitle }}</div>
+              </div>
+            </button>
+          </section>
+          <section v-else class="grid grid-cols-1 gap-3 sm:grid-cols-3">
             <button
               v-for="p in promos" :key="p.title"
               class="flex items-center justify-between gap-2 overflow-hidden rounded-lg px-4 py-3.5 text-left transition-shadow hover:shadow-md"
@@ -344,8 +452,29 @@ const bigPromos = [
         </template>
       </section>
 
-      <!-- ============ 整宽：大促双卡（横跨左中右，一行 2 张，高度为原设计一半） ============ -->
+      <!-- ============ 整宽：底部广告图（P-HomeBanner：后台可配 2 张；未配置时回退默认大促双卡） ============ -->
       <section class="mt-3.5 grid grid-cols-1 gap-3.5 pb-4 md:grid-cols-2">
+        <template v-if="banners.bottom.length">
+          <button
+            v-for="b in banners.bottom"
+            :key="b.id"
+            class="group relative overflow-hidden rounded-lg"
+            :data-testid="`home-bottom-${b.id}`"
+            @click="b.link_url ? goLink(b.link_url) : undefined"
+          >
+            <img
+              :src="b.image"
+              :alt="b.title"
+              class="block h-32 w-full object-cover transition-transform duration-300 group-hover:scale-105"
+            />
+            <div class="absolute inset-0 bg-gradient-to-t from-black/60 via-black/10 to-transparent"></div>
+            <div class="absolute inset-x-0 bottom-0 p-3 text-left text-white">
+              <div class="truncate text-[15px] font-bold">{{ b.title }}</div>
+              <div v-if="b.subtitle" class="mt-0.5 truncate text-xs text-white/85">{{ b.subtitle }}</div>
+            </div>
+          </button>
+        </template>
+        <template v-else>
         <button
           v-for="b in bigPromos" :key="b.title"
           class="flex items-center gap-3 overflow-hidden rounded-lg px-4 py-[18px] text-left transition-shadow hover:shadow-md"
@@ -366,6 +495,7 @@ const bigPromos = [
           </span>
           <span class="shrink-0 whitespace-nowrap rounded-full border border-[#1677ff] px-3 py-1 text-[11px] text-[#1677ff]">立即抢购</span>
         </button>
+        </template>
       </section>
     </main>
 
