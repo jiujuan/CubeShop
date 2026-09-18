@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import { Download, Pencil, Plus, SquarePlus, Ticket } from 'lucide-vue-next'
+import { ChevronLeft, ChevronRight, Download, Pencil, Plus, Search, SquarePlus, Ticket } from 'lucide-vue-next'
 import {
   createCoupon, exportCoupon, getCouponStats, getCoupons, stopCoupon, updateCoupon,
   type AdminCoupon, type CouponPayload, type CouponStats, type CouponType, type CouponStatus,
@@ -9,6 +9,7 @@ import { getCategories } from '@/api/product'
 import { getProducts } from '@/api/product'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import LoadingSpinner from '@/components/LoadingSpinner.vue'
+import { Button } from '@/components/ui/button'
 
 /**
  * 优惠券管理 Tab（V1.1 二期 F06 / T-040）
@@ -74,6 +75,13 @@ async function load() {
 onMounted(load)
 
 function search() {
+  pagination.value.page = 1
+  load()
+}
+
+function reset() {
+  keyword.value = ''
+  statusFilter.value = ''
   pagination.value.page = 1
   load()
 }
@@ -235,24 +243,28 @@ defineExpose({ load, openCreate, openEdit, form, buildPayload })
 <template>
   <div>
     <!-- 工具行 -->
-    <div class="mb-4 flex flex-wrap items-center gap-3">
+    <div class="mb-3 flex flex-wrap items-center gap-2 text-[13px]">
       <input
         v-model="keyword" type="text" placeholder="按券名称搜索"
-        class="h-9 w-56 rounded-md border border-slate-300 px-3 text-sm outline-none focus:border-[#1677ff]"
+        class="w-56 rounded-md border border-slate-300 px-3 py-1.5 outline-none focus:border-[#1677ff]"
         data-testid="coupon-search-input"
         @keyup.enter="search"
       />
       <select
-        v-model="statusFilter" class="h-9 rounded-md border border-slate-300 px-2 text-sm"
+        v-model="statusFilter" class="rounded-md border border-slate-300 px-2 py-1.5 outline-none focus:border-[#1677ff]"
         data-testid="coupon-status-filter" @change="search"
       >
         <option value="">全部状态</option>
         <option value="active">发放中</option>
         <option value="stopped">已停发</option>
       </select>
+      <Button class="bg-[#1677ff] px-5 hover:bg-[#4096ff]" data-testid="coupon-search-btn" @click="search">
+        <Search class="mr-1 h-4 w-4" /> 搜索
+      </Button>
+      <Button variant="outline" data-testid="coupon-reset-btn" @click="reset">重置</Button>
       <button
         v-permission="'marketing.manage'"
-        class="flex items-center gap-1 rounded-md bg-[#1677ff] px-4 py-2 text-sm text-white hover:bg-[#4096ff]"
+        class="ml-auto flex items-center gap-1 rounded-md bg-[#1677ff] px-4 py-1.5 text-[13px] text-white hover:bg-[#4096ff]"
         data-testid="coupon-create-btn"
         @click="openCreate"
       ><Plus class="h-4 w-4" /> 新建优惠券</button>
@@ -260,58 +272,71 @@ defineExpose({ load, openCreate, openEdit, form, buildPayload })
 
     <p v-if="tip" class="mb-3 rounded-md bg-red-50 px-3 py-2 text-xs text-red-500">{{ tip }}</p>
 
-    <LoadingSpinner v-if="loading" />
-
-    <div v-else class="overflow-x-auto rounded-lg border border-slate-200 bg-white">
-      <table class="w-full text-left text-[13px]">
-        <thead class="bg-slate-50 text-slate-500">
-          <tr>
-            <th class="px-4 py-2.5">名称</th>
-            <th class="px-4 py-2.5">类型</th>
-            <th class="px-4 py-2.5">面额/折扣</th>
-            <th class="px-4 py-2.5">门槛</th>
-            <th class="px-4 py-2.5">范围</th>
-            <th class="px-4 py-2.5">有效期</th>
-            <th class="px-4 py-2.5">发放/领取/核销</th>
-            <th class="px-4 py-2.5">核销率</th>
-            <th class="px-4 py-2.5">状态</th>
-            <th class="px-4 py-2.5">操作</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-for="c in list" :key="c.id" class="border-t border-slate-100" :data-testid="`coupon-row-${c.id}`">
-            <td class="px-4 py-2.5 font-medium text-slate-700">{{ c.name }}</td>
-            <td class="px-4 py-2.5">{{ c.type_label }}</td>
-            <td class="px-4 py-2.5 text-[#ff4d4f]">{{ moneyText(c) }}<span v-if="c.type === 'percent' && c.max_discount" class="text-slate-400">（封顶¥{{ c.max_discount }}）</span></td>
-            <td class="px-4 py-2.5">{{ c.min_spend > 0 ? `¥${c.min_spend}` : '无' }}</td>
-            <td class="px-4 py-2.5">{{ c.scope_label }}</td>
-            <td class="px-4 py-2.5">{{ validText(c) }}</td>
-            <td class="px-4 py-2.5 text-slate-500">{{ c.total_count }} / {{ c.issued_count }} / <span class="font-medium text-slate-700">{{ c.used_count }}</span></td>
-            <td class="px-4 py-2.5">{{ pct(c.total_count > 0 ? c.used_count / c.total_count : 0) }}</td>
-            <td class="px-4 py-2.5">
-              <span class="rounded px-1.5 py-0.5 text-xs" :class="c.status === 'active' ? 'bg-green-50 text-green-600' : 'bg-slate-100 text-slate-400'">{{ c.status === 'active' ? '发放中' : '已停发' }}</span>
-            </td>
-            <td class="px-4 py-2.5">
-              <div class="flex items-center gap-2 text-[#1677ff]">
-                <button class="hover:underline" :data-testid="`coupon-stats-${c.id}`" @click="openStats(c)">统计</button>
-                <button class="hover:underline" :data-testid="`coupon-edit-${c.id}`" @click="openEdit(c)"><Pencil class="h-3.5 w-3.5" /></button>
-                <button v-if="c.status === 'active'" class="text-slate-400 hover:text-red-500" :data-testid="`coupon-stop-${c.id}`" @click="askStop(c)">停发</button>
-                <button class="hover:underline" :data-testid="`coupon-export-${c.id}`" title="导出领取/核销明细" @click="doExport(c)"><Download class="h-3.5 w-3.5" /></button>
-              </div>
-            </td>
-          </tr>
-          <tr v-if="!list.length">
-            <td colspan="10" class="px-4 py-10 text-center text-slate-400" data-testid="coupon-empty">暂无优惠券</td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
+    <table class="w-full text-[13px]">
+      <thead>
+        <tr class="border-b border-slate-200 text-left text-slate-500">
+          <th class="px-3 py-1.5">名称</th>
+          <th class="px-3 py-1.5">类型</th>
+          <th class="px-3 py-1.5">面额/折扣</th>
+          <th class="px-3 py-1.5">门槛</th>
+          <th class="px-3 py-1.5">范围</th>
+          <th class="px-3 py-1.5">有效期</th>
+          <th class="px-3 py-1.5">发放/领取/核销</th>
+          <th class="px-3 py-1.5">核销率</th>
+          <th class="px-3 py-1.5">状态</th>
+          <th class="px-3 py-1.5">操作</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr v-for="c in list" :key="c.id" class="border-b border-slate-100 hover:bg-slate-50" :data-testid="`coupon-row-${c.id}`">
+          <td class="px-3 py-1.5 font-medium text-black">{{ c.name }}</td>
+          <td class="px-3 py-1.5 text-black">{{ c.type_label }}</td>
+          <td class="px-3 py-1.5 text-[#ff4d4f]">{{ moneyText(c) }}<span v-if="c.type === 'percent' && c.max_discount" class="text-slate-400">（封顶¥{{ c.max_discount }}）</span></td>
+          <td class="px-3 py-1.5 text-black">{{ c.min_spend > 0 ? `¥${c.min_spend}` : '无' }}</td>
+          <td class="px-3 py-1.5 text-black">{{ c.scope_label }}</td>
+          <td class="px-3 py-1.5 text-black">{{ validText(c) }}</td>
+          <td class="px-3 py-1.5 text-slate-500">{{ c.total_count }} / {{ c.issued_count }} / <span class="font-medium text-black">{{ c.used_count }}</span></td>
+          <td class="px-3 py-1.5 text-black">{{ pct(c.total_count > 0 ? c.used_count / c.total_count : 0) }}</td>
+          <td class="px-3 py-1.5">
+            <span class="rounded px-2 py-0.5 text-xs" :class="c.status === 'active' ? 'bg-green-50 text-green-600' : 'bg-slate-100 text-slate-400'">{{ c.status === 'active' ? '发放中' : '已停发' }}</span>
+          </td>
+          <td class="px-3 py-1.5">
+            <div class="flex items-center gap-1 text-[#1677ff]">
+              <button class="hover:underline" :data-testid="`coupon-stats-${c.id}`" @click="openStats(c)">统计</button>
+              <button class="hover:underline" :data-testid="`coupon-edit-${c.id}`" @click="openEdit(c)"><Pencil class="h-3.5 w-3.5" /></button>
+              <button v-if="c.status === 'active'" class="text-slate-400 hover:text-red-500" :data-testid="`coupon-stop-${c.id}`" @click="askStop(c)">停发</button>
+              <button class="hover:underline" :data-testid="`coupon-export-${c.id}`" title="导出领取/核销明细" @click="doExport(c)"><Download class="h-3.5 w-3.5" /></button>
+            </div>
+          </td>
+        </tr>
+        <tr v-if="loading">
+          <td colspan="10"><LoadingSpinner /></td>
+        </tr>
+        <tr v-if="!list.length && !loading">
+          <td colspan="10" class="px-3 py-12 text-center text-slate-400" data-testid="coupon-empty">暂无优惠券</td>
+        </tr>
+      </tbody>
+    </table>
 
     <!-- 分页 -->
-    <div v-if="pagination.total_pages > 1" class="mt-3 flex items-center justify-end gap-2 text-xs text-slate-500">
-      <button class="rounded border border-slate-200 px-3 py-1 disabled:opacity-40" :disabled="pagination.page <= 1" @click="goPage(pagination.page - 1)">上一页</button>
-      <span>{{ pagination.page }} / {{ pagination.total_pages }}</span>
-      <button class="rounded border border-slate-200 px-3 py-1 disabled:opacity-40" :disabled="pagination.page >= pagination.total_pages" @click="goPage(pagination.page + 1)">下一页</button>
+    <div v-if="pagination.total_pages > 1" class="mt-4 flex items-center justify-between text-[13px] text-slate-500">
+      <span>共 {{ pagination.total }} 条记录 / 每页 {{ pagination.page_size }} 条</span>
+      <div class="flex items-center gap-1">
+        <button
+          class="flex h-7 w-7 items-center justify-center rounded border border-slate-200 disabled:opacity-40"
+          :disabled="pagination.page <= 1" @click="goPage(pagination.page - 1)"
+        ><ChevronLeft class="h-4 w-4" /></button>
+        <button
+          v-for="page in pagination.total_pages" :key="page"
+          class="h-7 min-w-7 rounded border px-1.5"
+          :class="page === pagination.page ? 'border-[#1677ff] bg-[#1677ff] text-white' : 'border-slate-200 hover:border-[#1677ff]'"
+          @click="goPage(page)"
+        >{{ page }}</button>
+        <button
+          class="flex h-7 w-7 items-center justify-center rounded border border-slate-200 disabled:opacity-40"
+          :disabled="pagination.page >= pagination.total_pages" @click="goPage(pagination.page + 1)"
+        ><ChevronRight class="h-4 w-4" /></button>
+      </div>
     </div>
 
     <!-- 创建/编辑弹层 -->

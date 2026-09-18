@@ -254,6 +254,29 @@ describe('营销管理 · 优惠券（T-040）', () => {
     expect(noPerm.find('[data-testid="coupon-create-btn"]').exists()).toBe(false)
   })
 
+  it('工具行「搜索 / 重置」：搜索带关键词与状态，重置清空条件并回到第 1 页', async () => {
+    const wrapper = mount(CouponPanel, { global: globalCfg(freshPinia()) })
+    await flushPromises()
+    getCouponsMock.mockClear()
+
+    const input = wrapper.find('[data-testid="coupon-search-input"]')
+    await input.setValue('新人')
+    await wrapper.find('[data-testid="coupon-status-filter"]').setValue('active')
+    await wrapper.find('[data-testid="coupon-search-btn"]').trigger('click')
+    await flushPromises()
+    expect(getCouponsMock).toHaveBeenLastCalledWith(
+      expect.objectContaining({ keyword: '新人', status: 'active', page: 1 }),
+    )
+
+    await wrapper.find('[data-testid="coupon-reset-btn"]').trigger('click')
+    await flushPromises()
+    expect((input.element as HTMLInputElement).value).toBe('')
+    expect((wrapper.find('[data-testid="coupon-status-filter"]').element as HTMLSelectElement).value).toBe('')
+    expect(getCouponsMock).toHaveBeenLastCalledWith(
+      expect.objectContaining({ keyword: undefined, status: undefined, page: 1 }),
+    )
+  })
+
   it('停发需二次确认且调用 stop 接口', async () => {
     mockCoupons([couponRow({ id: 8 })])
     stopCouponMock.mockResolvedValue({ data: { data: null } })

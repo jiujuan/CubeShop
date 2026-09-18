@@ -145,7 +145,7 @@ defineExpose({ load, openCreate, openEdit, form, validateTiers, addTier, removeT
     <div class="mb-4 flex items-center justify-between">
       <p class="text-xs text-slate-400">多活动并存时用户订单取优惠最大的一个，不叠加</p>
       <button
-        class="flex items-center gap-1 rounded-md bg-[#1677ff] px-4 py-2 text-sm text-white hover:bg-[#4096ff]"
+        class="flex items-center gap-1 rounded-md bg-[#1677ff] px-4 py-1.5 text-[13px] text-white hover:bg-[#4096ff]"
         data-testid="promotion-create-btn"
         @click="openCreate"
       ><Plus class="h-4 w-4" /> 新建活动</button>
@@ -153,44 +153,43 @@ defineExpose({ load, openCreate, openEdit, form, validateTiers, addTier, removeT
 
     <p v-if="tip" class="mb-3 rounded-md bg-red-50 px-3 py-2 text-xs text-red-500">{{ tip }}</p>
 
-    <LoadingSpinner v-if="loading" />
-
-    <div v-else class="overflow-x-auto rounded-lg border border-slate-200 bg-white">
-      <table class="w-full text-left text-[13px]">
-        <thead class="bg-slate-50 text-slate-500">
-          <tr>
-            <th class="px-4 py-2.5">活动名称</th>
-            <th class="px-4 py-2.5">满减梯度</th>
-            <th class="px-4 py-2.5">活动时间</th>
-            <th class="px-4 py-2.5">状态</th>
-            <th class="px-4 py-2.5">操作</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-for="p in list" :key="p.id" class="border-t border-slate-100" :data-testid="`promotion-row-${p.id}`">
-            <td class="px-4 py-2.5 font-medium text-slate-700">{{ p.name }}</td>
-            <td class="px-4 py-2.5 text-[#ff4d4f]" :data-testid="`promotion-rules-${p.id}`">{{ rulesText(p) }}</td>
-            <td class="px-4 py-2.5 text-slate-500">
-              <span class="flex items-center gap-1"><CalendarRange class="h-3.5 w-3.5" /> {{ p.start_at.slice(0, 10) }} ~ {{ p.end_at.slice(0, 10) }}</span>
-            </td>
-            <td class="px-4 py-2.5">
-              <span class="rounded px-1.5 py-0.5 text-xs" :class="p.status === 'active' ? (p.running ? 'bg-green-50 text-green-600' : 'bg-blue-50 text-[#1677ff]') : 'bg-slate-100 text-slate-400'">
-                {{ p.status === 'active' ? (p.running ? '进行中' : '未开始/已结束') : '已停用' }}
-              </span>
-            </td>
-            <td class="px-4 py-2.5">
-              <div class="flex items-center gap-2 text-[#1677ff]">
-                <button class="hover:underline" :data-testid="`promotion-edit-${p.id}`" @click="openEdit(p)"><Pencil class="h-3.5 w-3.5" /></button>
-                <button class="text-slate-400 hover:text-[#1677ff]" :data-testid="`promotion-toggle-${p.id}`" @click="askToggle(p)">{{ p.status === 'active' ? '停用' : '启用' }}</button>
-              </div>
-            </td>
-          </tr>
-          <tr v-if="!list.length">
-            <td colspan="5" class="px-4 py-10 text-center text-slate-400" data-testid="promotion-empty">暂无满减活动</td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
+    <table class="w-full text-[13px]">
+      <thead>
+        <tr class="border-b border-slate-200 text-left text-slate-500">
+          <th class="px-3 py-1.5">活动名称</th>
+          <th class="px-3 py-1.5">满减梯度</th>
+          <th class="px-3 py-1.5">活动时间</th>
+          <th class="px-3 py-1.5">状态</th>
+          <th class="px-3 py-1.5">操作</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr v-for="p in list" :key="p.id" class="border-b border-slate-100 hover:bg-slate-50" :data-testid="`promotion-row-${p.id}`">
+          <td class="px-3 py-1.5 font-medium text-black">{{ p.name }}</td>
+          <td class="px-3 py-1.5 text-[#ff4d4f]" :data-testid="`promotion-rules-${p.id}`">{{ rulesText(p) }}</td>
+          <td class="px-3 py-1.5 text-black">
+            <span class="flex items-center gap-1"><CalendarRange class="h-3.5 w-3.5" /> {{ p.start_at.slice(0, 10) }} ~ {{ p.end_at.slice(0, 10) }}</span>
+          </td>
+          <td class="px-3 py-1.5">
+            <span class="rounded px-2 py-0.5 text-xs" :class="p.status === 'active' ? (p.running ? 'bg-green-50 text-green-600' : 'bg-blue-50 text-[#1677ff]') : 'bg-slate-100 text-slate-400'">
+              {{ p.status === 'active' ? (p.running ? '进行中' : '未开始/已结束') : '已停用' }}
+            </span>
+          </td>
+          <td class="px-3 py-1.5">
+            <div class="flex items-center gap-1 text-[#1677ff]">
+              <button class="hover:underline" :data-testid="`promotion-edit-${p.id}`" @click="openEdit(p)"><Pencil class="h-3.5 w-3.5" /></button>
+              <button class="text-slate-400 hover:text-[#1677ff]" :data-testid="`promotion-toggle-${p.id}`" @click="askToggle(p)">{{ p.status === 'active' ? '停用' : '启用' }}</button>
+            </div>
+          </td>
+        </tr>
+        <tr v-if="loading">
+          <td colspan="5"><LoadingSpinner /></td>
+        </tr>
+        <tr v-if="!list.length && !loading">
+          <td colspan="5" class="px-3 py-12 text-center text-slate-400" data-testid="promotion-empty">暂无满减活动</td>
+        </tr>
+      </tbody>
+    </table>
 
     <!-- 创建/编辑弹层 -->
     <Teleport to="body">
