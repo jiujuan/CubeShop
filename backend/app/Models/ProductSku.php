@@ -5,13 +5,14 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use App\Models\Traits\HasPublicId;
 
 /**
  * 商品 SKU
  */
 class ProductSku extends Model
 {
-    use SoftDeletes;
+    use SoftDeletes, HasPublicId;
 
     protected $table = 'product_skus';
     protected $fillable = ['product_id', 'sku_code', 'specs', 'price', 'status'];

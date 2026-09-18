@@ -2,14 +2,18 @@
 
 namespace App\Models;
 
+use App\Models\Traits\HasPublicId;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 
 /**
  * 订单明细（含商品快照，数据库设计 2.6）
  */
 class OrderItem extends Model
 {
+    use HasPublicId;
+
     public const UPDATED_AT = null;
 
     protected $table = 'order_items';
@@ -42,5 +46,21 @@ class OrderItem extends Model
     public function order(): BelongsTo
     {
         return $this->belongsTo(Order::class, 'order_id');
+    }
+
+    /** 该订单行对应的评价（行项目 id 已转 public_id，评价索引须用同一标识） */
+    public function review(): HasOne
+    {
+        return $this->hasOne(Review::class, 'order_item_id');
+    }
+
+    public function product(): BelongsTo
+    {
+        return $this->belongsTo(Product::class, 'product_id');
+    }
+
+    public function sku(): BelongsTo
+    {
+        return $this->belongsTo(ProductSku::class, 'sku_id');
     }
 }
