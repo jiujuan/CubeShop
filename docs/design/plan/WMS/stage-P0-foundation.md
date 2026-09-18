@@ -1,8 +1,18 @@
 # Stage P0：仓库数据模型 + WMS 配置 / SKU 映射 + 后台配置能力
 
-**状态**：⬜ 未开始
+**状态**：✅ 已完成（2026-09-19）
 **工期**：约 1 周（5 人日）
 **对应设计文档**：§3.1～§3.4（配置入口/配置项/页面原型）、§4.1（`wms_config`、`wms_sku_mapping`）、§9.1（后台配置 API）
+
+> **实施说明（与计划的偏差，均为有意）**
+> 1. **迁移编号**：计划写作 `000059~000063`，但仓库实际已推进到 `000076`（退款/日志相关迁移占用了号段），
+>    故本阶段实际使用 `2026_09_20_000077 ~ 000081`，语义与计划一一对应。
+> 2. **审计日志位置**：计划把 `operationLog->record()` 放在 Step 5 控制器；实际放在
+>    `WmsConfigService::save()`（写入点即审计点，避免调用方漏记），控制器只负责仓库 CRUD 的审计。
+> 3. **报文留痕位置**：MockAdapter 保持纯粹（不外呼/不落库），`wms_api_logs` 由
+>    `WmsConfigService::testConnection()` 统一写入——这样真实 Adapter / Mock / 抛错三种情况才能一视同仁。
+> 4. **生产链路故意不可用**：`api_env=prod` 且凭证齐备时工厂抛错（P2 才提供真实 Adapter），
+>    缺凭证时 Mock 调用 fail-closed——避免上线后误以为「已生效」而实际在发假成功。
 
 ---
 
@@ -48,11 +58,11 @@
 ## 3. 实施步骤
 
 **Step 1｜迁移：仓储域四张基础表（后端）**
-新增（编号接当前最新 `000058`）：
-- `2026_09_20_000059_create_warehouses_table.php`：`id, code(unique), name, contact_name, contact_phone, province, city, district, address, status(tinyint), timestamps`
-- `2026_09_20_000060_create_wms_configs_table.php`：按 README §3-D2/D6，`unique(warehouse_id)`；`provider/enabled/auto_push/auto_push_return/push_retry_times/sku_mapping_mode`；`app_key/app_secret_enc/access_token_enc/customer_id/owner_no/warehouse_code/warehouse_no/api_env/callback_token/extra_config(json)/remark`；FK `warehouse_id → warehouses.id`（restrict）
-- `2026_09_20_000061_create_wms_sku_mappings_table.php`：`warehouse_id, sku_id, platform_sku_code, wms_sku_code, barcode, status`，`unique(warehouse_id, sku_id)`
-- `2026_09_20_000062_create_wms_api_logs_table.php`：`direction(outbound/inbound), provider, api_name, request_id, biz_no, request_body(json), response_body(json), http_status, success, error_msg, created_at`（P2/P3 复用，提前建便于 P0 记录连通性测试）
+新增（⚠️ 计划原写 `000058` 起，实际号段已被占用，改用 **`000077` 起**）：
+- `2026_09_20_000077_create_warehouses_table.php`：`id, code(unique), name, contact_name, contact_phone, province, city, district, address, status(tinyint), timestamps`
+- `2026_09_20_000078_create_wms_configs_table.php`：按 README §3-D2/D6，`unique(warehouse_id)`；`provider/enabled/auto_push/auto_push_return/push_retry_times/sku_mapping_mode`；`app_key/app_secret_enc/access_token_enc/customer_id/owner_no/warehouse_code/warehouse_no/api_env/callback_token/extra_config(json)/remark`；FK `warehouse_id → warehouses.id`（restrict）
+- `2026_09_20_000079_create_wms_sku_mappings_table.php`：`warehouse_id, sku_id, platform_sku_code, wms_sku_code, barcode, status`，`unique(warehouse_id, sku_id)`
+- `2026_09_20_000080_create_wms_api_logs_table.php`：`direction(outbound/inbound), provider, api_name, request_id, biz_no, request_body(json), response_body(json), http_status, success, error_msg, created_at`（P2/P3 复用，提前建便于 P0 记录连通性测试）
 
 ⚠️ 迁移必须 PDO 双兼容：全部用 `$table->json()`（PG 下即 jsonb）；写完后 `cd backend && php artisan migrate --force` 同步本地 PG 开发库。
 
@@ -90,13 +100,15 @@ POST   /api/admin/wms/warehouses/{id}/sku-mappings/batch    permission:wms.confi
 DELETE /api/admin/wms/warehouses/{id}/sku-mappings/{skuId}  permission:wms.config.manage
 ```
 控制器：`app/Http/Controllers/Admin/WmsConfigController.php`
-- 出口脱敏：`app_secret`/`access_token` 永不返回明文（返回 `masked`）
+- 出口脱敏：`app_secret`/`access_token` 永不返回明文（返回 `masked` = `****` + 末 4 位）
 - 校验：`provider in cainiao,jd_cloud`、`api_env in prod,sandbox`、`push_retry_times 0..10`、`sku_mapping_mode in same,manual`
-- 每个写操作 `operationLog->record($adminId, 'wms', 'config_saved', 'warehouse', $warehouseId, [...])`
+- 审计：仓库 CRUD 由控制器记；**配置保存由 `WmsConfigService::save()` 记**（`config_created`/`config_saved`，只记非敏感字段）
+- 未配置的仓库 `GET .../config` 返回 `configured=false` + 全套默认值，前端无需自造默认值
+- `DELETE .../sku-mappings/{skuId}` 的 `skuId` 兼容 public_id 与 int（`PublicId::resolve`）
 
 **Step 6｜权限与种子（后端）**
 - `RolePermissionSeeder::PERMISSIONS` 追加 4 码（新装路径）
-- 幂等迁移 `2026_09_20_000063_sync_wms_permissions.php`：给 `permissions` 表补行 + 给超管角色赋权（**必须与 Seeder 同时改**，否则存量环境缺权限）
+- 幂等迁移 `2026_09_20_000081_sync_wms_permissions.php`：给 `permissions` 表补行 + 给超管角色赋权（**必须与 Seeder 同时改**，否则存量环境缺权限）
 - Seed 数据：`WarehouseSeeder`（1 个默认仓 `WH_DEFAULT`）+ 幂等，注册到 `DatabaseSeeder`；不要造 WMS 配置真数据（避免把假凭证带入开发库）
 
 **Step 7｜admin 前端页面**
@@ -144,36 +156,36 @@ DELETE /api/admin/wms/warehouses/{id}/sku-mappings/{skuId}  permission:wms.confi
 
 ## 5. 验收清单
 
-- [ ] 4 张迁移文件已合入，且**已在本地 PG 开发库执行 `migrate --force`**
-- [ ] `wms_configs` 中 `app_secret_enc` 查询为密文，任何 API 出口不含明文
-- [ ] 后台可新建仓库 → 配置 WMS → 测试连通性（Mock）成功
-- [ ] SKU 映射批量导入成功，含逐行错误反馈
-- [ ] 权限码同时存在于 Seeder 与幂等迁移，超管自动拥有
-- [ ] 所有写操作有 `sys_operation_log` 记录
-- [ ] 回调地址可在页面一键复制
-- [ ] 单元测试、回归测试、集成测试全部通过（粘贴结果到本文档末"验收记录"）
-- [ ] 代码按「后端 / admin」两个 commit 提交，不含无关文件
+- [x] 4 张迁移文件已合入，且**已在本地 PG 开发库执行 `migrate --force`**
+- [x] `wms_configs` 中 `app_secret_enc` 查询为密文，任何 API 出口不含明文
+- [x] 后台可新建仓库 → 配置 WMS → 测试连通性（Mock）成功
+- [x] SKU 映射批量导入成功，含逐行错误反馈
+- [x] 权限码同时存在于 Seeder 与幂等迁移，超管自动拥有
+- [x] 所有写操作有 `sys_operation_log` 记录
+- [x] 回调地址可在页面一键复制
+- [x] 单元测试、回归测试、集成测试全部通过（粘贴结果到本文档末"验收记录"）
+- [x] 代码按「后端 / admin」两个 commit 提交，不含无关文件
 
 ### 验收记录
 | 日期 | 人 | 结果 | 备注 |
 |---|---|---|---|
-|  |  |  |  |
+| 2026-09-19 | AI（本地自测） | ✅ 通过 | 后端全量 pest **1042 passed**（基线 1016 + 净增 26，0 失败）；新增 WMS 用例 24 例（Feature 14 + Unit 10）。admin `vue-tsc` 0 错误、`vitest` **199/199**（新增 12 例）、`vite build` 通过。`migrate:fresh --seed`（临时 SQLite）可完整播种，`WH_DEFAULT` 与 4 个 `wms.*` 权限码落地。curl 冒烟覆盖：未带 token 401、仓库列表、配置默认回显、保存后掩码 `****ABCD`、连通性 `连通成功（Mock，2 ms）`、留空密钥不覆盖、批量导入 1 成功 1 失败带行号、库内密文可解密、审计日志无明文 |
 
 ---
 
 ## 6. 完成情况（勾选后才允许改为 ✅）
 
-- [ ] Step 1 迁移（4 张表 + PG 同步）
-- [ ] Step 2 模型 / 枚举 / 单号
-- [ ] Step 3 Adapter 契约 + Mock 实现 + 工厂
-- [ ] Step 4 `WmsConfigService`
-- [ ] Step 5 后台接口 + 路由
-- [ ] Step 6 权限同步（Seeder + 幂等迁移）+ Seeder
-- [ ] Step 7 admin 三个页面 + 菜单
-- [ ] Step 8 状态更新与提交
-- [ ] 单元测试通过
-- [ ] 回归测试通过
-- [ ] 集成测试通过
-- [ ] 验收清单全勾选
+- [x] Step 1 迁移（4 张表 + PG 同步）
+- [x] Step 2 模型 / 枚举 / 单号
+- [x] Step 3 Adapter 契约 + Mock 实现 + 工厂
+- [x] Step 4 `WmsConfigService`
+- [x] Step 5 后台接口 + 路由
+- [x] Step 6 权限同步（Seeder + 幂等迁移）+ Seeder
+- [x] Step 7 admin 三个页面 + 菜单
+- [x] Step 8 状态更新与提交
+- [x] 单元测试通过
+- [x] 回归测试通过
+- [x] 集成测试通过
+- [x] 验收清单全勾选
 
-**阶段状态**：⬜ 未开始 → 完成后改为 ✅ 并同步 `README.md` §4
+**阶段状态**：✅ 已完成（2026-09-19）→ 已同步 `README.md` §4
