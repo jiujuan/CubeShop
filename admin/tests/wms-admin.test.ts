@@ -48,6 +48,37 @@ vi.mock('@/api/wms', () => ({
   WMS_MAPPING_MODE_LABELS: { same: '跟随平台 SKU 编码', manual: '手工映射' },
 }))
 
+/**
+ * 地区字典按最小假数据 mock：真实 regions.json 体量大，
+ * 这里只保留用例需要的「省 → 市 → 区」三级结构。
+ */
+vi.mock('@/lib/region', () => {
+  interface Node { code: string; name: string; children?: Node[] }
+  const tree: Node[] = [
+    {
+      code: '440000',
+      name: '广东省',
+      children: [
+        { code: '440300', name: '深圳市', children: [{ code: '440305', name: '南山区' }, { code: '440304', name: '福田区' }] },
+        { code: '440100', name: '广州市', children: [{ code: '440106', name: '天河区' }] },
+      ],
+    },
+    {
+      code: '110000',
+      name: '北京市',
+      children: [{ code: '110100', name: '北京市', children: [{ code: '110105', name: '朝阳区' }] }],
+    },
+  ]
+  const strip = (n: Node) => ({ code: n.code, name: n.name })
+
+  return {
+    listProvinces: async () => tree.map(strip),
+    listCities: async (code: string) => (tree.find((p) => p.code === code)?.children ?? []).map(strip),
+    listDistricts: async (pCode: string, cCode: string) =>
+      ((tree.find((p) => p.code === pCode)?.children ?? []).find((c) => c.code === cCode)?.children ?? []).map(strip),
+  }
+})
+
 import WarehouseListView from '@/views/wms/WarehouseListView.vue'
 import WmsConfigView from '@/views/wms/WmsConfigView.vue'
 import WmsSkuMappingView from '@/views/wms/WmsSkuMappingView.vue'
@@ -218,6 +249,42 @@ describe('WMS 仓库列表', () => {
 
     expect(createWmsWarehouseMock).toHaveBeenCalledTimes(1)
     expect(createWmsWarehouseMock.mock.calls[0][0]).toMatchObject({ code: 'WH_NEW', name: '新仓库', status: 1 })
+  })
+
+  it('编辑仓库：省市区按名称回填字典下拉，改省后市/区重置', async () => {
+    const wrapper = await mountAt(WarehouseListView)
+    await flushPromises()
+
+    await wrapper.find('[data-testid="warehouse-edit-7"]').trigger('click')
+    await flushPromises()
+
+    const sel = (id: string) => wrapper.find(`[data-testid="${id}"]`).element as HTMLSelectElement
+    // 「广东省 / 深圳市 / 南山区」按名称命中字典 code（不再手输）
+    expect(sel('warehouse-form-province').value).toBe('440000')
+    expect(sel('warehouse-form-city').value).toBe('440300')
+    expect(sel('warehouse-form-district').value).toBe('440305')
+
+    // 改省 → 市/区清空，市下拉换为北京的市
+    await wrapper.find('[data-testid="warehouse-form-province"]').setValue('110000')
+    await flushPromises()
+    expect(sel('warehouse-form-city').value).toBe('')
+    expect(sel('warehouse-form-district').value).toBe('')
+    expect(wrapper.find('[data-testid="warehouse-form-city"]').text()).toContain('北京市')
+  })
+
+  it('保存仓库时地区以字典名称提交（不提交 code）', async () => {
+    const wrapper = await mountAt(WarehouseListView)
+    await flushPromises()
+
+    await wrapper.find('[data-testid="warehouse-edit-7"]').trigger('click')
+    await flushPromises()
+    await wrapper.find('[data-testid="warehouse-form-save"]').trigger('click')
+    await flushPromises()
+
+    expect(updateWmsWarehouseMock).toHaveBeenCalledWith(
+      7,
+      expect.objectContaining({ province: '广东省', city: '深圳市', district: '南山区' }),
+    )
   })
 })
 

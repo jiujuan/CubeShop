@@ -14,6 +14,7 @@ import {
 import { Button } from '@/components/ui/button'
 import LoadingSpinner from '@/components/LoadingSpinner.vue'
 import TablePagination from '@/components/TablePagination.vue'
+import { listCities, listDistricts, listProvinces, type RegionNode } from '@/lib/region'
 
 /**
  * 仓库档案（WMS 计划 P0 / F1，权限 wms.config.manage）
@@ -35,10 +36,66 @@ const showForm = ref(false)
 const createMode = ref(false)
 const editingId = ref<number | null>(null)
 const saving = ref(false)
-const form = reactive<WarehousePayload>({
+const form = reactive({
   code: '', name: '', contact_name: '', contact_phone: '',
-  province: '', city: '', district: '', address: '', status: 1,
+  address: '', status: 1,
 })
+
+/**
+ * 所在地区：统一走公共地区字典下拉（shared/region-dict/regions.json → @/lib/region），
+ * 禁止手输 —— 与用户地址、运费模板同源，避免脏数据影响按省匹配。
+ * UI 用 code 级联，提交时转名称（warehouses 表存的是名称）。
+ */
+const provinces = ref<RegionNode[]>([])
+const cities = ref<RegionNode[]>([])
+const districts = ref<RegionNode[]>([])
+const provinceCode = ref('')
+const cityCode = ref('')
+const districtCode = ref('')
+
+const provinceName = computed(() => provinces.value.find((p) => p.code === provinceCode.value)?.name ?? '')
+const cityName = computed(() => cities.value.find((c) => c.code === cityCode.value)?.name ?? '')
+const districtName = computed(() => districts.value.find((d) => d.code === districtCode.value)?.name ?? '')
+
+/** 省级列表按需加载（独立小 chunk，只拉一次） */
+async function ensureProvinces() {
+  if (provinces.value.length === 0) provinces.value = await listProvinces()
+}
+
+async function onProvinceChange() {
+  cityCode.value = ''
+  districtCode.value = ''
+  cities.value = []
+  districts.value = []
+  if (provinceCode.value) cities.value = await listCities(provinceCode.value)
+}
+
+async function onCityChange() {
+  districtCode.value = ''
+  districts.value = []
+  if (cityCode.value) districts.value = await listDistricts(provinceCode.value, cityCode.value)
+}
+
+function resetRegion() {
+  provinceCode.value = ''
+  cityCode.value = ''
+  districtCode.value = ''
+  cities.value = []
+  districts.value = []
+}
+
+/** 按名称回填三级选择（历史名称若不在字典中则留空，由管理员重选） */
+async function fillRegion(province: string, city: string, district: string) {
+  await ensureProvinces()
+  const p = provinces.value.find((x) => x.name === province)
+  provinceCode.value = p?.code ?? ''
+  cities.value = provinceCode.value ? await listCities(provinceCode.value) : []
+  const c = cities.value.find((x) => x.name === city)
+  cityCode.value = c?.code ?? ''
+  districts.value = cityCode.value ? await listDistricts(provinceCode.value, cityCode.value) : []
+  const d = districts.value.find((x) => x.name === district)
+  districtCode.value = d?.code ?? ''
+}
 
 const formValid = computed(() => form.code.trim().length > 0 && form.name.trim().length > 0)
 
@@ -71,8 +128,10 @@ function openCreate() {
   editingId.value = null
   Object.assign(form, {
     code: '', name: '', contact_name: '', contact_phone: '',
-    province: '', city: '', district: '', address: '', status: 1,
+    address: '', status: 1,
   })
+  resetRegion()
+  void ensureProvinces()
   showForm.value = true
 }
 
@@ -84,23 +143,29 @@ function openEdit(row: WarehouseRow) {
     name: row.name,
     contact_name: row.contact_name ?? '',
     contact_phone: row.contact_phone ?? '',
-    province: row.province ?? '',
-    city: row.city ?? '',
-    district: row.district ?? '',
     address: row.address ?? '',
     status: row.status,
   })
+  resetRegion()
+  void fillRegion(row.province ?? '', row.city ?? '', row.district ?? '')
   showForm.value = true
 }
 
 async function doSave() {
   if (!formValid.value || saving.value) return
   saving.value = true
+  // 地区以字典选中的名称为准（与用户地址、运费模板同一口径）
+  const payload: WarehousePayload = {
+    ...form,
+    province: provinceName.value || null,
+    city: cityName.value || null,
+    district: districtName.value || null,
+  }
   try {
     if (createMode.value) {
-      await createWmsWarehouse({ ...form })
+      await createWmsWarehouse(payload)
     } else if (editingId.value !== null) {
-      await updateWmsWarehouse(editingId.value, { ...form })
+      await updateWmsWarehouse(editingId.value, payload)
     }
     showForm.value = false
     await load(pagination.value.page)
@@ -261,15 +326,40 @@ onMounted(() => load())
         <div class="mt-3 flex gap-3">
           <div class="flex-1">
             <label class="block text-xs text-slate-500">省</label>
-            <input v-model="form.province" type="text" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-1.5 text-[13px] outline-none focus:border-[#1677ff]" />
+            <select
+              v-model="provinceCode"
+              data-testid="warehouse-form-province"
+              class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-1.5 text-[13px] outline-none focus:border-[#1677ff]"
+              @change="onProvinceChange"
+            >
+              <option value="">请选择</option>
+              <option v-for="p in provinces" :key="p.code" :value="p.code">{{ p.name }}</option>
+            </select>
           </div>
           <div class="flex-1">
             <label class="block text-xs text-slate-500">市</label>
-            <input v-model="form.city" type="text" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-1.5 text-[13px] outline-none focus:border-[#1677ff]" />
+            <select
+              v-model="cityCode"
+              :disabled="!provinceCode"
+              data-testid="warehouse-form-city"
+              class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-1.5 text-[13px] outline-none focus:border-[#1677ff] disabled:bg-slate-50 disabled:text-slate-400"
+              @change="onCityChange"
+            >
+              <option value="">请选择</option>
+              <option v-for="c in cities" :key="c.code" :value="c.code">{{ c.name }}</option>
+            </select>
           </div>
           <div class="flex-1">
             <label class="block text-xs text-slate-500">区</label>
-            <input v-model="form.district" type="text" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-1.5 text-[13px] outline-none focus:border-[#1677ff]" />
+            <select
+              v-model="districtCode"
+              :disabled="!cityCode"
+              data-testid="warehouse-form-district"
+              class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-1.5 text-[13px] outline-none focus:border-[#1677ff] disabled:bg-slate-50 disabled:text-slate-400"
+            >
+              <option value="">请选择</option>
+              <option v-for="d in districts" :key="d.code" :value="d.code">{{ d.name }}</option>
+            </select>
           </div>
         </div>
 
