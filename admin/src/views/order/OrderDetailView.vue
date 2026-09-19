@@ -9,6 +9,7 @@ import {
   ORDER_STATUS_LABELS,
   TRACE_STATUS_CLASS,
   TRACE_STATUS_LABELS,
+  WMS_FULFILLMENT_STATUS_CLASS,
   type AdminOrder,
   type OrderItemView,
   type OrderLogRow,
@@ -330,6 +331,35 @@ onMounted(async () => {
           <p v-else class="text-[13px] text-slate-400">暂无物流轨迹</p>
         </template>
         <p v-else class="text-[13px] text-slate-400">该订单尚未发货，暂无物流信息</p>
+
+        <!-- WMS 履约只读摘要（WMS P3 / Step 7：无发货单时后端返回 null，整块隐藏） -->
+        <div
+          v-if="order?.wms_fulfillment"
+          class="mt-3 rounded-lg border border-slate-100 bg-slate-50/60 p-3"
+          data-testid="wms-fulfillment"
+        >
+          <h4 class="mb-2 flex items-center gap-1.5 text-xs font-semibold text-slate-500">
+            <Package class="h-3.5 w-3.5" /> WMS 履约
+          </h4>
+          <div class="flex flex-wrap items-center gap-x-6 gap-y-1 text-[13px]">
+            <span>
+              <span class="text-slate-400">状态：</span>
+              <span
+                class="rounded px-1.5 py-0.5 text-xs"
+                :class="WMS_FULFILLMENT_STATUS_CLASS[order.wms_fulfillment.status] ?? 'bg-slate-100 text-slate-500'"
+              >{{ order.wms_fulfillment.status_label }}</span>
+            </span>
+            <span><span class="text-slate-400">出库单号：</span><span class="font-mono">{{ order.wms_fulfillment.outbound_no }}</span></span>
+            <span v-if="order.wms_fulfillment.wms_outbound_no"><span class="text-slate-400">仓方单号：</span><span class="font-mono">{{ order.wms_fulfillment.wms_outbound_no }}</span></span>
+            <span><span class="text-slate-400">推送次数：</span>{{ order.wms_fulfillment.push_times }}</span>
+            <span v-if="order.wms_fulfillment.tracking_no"><span class="text-slate-400">回传运单号：</span><span class="font-mono">{{ order.wms_fulfillment.tracking_no }}</span></span>
+          </div>
+          <p
+            v-if="order.wms_fulfillment.last_push_error"
+            class="mt-1.5 break-all text-xs text-red-500"
+            data-testid="wms-push-error"
+          >最后推送错误：{{ order.wms_fulfillment.last_push_error }}</p>
+        </div>
       </div>
 
       <!-- 订单流水 -->

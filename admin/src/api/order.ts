@@ -120,6 +120,37 @@ export interface AdminOrder {
   amount_details?: OrderAmountDetails | null
   coupon?: OrderCoupon | null
   shipping?: OrderShipping[]
+  /** WMS 履约只读摘要（WMS P3 / Step 7）：订单无发货单时为 null（前端据此隐藏） */
+  wms_fulfillment?: WmsFulfillmentBrief | null
+}
+
+/** WMS 履约只读摘要（GET /admin/orders/{id} 的 wms_fulfillment 字段） */
+export interface WmsFulfillmentBrief {
+  id: number
+  outbound_no: string
+  status: string
+  status_label: string
+  warehouse_id: number
+  push_times: number
+  last_push_error: string | null
+  wms_outbound_no: string | null
+  carrier_code: string | null
+  tracking_no: string | null
+}
+
+/** WMS 履约状态中文标签（与后端 STATUS_LABELS 对齐；本页只读展示用） */
+export const WMS_FULFILLMENT_STATUS_CLASS: Record<string, string> = {
+  created: 'bg-slate-100 text-slate-500',
+  pending_push: 'bg-amber-50 text-amber-600',
+  pushing: 'bg-blue-50 text-blue-600',
+  pushed: 'bg-blue-50 text-blue-600',
+  picking: 'bg-blue-50 text-blue-600',
+  packed: 'bg-blue-50 text-blue-600',
+  shipped: 'bg-green-50 text-green-600',
+  completed: 'bg-green-50 text-green-600',
+  cancelled: 'bg-slate-100 text-slate-400',
+  exception: 'bg-red-50 text-red-600',
+  push_failed: 'bg-red-50 text-red-600',
 }
 
 export interface OrderListResult {
