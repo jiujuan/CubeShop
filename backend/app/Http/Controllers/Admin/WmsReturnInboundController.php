@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Exceptions\BusinessException;
+use App\Http\Controllers\Admin\Concerns\WmsLogSummary;
 use App\Http\Controllers\Controller;
 use App\Models\ReturnInboundOrder;
 use App\Services\Wms\ReturnInboundOrderService;
@@ -22,6 +23,7 @@ use Illuminate\Http\Request;
 class WmsReturnInboundController extends Controller
 {
     use ApiResponse;
+    use WmsLogSummary;
 
     public function __construct(private readonly ReturnInboundOrderService $returns) {}
 
@@ -179,6 +181,8 @@ class WmsReturnInboundController extends Controller
         ];
 
         if ($withItems) {
+            // P6/F4：最近调用流水摘要
+            $row['logs'] = $this->recentLogs($rio->inbound_no, $rio->push_request_id);
             $row['items'] = $rio->items->map(fn ($item) => [
                 'id' => $item->id,
                 'sku_id' => $item->sku_id,

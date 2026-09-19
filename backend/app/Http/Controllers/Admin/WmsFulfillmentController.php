@@ -3,8 +3,11 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Exceptions\BusinessException;
+use App\Http\Controllers\Admin\Concerns\WmsLogSummary;
 use App\Http\Controllers\Controller;
 use App\Models\FulfillmentOrder;
+use App\Models\SysOperationLog;
+use App\Services\Common\OperationLogService;
 use App\Services\Wms\FulfillmentOrderService;
 use App\Support\ApiResponse;
 use Illuminate\Http\JsonResponse;
@@ -21,8 +24,12 @@ use Illuminate\Http\Request;
 class WmsFulfillmentController extends Controller
 {
     use ApiResponse;
+    use WmsLogSummary;
 
-    public function __construct(private readonly FulfillmentOrderService $fulfillments) {}
+    public function __construct(
+        private readonly FulfillmentOrderService $fulfillments,
+        private readonly OperationLogService $operationLog,
+    ) {}
 
     /** GET /api/admin/wms/fulfillment-orders —— 发货单列表 */
     public function index(Request $request): JsonResponse
@@ -97,6 +104,55 @@ class WmsFulfillmentController extends Controller
         );
     }
 
+    /**
+     * POST /api/admin/wms/fulfillment-orders/batch-push —— 批量重推（WMS 计划 P6 / Step 1）
+     *
+     * 逐条走 `retryPush()`，单条失败不影响其余（结果按条返回 succeeded/failed）。
+     * 不可推送状态（如已发货）直接计为失败并带原因，不静默跳过——运营需要看到
+     * 「我勾了 5 条，其中 2 条没动」。
+     */
+    public function batchPush(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'ids' => ['required', 'array', 'min:1', 'max:50'],
+            'ids.*' => ['integer', 'min:1'],
+        ]);
+
+        $operatorId = (int) $request->user()->id;
+        $results = [];
+
+        foreach ($data['ids'] as $id) {
+            $fo = FulfillmentOrder::find((int) $id);
+            if (! $fo) {
+                $results[] = ['id' => (int) $id, 'success' => false, 'message' => '发货单不存在'];
+                continue;
+            }
+
+            try {
+                $this->fulfillments->retryPush($fo, $operatorId);
+                $results[] = ['id' => (int) $id, 'success' => true, 'message' => '已重新加入推送队列'];
+            } catch (\Throwable $e) {
+                $results[] = ['id' => (int) $id, 'success' => false, 'message' => $e->getMessage()];
+            }
+        }
+
+        $this->operationLog->record(
+            $operatorId,
+            'wms',
+            'fulfillment_batch_push',
+            'fulfillment_order',
+            null,
+            ['ids' => $data['ids'], 'results' => $results],
+            SysOperationLog::ACTOR_ADMIN,
+        );
+
+        return $this->success([
+            'total' => count($results),
+            'succeeded' => count(array_filter($results, fn ($r) => $r['success'])),
+            'results' => $results,
+        ]);
+    }
+
     // ==================== 出口 ====================
 
     /** @return array<string, mixed> */
@@ -130,6 +186,8 @@ class WmsFulfillmentController extends Controller
         ];
 
         if ($withItems) {
+            // P6/F2：最近调用流水摘要（完整报文去日志页按 request_id 查）
+            $row['logs'] = $this->recentLogs($fo->outbound_no, $fo->push_request_id);
             $row['buyer_info'] = $fo->buyer_info;
             $row['shipping_info'] = $fo->shipping_info;
             $row['items'] = $fo->items->map(fn ($item) => [

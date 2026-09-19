@@ -29,6 +29,8 @@ use App\Http\Controllers\Admin\RoleController as AdminRoleController;
 use App\Http\Controllers\Admin\UploadController;
 use App\Http\Controllers\Admin\UserController;
 use App\Http\Controllers\Admin\WmsConfigController;
+use App\Http\Controllers\Admin\WmsApiLogController;
+use App\Http\Controllers\Admin\WmsConsoleController;
 use App\Http\Controllers\Admin\WmsFulfillmentController;
 use App\Http\Controllers\Admin\WmsInventoryController;
 use App\Http\Controllers\Admin\WmsReturnInboundController;
@@ -370,6 +372,8 @@ Route::middleware(['auth:sanctum', 'account.active'])->group(function () {
 
         // WMS 发货单（WMS 计划 P1 / F8、Step 7）
         // 查看与治理分开授权：wms.order.view 只读，wms.order.manage 才允许重推/取消
+        Route::post('/wms/fulfillment-orders/batch-push', [WmsFulfillmentController::class, 'batchPush'])
+            ->middleware('permission:wms.order.manage');
         Route::get('/wms/fulfillment-orders', [WmsFulfillmentController::class, 'index'])
             ->middleware('permission:wms.order.view');
         Route::get('/wms/fulfillment-orders/{id}', [WmsFulfillmentController::class, 'show'])
@@ -401,6 +405,16 @@ Route::middleware(['auth:sanctum', 'account.active'])->group(function () {
         Route::post('/wms/inventory/sync', [WmsInventoryController::class, 'sync'])
             ->middleware('permission:wms.config.manage');
         Route::get('/wms/health', [WmsInventoryController::class, 'health'])
+            ->middleware('permission:wms.config.manage');
+
+        // 履约中心共用仓库下拉（P6）：只读运营 / 退货管理员也要能筛仓库
+        Route::get('/wms/warehouse-options', [WmsConsoleController::class, 'warehouseOptions'])
+            ->middleware('role_or_permission:wms.order.view|wms.return.manage|wms.config.manage');
+
+        // WMS 调用日志（WMS 计划 P6 / F5）：权限 wms.config.manage
+        Route::get('/wms/logs', [WmsApiLogController::class, 'index'])
+            ->middleware('permission:wms.config.manage');
+        Route::get('/wms/logs/{id}', [WmsApiLogController::class, 'show'])
             ->middleware('permission:wms.config.manage');
 
         // 评价管理 review.manage（V1.1 F01 / T-017）
