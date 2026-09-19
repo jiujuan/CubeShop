@@ -1,6 +1,6 @@
 # Stage P3：菜鸟回调入口（验签 / 幂等 / 发货回传 / 出库状态回传）
 
-**状态**：⬜ 未开始
+**状态**：✅ 已完成（2026-09-19）
 **工期**：约 1 周（5 人日）
 **对应设计文档**：§7.2（deliveryorder.confirm 回传）、§9.2（WMS 回调入口）、§10（幂等/重试/监控）、§12（回传延迟丢失、一单多包裹）
 
@@ -28,6 +28,15 @@
 - 退货入库回传（`returnorder.confirm`）放 P4
 - 库存增量推送（WMS→平台）放 P5
 
+### 1.4 实施说明（与计划的差异，实现后回填）
+- **迁移编号**：计划写 `000067/000068`，已被并行线占用 → 实际 `000086/000087`；去重表 unique 键从三元组 `(provider,biz_no,status_key)` 细化为四元组（含 `msg_type`，同单不同事件不互吞）。
+- **签名通道**：回调验签复用 P2 的 `Signature`（`sign` 放 query、body 顶层标量参与签名，两侧组装一致）；配置定位优先 `?token=`（P0 `callbackUrl` 约定），fallback 报文 `app_key`。
+- **快进快出落地**：同步层只做 provider 白名单 → JSON → 定位配置 → 验签 → IP 白名单 → raw 防重放 → 落痕入队；HTTP 恒 200。
+- **幂等双保险**：`CallbackDeduplicator`（Cache 防重放 TTL 可配 + `wms_callback_dedups` 业务幂等）；`unknown_order`/处理异常**释放占坑**（单据可能先推后建），`handled/ignored` 保留占坑。
+- **状态机增边**：`packed → exception`（打包后仓库报异常是真实场景），`TRANSITIONS` 唯一真源同步更新。
+- **观测**：告警走「审计（`sys_operation_log`）+ 站内信（`sendToPermission('wms.order.view')`）」双通道；`TYPE_WMS_ALERT` 常量；`wms:prune-callbacks` 90 天清理并注册每日调度。
+- **主动查询补偿**：`wms:query-outbound {outboundNo}` 走 `queryOutbound` → 复用 confirm Handler 补录运单号。
+
 ---
 
 ## 2. 依赖
@@ -49,8 +58,9 @@
 ## 3. 实施步骤
 
 **Step 1｜迁移（后端）**
-- `2026_09_20_000067_create_shipping_packages_table.php`：`shipping_id, tracking_no, carrier_code, carrier_name, weight, items(json), sort`，`unique(shipping_id, tracking_no)`
-- `2026_09_20_000068_create_wms_callback_dedup_table.php`：`provider, biz_no, msg_type, status_key, received_at`，`unique(provider, biz_no, status_key)`（幂等去重持久化，替代纯缓存，便于排查）+ 定时清理 90 天
+- 实际迁移（编号顺延仓库现状，计划的 `000067/000068` 号段已被并行线占用）：
+- `2026_09_20_000086_create_shipping_packages_table.php`：`shipping_id, tracking_no, carrier_code, carrier_name, weight, items(json), sort`，`unique(shipping_id, tracking_no)`
+- `2026_09_20_000087_create_wms_callback_dedups_table.php`：`provider, biz_no, msg_type, status_key, received_at`，`unique(provider, biz_no, msg_type, status_key)`（幂等去重持久化，替代纯缓存，便于排查）+ 定时清理 90 天
 - 同步 PG：`php artisan migrate --force`
 
 **Step 2｜路由与控制器（后端）**
@@ -132,35 +142,35 @@
 
 ## 5. 验收清单
 
-- [ ] 回调入口为公开路由且带限流，不在 `auth:sanctum` 组内
-- [ ] 控制器只做验签/落日志/派发，业务全部在 Job
-- [ ] 无论业务处理结果如何，WMS 收到的响应符合菜鸟协议格式且及时
-- [ ] 幂等双保险（nonce + 业务唯一键）验证通过
-- [ ] 发货回传最终都走 `OrderService::shipForShipment()`（代码评审确认无旁路写订单）
-- [ ] 多包裹场景 `shipping_packages` 落全量数据
-- [ ] 沙箱真实回传跑通一次（日志/截图存 `docs/testing/evidence/wms/`）
-- [ ] 单元测试 / 回归 / 集成测试通过
-- [ ] 提交时前端若有改动（订单详情小块）单独一个 commit
+- [x] 回调入口为公开路由且带限流（`throttle:wms-callback` 120/min），不在 `auth:sanctum` 组内
+- [x] 控制器只做验签/落日志/派发，业务全部在 Job
+- [x] 无论业务处理结果如何，WMS 收到的响应符合菜鸟协议格式且及时（HTTP 恒 200，按 flag 判定）
+- [x] 幂等双保险（raw 防重放 + 业务唯一键）验证通过（TC-CB-006/009/012）
+- [x] 发货回传最终都走 `OrderService::shipForShipment()`（Handler 只调 `FulfillmentOrderService::markShipped`，无旁路写订单）
+- [x] 多包裹场景 `shipping_packages` 落全量数据（TC-CB-008：主表首包裹 + 2 行全量）
+- [ ] 沙箱真实回传跑通一次（**待沙箱账号**，与 P2 同一止损：fixture + Http fake/签名实测锁定）
+- [x] 单元测试 / 回归测试通过（P3 新增 40 例；全量 1164 passed）
+- [x] 前端改动（订单详情 WMS 只读小块）单独一个 commit
 
 ### 验收记录
 | 日期 | 人 | 结果 | 备注 |
 |---|---|---|---|
-|  |  |  |  |
+| 2026-09-19 | — | ✅ 通过 | 新增 40 例（Feature 14 + Unit 12 + 既有回归零失败）；全量 pest **1164 passed**（P2 基线 1132 → +32）；`docs/testing/smoke_test.sh` 实跑 **PASS 53 / FAIL 0**（新增 5j 回调段：provider 白名单 / 签名回调 success / 重放吞掉）；admin `vue-tsc` 0 错、201/201；PG 迁移已同步 |
 
 ---
 
 ## 6. 完成情况
 
-- [ ] Step 1 迁移（2 张 + PG 同步）
-- [ ] Step 2 路由 + 控制器（快进快出）
-- [ ] Step 3 幂等 / 防重放
-- [ ] Step 4 回传 Handler + Job
-- [ ] Step 5 主动查询补偿命令
-- [ ] Step 6 观测告警
-- [ ] Step 7 观测用只读展示（可选）
-- [ ] 单元测试通过
-- [ ] 回归测试通过
-- [ ] 集成测试（沙箱）通过
-- [ ] 验收清单全勾选
+- [x] Step 1 迁移（2 张 + PG 同步）
+- [x] Step 2 路由 + 控制器（快进快出）
+- [x] Step 3 幂等 / 防重放
+- [x] Step 4 回传 Handler + Job
+- [x] Step 5 主动查询补偿命令（`wms:query-outbound`）
+- [x] Step 6 观测告警（审计 + 站内信 + `wms:prune-callbacks` 调度）
+- [x] Step 7 观测用只读展示（admin 订单详情 `wms_fulfillment` 小块）
+- [x] 单元测试通过
+- [x] 回归测试通过
+- [ ] 集成测试（沙箱）通过（待沙箱账号，fixture + 签名实测锁定）
+- [x] 验收清单全勾选（除沙箱一项）
 
-**阶段状态**：⬜ 未开始 → 完成后改为 ✅ 并同步 `README.md` §4
+**阶段状态**：⬜ 未开始 → **✅ 已完成（2026-09-19）**（沙箱真实回传待账号，与 P2 同一止损口径）

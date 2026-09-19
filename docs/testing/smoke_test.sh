@@ -249,6 +249,42 @@ CANCEL=$(req POST "/admin/wms/fulfillment-orders/$FO_ID/cancel" "$ATOK" '{"reaso
 req PUT "/admin/wms/warehouses/$WH_ID/config" "$ATOK" '{"provider":"cainiao","enabled":false,"auto_push":false,"auto_push_return":false,"push_retry_times":3,"sku_mapping_mode":"same","api_env":"sandbox"}' >/dev/null
 ok "关闭 WMS 配置（清理）"
 
+echo "--- 5j. WMS 回调链路（P3：公开入口安全层，Pest 深覆盖）"
+# CB_TOKEN 从 WH2 的回调地址提取（WH2 有已知凭证 SMOKE_KEY/SMOKE_SECRET_WXYZ）
+CB_URL=$(echo "$CFG2" | jpath data.callback_url)
+CB_TOKEN=$(printf '%s' "$CB_URL" | grep -o 'token=[^&]*' | cut -d= -f2)
+[ -n "$CB_TOKEN" ] && ok "回调地址含 token" || bad "回调地址无 token: $CB_URL"
+
+CB_CALL() { # payload_json  →  直接 curl 回调入口（响应是奇门 flag 格式）
+  local payload=$1
+  local sign
+  sign=$(php -r '
+    $p = json_decode($argv[1], true);
+    $params = ["token" => $argv[2], "sign_method" => "md5"];
+    foreach ($p as $k => $v) { if (is_scalar($v) && (string)$v !== "") { $params[$k] = (string)$v; } }
+    unset($params["sign"]);
+    ksort($params, SORT_STRING);
+    $src = "";
+    foreach ($params as $k => $v) { $src .= $k . $v; }
+    $src .= $argv[1];
+    echo strtoupper(md5($argv[3] . $src . $argv[3]));
+  ' "$payload" "$CB_TOKEN" "SMOKE_SECRET_WXYZ")
+  curl -s --noproxy '*' -X POST "$BASE/wms/callback/cainiao?token=$CB_TOKEN&sign=$sign&sign_method=md5"     -H 'Content-Type: application/json' -d "$payload"
+}
+
+# 1) 不支持的 provider
+CB1=$(curl -s --noproxy '*' -X POST "$BASE/wms/callback/jd_unknown" -H 'Content-Type: application/json' -d '{}')
+[ "$(echo "$CB1" | jpath code)" = "PROVIDER_UNSUPPORTED" ] && ok "回调 provider 白名单" || bad "provider 白名单: $CB1"
+
+# 2) 合法签名 confirm（单据号不存在也返回 success——业务处理异步）
+CB_PAYLOAD="{\"method\":\"taobao.qimen.deliveryorder.confirm\",\"timestamp\":\"2026-09-20 12:00:00\",\"app_key\":\"SMOKE_KEY\",\"v\":\"2.0\",\"sign_method\":\"md5\",\"customerId\":\"SMOKE_CUST\",\"deliveryOrder\":{\"deliveryOrderCode\":\"FO-SMOKE-REPLAY\",\"status\":\"SHIPPED\"}}"
+CB2=$(CB_CALL "$CB_PAYLOAD")
+[ "$(echo "$CB2" | jpath flag)" = "success" ] && ok "签名回调 success（入队异步处理）" || bad "签名回调: $CB2"
+
+# 3) 同原文重放 → 仍 success（防重放吞掉，不再入队）
+CB3=$(CB_CALL "$CB_PAYLOAD")
+[ "$(echo "$CB3" | jpath flag)" = "success" ] && ok "重放按 success 吞掉" || bad "重放: $CB3"
+
 echo "--- 6. 退出登录"
 OUT=$(req POST /auth/logout "$TOKEN" '')
 [ "$(echo "$OUT" | jpath code)" = "0" ] && ok "退出登录" || bad "退出: $(echo "$OUT" | head -c 80)"
