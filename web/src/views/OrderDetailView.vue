@@ -77,6 +77,24 @@ const REFUND_TYPE_LABELS: Record<string, string> = {
   refund: '仅退款',
   return_refund: '退货退款',
 }
+
+/**
+ * 金额明细中的优惠分项（优惠方式完整展示）：
+ * - 优先取 amount_details 快照里的 coupon_discount / promotion_discount（口径唯一）；
+ * - 历史订单无快照时，用顶层列回退：满减直接取 promotion_discount；券 = 优惠合计 − 满减。
+ */
+const promotionDiscount = computed(() => {
+  const d = order.value?.amount_details
+  if (d?.promotion_discount != null && d.promotion_discount !== '') return Number(d.promotion_discount)
+  return Number(order.value?.promotion_discount ?? 0)
+})
+const couponDiscount = computed(() => {
+  const d = order.value?.amount_details
+  if (d?.coupon_discount != null && d.coupon_discount !== '') return Number(d.coupon_discount)
+  const total = Number(order.value?.discount_amount ?? 0)
+  const promo = Number(order.value?.promotion_discount ?? 0)
+  return Math.max(0, total - promo)
+})
 const REFUND_STATUS_LABELS: Record<string, string> = {
   pending: '待审核',
   approved: '已同意',
@@ -337,6 +355,16 @@ async function onReviewSubmitted() {
           <div class="space-y-2 text-sm">
             <h2 class="mb-3 text-sm font-semibold text-slate-700">金额明细</h2>
             <div class="flex justify-between text-slate-600"><span>商品合计</span><span>¥{{ order.total_amount }}</span></div>
+            <!-- 满减优惠（其它优惠方式，优惠额 > 0 才展示，避免无优惠时多一行） -->
+            <div v-if="promotionDiscount > 0" class="flex justify-between text-[#ff7a45]" data-testid="order-promo-row">
+              <span>满减优惠</span>
+              <span data-testid="order-promo-amount">−¥{{ promotionDiscount.toFixed(2) }}</span>
+            </div>
+            <!-- 优惠券（优惠额 > 0 才展示） -->
+            <div v-if="couponDiscount > 0" class="flex justify-between text-[#ff4d4f]" data-testid="order-coupon-row">
+              <span>优惠券</span>
+              <span data-testid="order-coupon-amount">−¥{{ couponDiscount.toFixed(2) }}</span>
+            </div>
             <div class="flex justify-between text-slate-600">
               <span>运费</span><span>{{ Number(order.freight_amount) === 0 ? '包邮' : `¥${order.freight_amount}` }}</span>
             </div>

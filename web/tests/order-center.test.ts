@@ -412,3 +412,63 @@ describe('订单列表分组、检索与再次购买（T-006）', () => {
     expect(confirmOrderMock).not.toHaveBeenCalled()
   })
 })
+
+describe('订单详情金额明细优惠展示（T-039 衍生）', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    vi.clearAllMocks()
+    const auth = useAuthStore()
+    auth.token = 'fake-token'
+  })
+
+  it('使用了优惠券与满减时，金额明细完整展示两项优惠', async () => {
+    await renderDetail({
+      ...baseOrder({
+        total_amount: '200.00',
+        freight_amount: '10.00',
+        pay_amount: '160.00',
+        discount_amount: '50.00',
+        promotion_discount: '20.00',
+        amount_details: {
+          v: 1,
+          goods_amount: '200.00',
+          freight_amount: '10.00',
+          promotion_discount: '20.00',
+          coupon_discount: '30.00',
+          discount_amount: '50.00',
+          pay_amount: '160.00',
+        },
+      }),
+      logs: logsFor('paid'),
+    })
+
+    expect(screen.getByTestId('order-promo-row').textContent).toContain('满减优惠')
+    expect(screen.getByTestId('order-promo-amount').textContent).toContain('20.00')
+    expect(screen.getByTestId('order-coupon-row').textContent).toContain('优惠券')
+    expect(screen.getByTestId('order-coupon-amount').textContent).toContain('30.00')
+  })
+
+  it('无优惠时不展示优惠行', async () => {
+    await renderDetail({
+      ...baseOrder({ discount_amount: '0.00', promotion_discount: '0.00' }),
+      logs: logsFor('paid'),
+    })
+    expect(screen.queryByTestId('order-promo-row')).toBeNull()
+    expect(screen.queryByTestId('order-coupon-row')).toBeNull()
+  })
+
+  it('历史订单无 amount_details 时按列回退展示券优惠', async () => {
+    await renderDetail({
+      ...baseOrder({
+        total_amount: '200.00',
+        freight_amount: '0.00',
+        pay_amount: '150.00',
+        discount_amount: '50.00',
+        promotion_discount: '20.00',
+      }),
+      logs: logsFor('paid'),
+    })
+    expect(screen.getByTestId('order-promo-amount').textContent).toContain('20.00')
+    expect(screen.getByTestId('order-coupon-amount').textContent).toContain('30.00')
+  })
+})

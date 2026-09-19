@@ -114,11 +114,35 @@ export interface OrderBrief {
   total_amount: string
   freight_amount: string
   pay_amount: string
+  /** 优惠合计（券 + 满减；orders.discount_amount 列存的是合计，非仅券） */
+  discount_amount: string
+  /** 满减优惠额（orders.promotion_discount 列） */
+  promotion_discount: string
+  /** 金额分摊快照（PricingCalculator 产出；历史订单可能为 null） */
+  amount_details?: AmountDetails | null
   item_count: number
   items_preview: OrderItemPreview[]
   items: OrderItemView[]
   actions: OrderActions
   created_at: string
+}
+
+/** 订单金额分摊快照（与后端 PricingCalculator::price 的 amount_details 对齐，v=1） */
+export interface AmountDetails {
+  v: number
+  goods_amount: string
+  freight_amount: string
+  /** 满减优惠额 */
+  promotion_discount: string
+  /** 优惠券优惠额 */
+  coupon_discount: string
+  /** 优惠合计（= 券 + 满减） */
+  discount_amount: string
+  pay_amount: string
+  promotion_id?: number | null
+  coupon_id?: number | null
+  user_coupon_id?: number | null
+  lines?: Array<Record<string, string | number>>
 }
 
 export interface OrderDetail extends OrderBrief {
