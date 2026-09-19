@@ -99,6 +99,12 @@ const router = createRouter({
           meta: { title: '商品管理 / 分类属性模板', menu: true, icon: 'LayoutList', permission: 'product.view' },
         },
         {
+          path: 'category-brands',
+          name: 'category-brands',
+          component: () => import('@/views/product/CategoryBrandView.vue'),
+          meta: { title: '商品管理 / 分类可选品牌', menu: true, icon: 'Layers', permission: 'product.view' },
+        },
+        {
           path: 'orders',
           name: 'orders',
           component: () => import('@/views/order/OrderView.vue'),

@@ -2,7 +2,7 @@
 import { computed, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import {
-  BarChart3, BookOpen, Box, Calculator, ChevronDown, ChevronRight, ChevronsLeft, ChevronsRight, ClipboardList, CreditCard, FileClock, FolderTree, History, Images, LayoutDashboard, LayoutList, LifeBuoy, ListTree, LogOut, MapPinned, MessageSquare, Megaphone, Package, RotateCcw, ScrollText, Settings, ShieldCheck,   SquareUser, Tags, Truck, UploadCloud, UserCog, UserRound, Users, Wallet, Warehouse, Ticket,
+  BarChart3, BookOpen, Box, Calculator, ChevronDown, ChevronRight, ChevronsLeft, ChevronsRight, ClipboardList, CreditCard, FileClock, FolderTree, History, Images, LayoutDashboard, Layers, LayoutList, LifeBuoy, ListTree, LogOut, MapPinned, MessageSquare, Megaphone, Package, RotateCcw, ScrollText, Settings, ShieldCheck,   SquareUser, Tags, Truck, UploadCloud, UserCog, UserRound, Users, Wallet, Warehouse, Ticket,
 } from 'lucide-vue-next'
 import { useAuthStore } from '@/stores/auth'
 
@@ -48,6 +48,7 @@ const icons: Record<string, unknown> = {
   ScrollText,
   History,
   Wallet,
+  Layers,
   UploadCloud,
   MapPinned,
   Truck,
@@ -94,6 +95,7 @@ const menuGroups = computed<MenuGroup[]>(() => {
         { path: '/brands', title: '品牌管理', icon: 'Tags', permission: 'product.view' },
         { path: '/attributes', title: '属性库', icon: 'ListTree', permission: 'product.view' },
         { path: '/category-attributes', title: '分类属性模板', icon: 'LayoutList', permission: 'product.view' },
+        { path: '/category-brands', title: '分类可选品牌', icon: 'Layers', permission: 'product.view' },
       ],
     },
     {

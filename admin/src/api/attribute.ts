@@ -127,6 +127,28 @@ export function saveCategoryTemplate(categoryId: number, attributes: Array<{ att
   return request.put<ApiResult<null>>(`/admin/categories/${categoryId}/attributes`, { attributes })
 }
 
+// ---------- 分类可选品牌（分类 ↔ 品牌 多对多，2026-09-19） ----------
+
+export interface CategoryBrandConfig {
+  category_id: number
+  category_name: string
+  brands: Array<{
+    brand_id: number
+    name: string
+    logo: string | null
+    status: number
+    sort: number
+  }>
+}
+
+export function getCategoryBrands(categoryId: number) {
+  return request.get<ApiResult<CategoryBrandConfig>>(`/admin/categories/${categoryId}/brands`)
+}
+
+export function saveCategoryBrands(categoryId: number, brands: Array<{ brand_id: number; sort?: number }>) {
+  return request.put<ApiResult<null>>(`/admin/categories/${categoryId}/brands`, { brands })
+}
+
 // ---------- SKU 矩阵（T-009 / T-010） ----------
 
 export interface SkuMatrixItem {
