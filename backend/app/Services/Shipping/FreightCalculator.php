@@ -66,6 +66,8 @@ final class FreightCalculator
                 'weight_g' => $groupWeight,
                 'amount' => $computed['amount'],
                 'source' => $computed['source'],
+                // G2：解析后的计费规格（固定额 / 首续重），固化「运费怎么算出来的」
+                'spec' => $computed['spec'] ?? null,
             ];
 
             if (! $computed['not_support']) {
@@ -111,14 +113,20 @@ final class FreightCalculator
         $rules = $spec['rules'] ?? [];
 
         return match ($spec['mode']) {
-            'fixed' => ['amount' => self::money($rules['amount'] ?? '0.00'), 'source' => 'fixed', 'not_support' => false],
+            'fixed' => [
+                'amount' => self::money($rules['amount'] ?? '0.00'),
+                'source' => 'fixed',
+                'not_support' => false,
+                'spec' => ['amount' => self::money($rules['amount'] ?? '0.00')],
+            ],
             'weight' => [
                 'amount' => self::weightFee($rules, $groupWeight),
                 'source' => 'weight',
                 'not_support' => false,
+                'spec' => self::weightSpec($rules),
             ],
             'region' => self::computeRegion($rules, $groupLines, $groupWeight, $provinceCode),
-            default => ['amount' => '0.00', 'source' => 'unknown_mode', 'not_support' => false],
+            default => ['amount' => '0.00', 'source' => 'unknown_mode', 'not_support' => false, 'spec' => null],
         };
     }
 
@@ -148,6 +156,7 @@ final class FreightCalculator
                 'amount' => self::feeSpecAmount($matched, $groupWeight),
                 'source' => 'region_area',
                 'not_support' => false,
+                'spec' => self::feeSpecSpec($matched),
             ];
         }
 
@@ -156,10 +165,11 @@ final class FreightCalculator
                 'amount' => self::feeSpecAmount($default, $groupWeight),
                 'source' => 'region_default',
                 'not_support' => false,
+                'spec' => self::feeSpecSpec($default),
             ];
         }
 
-        return ['amount' => '0.00', 'source' => 'region_unmatched', 'not_support' => true];
+        return ['amount' => '0.00', 'source' => 'region_unmatched', 'not_support' => true, 'spec' => null];
     }
 
     /**
@@ -192,6 +202,27 @@ final class FreightCalculator
         $steps = (int) ceil($over / $stepWeight);
 
         return bcadd($firstFee, bcmul($stepFee, (string) $steps, 2), 2);
+    }
+
+    /** 重量计费规格（首重/首费/续重/续费），G2 运费明细快照用 */
+    private static function weightSpec(array $rules): array
+    {
+        return [
+            'first_weight_g' => (int) ($rules['first_weight_g'] ?? 1000),
+            'first_fee' => self::money($rules['first_fee'] ?? '0.00'),
+            'step_weight_g' => (int) ($rules['step_weight_g'] ?? 1000),
+            'step_fee' => self::money($rules['step_fee'] ?? '0.00'),
+        ];
+    }
+
+    /** FeeSpec → 计费规格快照（固定额或首续重） */
+    private static function feeSpecSpec(array $spec): array
+    {
+        if (array_key_exists('amount', $spec)) {
+            return ['amount' => self::money($spec['amount'])];
+        }
+
+        return self::weightSpec($spec);
     }
 
     /** 归一为两位小数字符串（容错标量输入） */

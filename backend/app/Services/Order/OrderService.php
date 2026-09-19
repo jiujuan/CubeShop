@@ -167,6 +167,16 @@ class OrderService
         // amount_details 内含商品总额、券/满减优惠、运费、应付与各行分摊（不变量自检）
         $details = $this->coupons->priceOrder($ctx, $userCoupon, $promotion);
 
+        // G2：运费计算明细快照——固化「运费怎么算出来的」（模板/地区/重量口径、包邮判定），
+        // 纠纷时可还原当时运费，而非仅一个总额。
+        $details['freight_detail'] = [
+            'freight_amount' => $freight->freightAmount,
+            'free_shipping' => $freight->freeShipping,
+            'free_shipping_gap' => $freight->freeShippingGap,
+            'province' => (string) $address->province,
+            'groups' => $freight->detail,
+        ];
+
         // 6. 事务：锁定券 → 锁库存 → 建订单（含金额字段）→ 快照明细（含分摊）→ 清购物车
         $order = DB::transaction(function () use (
             $userId, $address, $cartItems, $details, $userCoupon, $remark

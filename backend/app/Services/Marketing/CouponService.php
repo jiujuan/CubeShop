@@ -409,23 +409,26 @@ class CouponService
         return $this->couponModelParams($uc->coupon) + ['user_coupon_id' => $uc->id];
     }
 
-    /** 券模板 → 计算器券参数 */
+    /** 券模板 → 计算器券参数（G1：附带 name/type_label/scope_label 供金额快照固化人读优惠说明） */
     private function couponModelParams(Coupon $coupon): array
     {
         return [
             'id' => $coupon->id,
+            'name' => $coupon->name,
             'type' => $coupon->type,
+            'type_label' => Coupon::TYPE_LABELS[$coupon->type] ?? null,
             'amount' => $coupon->amount !== null ? (float) $coupon->amount : null,
             'percent' => $coupon->percent !== null ? (int) $coupon->percent : null,
             'max_discount' => $coupon->max_discount !== null ? (float) $coupon->max_discount : null,
             'min_spend' => (float) $coupon->min_spend,
             'scope' => $coupon->scope,
+            'scope_label' => Coupon::SCOPE_LABELS[$coupon->scope] ?? null,
             'scope_refs' => $this->scopeRefsToInt($coupon),
         ];
     }
 
     /**
-     * 满减活动 → 计算器活动参数
+     * 满减活动 → 计算器活动参数（G1：附带 name/scope_label 供金额快照固化人读优惠说明）
      *
      * @return array<string, mixed>|null
      */
@@ -435,10 +438,18 @@ class CouponService
             return null;
         }
 
+        $scopeLabel = match ($promotion->scope) {
+            Promotion::SCOPE_CATEGORY => '指定分类',
+            Promotion::SCOPE_PRODUCT => '指定商品',
+            default => '全场',
+        };
+
         return [
             'id' => $promotion->id,
-            'rules' => $promotion->rules ?? [],
+            'name' => $promotion->name,
             'scope' => $promotion->scope,
+            'scope_label' => $scopeLabel,
+            'rules' => $promotion->rules ?? [],
             'scope_refs' => $promotion->scope_refs ?? [],
         ];
     }

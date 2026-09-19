@@ -355,10 +355,66 @@ test('TC-PRC-034-025 amount_details 结构含版本号与固定字段', function
 
     expect(array_keys($details))->toBe([
         'v', 'goods_amount', 'freight_amount', 'promotion_discount', 'coupon_discount',
-        'discount_amount', 'pay_amount', 'promotion_id', 'coupon_id', 'user_coupon_id', 'lines',
+        'discount_amount', 'pay_amount', 'promotion_id', 'coupon_id', 'user_coupon_id',
+        'coupon_snapshot', 'promotion_snapshot', 'lines',
     ])->and(array_keys($details['lines'][0]))->toBe([
-        'index', 'product_id', 'sku_id', 'amount', 'promotion_share', 'coupon_share', 'payable',
+        'index', 'product_id', 'sku_id', 'amount', 'promotion_share', 'coupon_share', 'freight_share', 'payable',
     ]);
+});
+
+test('TC-PRC-034-028 G1 券快照固化名称/面额/类型/门槛', function () {
+    $details = PricingCalculator::price(
+        t034Ctx([['price' => 100, 'quantity' => 1]]),
+        t034Coupon([
+            'name' => '新人立减券', 'type' => 'fixed', 'type_label' => '满减券',
+            'amount' => 10.0, 'min_spend' => 50.0, 'scope' => 'all', 'scope_label' => '全场',
+        ]),
+    );
+
+    expect($details['coupon_snapshot'])->not->toBeNull()
+        ->and($details['coupon_snapshot']['name'])->toBe('新人立减券')
+        ->and($details['coupon_snapshot']['type_label'])->toBe('满减券')
+        ->and($details['coupon_snapshot']['amount'])->toBe('10.00')
+        ->and($details['coupon_snapshot']['min_spend'])->toBe('50.00')
+        ->and($details['coupon_snapshot']['scope_label'])->toBe('全场');
+});
+
+test('TC-PRC-034-029 G1 满减快照含命中梯度', function () {
+    $details = PricingCalculator::price(
+        t034Ctx([['price' => 200, 'quantity' => 1]]),
+        null,
+        t034Promo(['name' => '年中大促', 'scope' => 'all', 'scope_label' => '全场']),
+    );
+
+    expect($details['promotion_snapshot'])->not->toBeNull()
+        ->and($details['promotion_snapshot']['name'])->toBe('年中大促')
+        ->and($details['promotion_snapshot']['hit_tier'])->toBe(['min' => 200.0, 'discount' => 25.0])
+        ->and($details['promotion_discount'])->toBe('25.00');
+});
+
+test('TC-PRC-034-030 G3 运费按行实付占比分摊且闭合', function () {
+    // 两行券后实付 96.67 / 193.33，运费 30 → 按实付占比分摊 = 10 / 20
+    $details = PricingCalculator::price(
+        t034Ctx(
+            [['price' => 100, 'quantity' => 1], ['price' => 200, 'quantity' => 1]],
+            30.0,
+        ),
+        t034Coupon(['amount' => 10.0]),
+    );
+
+    expect($details['lines'][0]['freight_share'])->toBe('10.00')
+        ->and($details['lines'][1]['freight_share'])->toBe('20.00')
+        ->and((float) $details['lines'][0]['freight_share'] + (float) $details['lines'][1]['freight_share'])->toBe(30.0);
+
+    PricingCalculator::assertInvariants($details);
+});
+
+test('TC-PRC-034-031 无券无满减：快照为空、运费分摊到唯一行', function () {
+    $details = PricingCalculator::price(t034Ctx([['price' => 100, 'quantity' => 2]], 10.0));
+
+    expect($details['coupon_snapshot'])->toBeNull()
+        ->and($details['promotion_snapshot'])->toBeNull()
+        ->and($details['lines'][0]['freight_share'])->toBe('10.00');
 });
 
 test('TC-PRC-034-026 空购物车仅含运费且不抛错', function () {

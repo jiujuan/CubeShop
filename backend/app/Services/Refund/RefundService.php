@@ -235,6 +235,7 @@ class RefundService
      *
      * 每行实付 = price×qty − coupon_share − promotion_share；Σ 行实付 + 运费处理 = 订单实付
      * （不变量：T-034 assertInvariants 已保证）。退款金额不得超 Σ 行实付。
+     * G1/G3：一并继承券/满减规则快照、运费明细与每行运费分摊，确保退款单与订单同一套不可变证据。
      */
     private function buildRefundDetails(Order $order): array
     {
@@ -253,6 +254,7 @@ class RefundService
                 'amount' => isset($line['amount']) ? number_format((float) $line['amount'], 2, '.', '') : '0.00',
                 'coupon_share' => isset($line['coupon_share']) ? number_format((float) $line['coupon_share'], 2, '.', '') : '0.00',
                 'promotion_share' => isset($line['promotion_share']) ? number_format((float) $line['promotion_share'], 2, '.', '') : '0.00',
+                'freight_share' => isset($line['freight_share']) ? number_format((float) $line['freight_share'], 2, '.', '') : '0.00',
                 'payable' => $payable,
             ];
         }
@@ -262,7 +264,11 @@ class RefundService
             'freight_amount' => $details['freight_amount'] ?? $order->freight_amount,
             'coupon_discount' => $details['coupon_discount'] ?? '0.00',
             'promotion_discount' => $details['promotion_discount'] ?? '0.00',
+            'discount_amount' => $details['discount_amount'] ?? '0.00',
             'pay_amount' => $details['pay_amount'] ?? $order->pay_amount,
+            'coupon_snapshot' => $details['coupon_snapshot'] ?? null,
+            'promotion_snapshot' => $details['promotion_snapshot'] ?? null,
+            'freight_detail' => $details['freight_detail'] ?? null,
             'lines' => $lines,
         ];
     }
