@@ -43,7 +43,8 @@ const activeCategoryLabel = computed(
 const selectedCount = computed(() => Object.keys(selected.value).length)
 
 onMounted(async () => {
-  const [cRes, bRes] = await Promise.all([getCategories(), getBrands({ page_size: 200 })])
+  // 品牌接口 page_size 上限 100
+  const [cRes, bRes] = await Promise.all([getCategories(), getBrands({ page_size: 100 })])
   categories.value = cRes.data.data
   allBrands.value = bRes.data.data.list
   if (flatCategories.value.length) selectCategory(flatCategories.value[0].id)
