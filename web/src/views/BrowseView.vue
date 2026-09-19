@@ -12,6 +12,7 @@ import {
 } from '@/api/shop'
 import type { PublicPagination } from '@/api/types'
 import ProductCard from '@/components/ProductCard.vue'
+import FilterRows from '@/components/FilterRows.vue'
 import Pagination from '@/components/Pagination.vue'
 import ShopFooter from '@/components/ShopFooter.vue'
 import ShopHeader from '@/components/ShopHeader.vue'
@@ -383,7 +384,8 @@ function clearAllFilters() {
 
             <div v-if="brands.length" class="mt-3 flex items-start gap-2.5" data-testid="browse-heading-brands">
               <span class="shrink-0 pt-0.5 text-[13px] text-slate-400">品牌</span>
-              <div class="flex flex-wrap gap-2">
+              <!-- 品牌多时收起为 4 行，「更多/收起」展开（超 8 行滚动） -->
+              <FilterRows test-id="heading-brands">
                 <button
                   v-for="b in brands" :key="b.id"
                   class="rounded-full border px-3 py-0.5 text-[13px] transition-colors"
@@ -393,7 +395,7 @@ function clearAllFilters() {
                   :data-testid="`heading-brand-${b.id}`"
                   @click="toggleBrand(b.id)"
                 >{{ b.name }}</button>
-              </div>
+              </FilterRows>
             </div>
             <p v-else class="mt-2 text-[13px] text-slate-400" data-testid="browse-heading-brands-empty">暂无品牌</p>
           </div>
@@ -497,7 +499,8 @@ function clearAllFilters() {
               :data-testid="`filter-attr-${attr.id}`"
             >
               <span class="w-14 shrink-0 pt-1 text-slate-500">{{ attr.name }}</span>
-              <div class="flex flex-wrap gap-2">
+              <!-- 属性值多时收起为 4 行，「更多/收起」展开（超 8 行滚动） -->
+              <FilterRows :test-id="`filter-attr-rows-${attr.id}`">
                 <button
                   v-for="v in attr.values" :key="v.id"
                   class="rounded-lg border px-3 py-1 text-[13px] transition-colors"
@@ -507,7 +510,7 @@ function clearAllFilters() {
                   :data-testid="`filter-attr-${attr.id}-${v.value}`"
                   @click="toggleAttr(attr.id, v.value)"
                 >{{ v.value }}</button>
-              </div>
+              </FilterRows>
             </div>
 
             <p v-if="!filterAttributes.length" class="py-2 text-center text-xs text-slate-400">
