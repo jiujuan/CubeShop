@@ -140,3 +140,30 @@ test('空购物车下单被拒绝', function () {
 
     expect($body['code'])->not->toBe(0);
 });
+
+// 勾选部分商品结算（2026-09-19：购物车支持「选择购买哪些后再结算」）
+test('TC-ORDER-020 传 cart_item_ids 仅结算所选行，未选行保留在购物车', function () {
+    // 再加一个不同 SKU，购物车此时有 2 行
+    $sku2 = createTestSku(stock: 10, price: '10.00');
+    $this->postJson('/api/cart', ['sku_id' => $sku2->id, 'quantity' => 1], $this->auth)->assertStatus(200);
+
+    $items = $this->getJson('/api/cart', $this->auth)->json('data.items');
+    expect($items)->toHaveCount(2);
+
+    $picked = $items[0];
+    $left = $items[1];
+
+    $body = createOrderApi($this, $this->auth, $this->addressId, [$picked['id']]);
+
+    expect($body['code'])->toBe(0);
+
+    // 订单只含所选行
+    $detail = $this->getJson('/api/orders/'.$body['data']['order_id'], $this->auth)->json('data');
+    expect($detail['items'])->toHaveCount(1);
+
+    // 未选行仍在购物车，且所选行已被移除
+    $remaining = $this->getJson('/api/cart', $this->auth)->json('data.items');
+    expect($remaining)->toHaveCount(1)
+        ->and($remaining[0]['id'])->toBe($left['id']);
+});
+
