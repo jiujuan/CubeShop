@@ -285,6 +285,11 @@ CB2=$(CB_CALL "$CB_PAYLOAD")
 CB3=$(CB_CALL "$CB_PAYLOAD")
 [ "$(echo "$CB3" | jpath flag)" = "success" ] && ok "重放按 success 吞掉" || bad "重放: $CB3"
 
+# 4) P4：returnorder.confirm 报文可入队（单据不存在也 success——异步告警转人工）
+CB4_PAYLOAD="{\"method\":\"taobao.qimen.returnorder.confirm\",\"timestamp\":\"2026-09-20 16:00:00\",\"app_key\":\"SMOKE_KEY\",\"v\":\"2.0\",\"sign_method\":\"md5\",\"returnOrder\":{\"returnOrderCode\":\"RI-SMOKE-REPLAY\",\"orderLines\":{\"orderLine\":[{\"itemCode\":\"SKU-X\",\"actualQty\":1,\"inventoryType\":\"ZP\"}]}}}"
+CB4=$(CB_CALL "$CB4_PAYLOAD")
+[ "$(echo "$CB4" | jpath flag)" = "success" ] && ok "退货收货回传 success（P4）" || bad "退货回传: $CB4"
+
 echo "--- 6. 退出登录"
 OUT=$(req POST /auth/logout "$TOKEN" '')
 [ "$(echo "$OUT" | jpath code)" = "0" ] && ok "退出登录" || bad "退出: $(echo "$OUT" | head -c 80)"
