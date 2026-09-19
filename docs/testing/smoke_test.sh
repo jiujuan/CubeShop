@@ -81,9 +81,13 @@ ADD=$(req POST /cart "$TOKEN" "{\"sku_id\":$SKU_ID,\"quantity\":2}")
 [ "$(echo "$ADD" | jpath code)" = "0" ] && ok "加入购物车" || bad "加购: $(echo "$ADD" | head -c 120)"
 
 ORDER=$(req POST /orders "$TOKEN" "{\"address_id\":$ADDR,\"remark\":\"冒烟\"}")
-ORDER_ID=$(echo "$ORDER" | jpath data.order_id)
+ORDER_ID=$(echo "$ORDER" | jpath data.order_id)   # 对外 public_id（前台路由用）
 ORDER_NO=$(echo "$ORDER" | jpath data.order_no)
 [ -n "$ORDER_ID" ] && ok "下单成功(no=$ORDER_NO)" || { bad "下单: $(echo "$ORDER" | head -c 120)"; exit 1; }
+
+# 后台订单接口（accept/ship）使用 int 主键（后台前端亦然），按单号取回后台 id
+ADMIN_OID=$(req GET "/admin/orders?order_no=$ORDER_NO" "$ATOK" '' | jpath data.list.0.id)
+[ -n "$ADMIN_OID" ] && ok "取回后台订单 id($ADMIN_OID)" || { bad "查询后台订单失败"; exit 1; }
 
 PAY=$(req POST /payments "$TOKEN" "{\"order_no\":\"$ORDER_NO\",\"channel\":\"wechat\"}")
 PAY_NO=$(echo "$PAY" | jpath data.payment_no)
@@ -97,13 +101,15 @@ STATUS=$(req GET "/orders/$ORDER_ID" "$TOKEN" '' | jpath data.status)
 [ "$STATUS" = "pending_ship" ] && ok "支付后自动流转到待发货" || bad "订单状态: $STATUS"
 
 echo "--- 5. 管理端受理备货（幂等）与发货"
-ACCEPT=$(req POST "/admin/orders/$ORDER_ID/accept" "$ATOK" '{"remark":"冒烟受理"}')
+ACCEPT=$(req POST "/admin/orders/$ADMIN_OID/accept" "$ATOK" '{"remark":"冒烟受理"}')
 [ "$(echo "$ACCEPT" | jpath code)" = "0" ] && ok "受理备货幂等返回成功" || bad "受理备货: $(echo "$ACCEPT" | head -c 120)"
-SLABEL=$(req GET "/admin/orders/$ORDER_ID" "$ATOK" '' | jpath data.status_label)
+SLABEL=$(req GET "/admin/orders/$ADMIN_OID" "$ATOK" '' | jpath data.status_label)
 [ "$SLABEL" = "待发货" ] && ok "后台状态标签 待发货" || bad "状态标签: $SLABEL"
 
-SHIP=$(req POST "/admin/orders/$ORDER_ID/ship" "$ATOK" '{"company":"顺丰","tracking_no":"SMOKE001"}')
-[ "$(echo "$SHIP" | jpath code)" = "0" ] && ok "发货成功" || bad "发货: $(echo "$SHIP" | head -c 120)"
+# T-043 起必须传 express_company_code（启用字典）与 8~32 位运单号；单号按运行唯一避免二次运行撞唯一索引
+SMOKE_TRACK="SMOKE$(date +%s)"
+SHIP=$(req POST "/admin/orders/$ADMIN_OID/ship" "$ATOK" "{\"express_company_code\":\"SF\",\"tracking_no\":\"$SMOKE_TRACK\"}")
+[ "$(echo "$SHIP" | jpath code)" = "0" ] && ok "发货成功($SMOKE_TRACK)" || bad "发货: $(echo "$SHIP" | head -c 160)"
 
 # ---------- V1.1 增量用例（T-030 扩展） ----------
 echo "--- 5b. 用户确认收货（V1.1 E02-A）"
@@ -169,6 +175,61 @@ RCH_LIST=$(req GET /user/balance/recharges "$TOKEN" '' | jpath code)
 [ "$RCH_LIST" = "0" ] && ok "充值记录列表" || bad "充值记录列表"
 BLOG=$(req GET /user/balance/logs "$TOKEN" '' | jpath code)
 [ "$BLOG" = "0" ] && ok "余额流水列表" || bad "余额流水列表"
+
+echo "--- 5i. WMS 内部闭环（P0 配置 + P1 履约发货单）"
+# 建仓
+WH=$(req POST /admin/wms/warehouses "$ATOK" "{\"code\":\"WH_SMOKE_$(date +%s)\",\"name\":\"冒烟仓\",\"province\":\"广东省\",\"city\":\"深圳市\",\"district\":\"南山区\",\"address\":\"冒烟仓路1号\",\"status\":1}")
+WH_ID=$(echo "$WH" | jpath data.id)
+[ -n "$WH_ID" ] && ok "建仓(id=$WH_ID)" || bad "建仓: $(echo "$WH" | head -c 160)"
+
+# 保存配置：沙箱 + Mock 凭证 + same 映射（凭证只写不读）
+CFG=$(req PUT "/admin/wms/warehouses/$WH_ID/config" "$ATOK" '{"provider":"cainiao","enabled":true,"auto_push":true,"auto_push_return":true,"push_retry_times":3,"sku_mapping_mode":"same","app_key":"SMOKE_KEY","app_secret":"SMOKE_SECRET_WXYZ","api_env":"sandbox","warehouse_code":"CN-WH-SMOKE","remark":"冒烟"}')
+MASK=$(echo "$CFG" | jpath data.app_secret_masked)
+[ -n "$MASK" ] && ok "保存配置(掩码=$MASK)" || bad "保存配置: $(echo "$CFG" | head -c 160)"
+echo "$CFG" | grep -q "SMOKE_SECRET_WXYZ" && bad "配置响应泄漏明文密钥" || ok "配置响应无明文密钥"
+CB=$(echo "$CFG" | jpath data.callback_url)
+[ -n "$CB" ] && ok "回调地址可生成" || bad "回调地址缺失"
+
+# 连通性测试（沙箱应走 Mock）
+TC=$(req POST "/admin/wms/warehouses/$WH_ID/config/test" "$ATOK" '')
+[ "$(echo "$TC" | jpath data.success)" = "True" ] && ok "连通性测试成功（mock=$(echo "$TC" | jpath data.mock)）" || bad "连通性: $(echo "$TC" | head -c 160)"
+
+# SKU 映射：批量导入 1 成 1 败（逐行反馈）
+BATCH=$(req POST "/admin/wms/warehouses/$WH_ID/sku-mappings/batch" "$ATOK" "{\"rows\":[{\"sku_code\":\"$SKU_CODE\",\"wms_sku_code\":\"WMS-$SKU_CODE\",\"barcode\":\"6900001\"},{\"sku_code\":\"NO-SUCH-SKU-SMOKE\",\"wms_sku_code\":\"X\"}]}")
+BSUCC=$(echo "$BATCH" | jpath data.success_count); BFAIL=$(echo "$BATCH" | jpath data.failed_count)
+[ "$BSUCC" = "1" ] && [ "$BFAIL" = "1" ] && ok "映射批量导入(成$BSUCC/败$BFAIL，逐行反馈)" || bad "映射导入: $(echo "$BATCH" | head -c 200)"
+MLIST=$(req GET "/admin/wms/warehouses/$WH_ID/sku-mappings" "$ATOK" '')
+[ "$(echo "$MLIST" | jpath code)" = "0" ] && ok "映射列表" || bad "映射列表"
+
+# 新订单 → 支付 → 自动建发货单
+req POST /cart "$TOKEN" "{\"sku_id\":$SKU_ID,\"quantity\":1}" >/dev/null
+ORDER2=$(req POST /orders "$TOKEN" "{\"address_id\":$ADDR,\"remark\":\"WMS 冒烟\"}")
+ORDER2_NO=$(echo "$ORDER2" | jpath data.order_no)
+PAY2=$(req POST /payments "$TOKEN" "{\"order_no\":\"$ORDER2_NO\",\"channel\":\"wechat\"}")
+PAY2_NO=$(echo "$PAY2" | jpath data.payment_no); [ -z "$PAY2_NO" ] && PAY2_NO=$(echo "$PAY2" | jpath data.pay_params.payment_no)
+req POST "/payments/sandbox/$PAY2_NO" "$TOKEN" '' >/dev/null
+
+FO_LIST=$(req GET "/admin/wms/fulfillment-orders?order_no=$ORDER2_NO" "$ATOK" '')
+FO_ID=$(echo "$FO_LIST" | jpath data.list.0.id); FO_STATUS=$(echo "$FO_LIST" | jpath data.list.0.status)
+[ -n "$FO_ID" ] && ok "支付后自动建发货单(id=$FO_ID 状态=$FO_STATUS)" || bad "自动建单: $(echo "$FO_LIST" | head -c 200)"
+
+FO_DETAIL=$(req GET "/admin/wms/fulfillment-orders/$FO_ID" "$ATOK" '')
+[ "$(echo "$FO_DETAIL" | jpath data.items.0.platform_sku_code)" = "$SKU_CODE" ] && ok "发货单详情含行项目" || bad "发货单详情: $(echo "$FO_DETAIL" | head -c 200)"
+
+# 手工重推：未推送→成功；已推送→按状态机拒绝（40009），两者都属预期
+PUSH=$(req POST "/admin/wms/fulfillment-orders/$FO_ID/push" "$ATOK" '')
+PCODE=$(echo "$PUSH" | jpath code)
+if [ "$PCODE" = "0" ]; then ok "手工重推成功"
+elif [ "$PCODE" = "40009" ]; then ok "手工重推被状态机拒绝(已推送)"
+else bad "重推: $(echo "$PUSH" | head -c 160)"; fi
+
+# 取消发货单（出库前可取消，落审计）
+CANCEL=$(req POST "/admin/wms/fulfillment-orders/$FO_ID/cancel" "$ATOK" '{"reason":"冒烟取消"}')
+[ "$(echo "$CANCEL" | jpath data.status)" = "cancelled" ] && ok "取消发货单" || bad "取消: $(echo "$CANCEL" | head -c 160)"
+
+# 关闭配置，避免影响后续人工发货用例
+req PUT "/admin/wms/warehouses/$WH_ID/config" "$ATOK" '{"provider":"cainiao","enabled":false,"auto_push":false,"auto_push_return":false,"push_retry_times":3,"sku_mapping_mode":"same","api_env":"sandbox"}' >/dev/null
+ok "关闭 WMS 配置（清理）"
 
 echo "--- 6. 退出登录"
 OUT=$(req POST /auth/logout "$TOKEN" '')
