@@ -5,6 +5,7 @@ namespace App\Services\Wms\Adapters;
 use App\Exceptions\BusinessException;
 use App\Models\WmsConfig;
 use App\Services\Wms\Contracts\WmsAdapter;
+use App\Services\Wms\Dto\CancelOutboundDto;
 use App\Services\Wms\Dto\InventoryQueryDto;
 use App\Services\Wms\Dto\OutboundDto;
 use App\Services\Wms\Dto\ReturnInboundDto;
@@ -73,13 +74,14 @@ class MockAdapter implements WmsAdapter
         ], 200, [], $this->duration());
     }
 
-    public function cancelOutbound(string $bizNo): WmsResult
+    public function cancelOutbound(CancelOutboundDto $dto): WmsResult
     {
         $this->assertCredentialsForProd();
 
         return WmsResult::ok([
             'request_id' => $this->requestId(),
-            'biz_no' => $bizNo,
+            'biz_no' => $dto->bizNo,
+            'wms_order_no' => $dto->wmsOutboundNo,
             'status' => 'cancelled',
             'mock' => true,
         ], 200, [], $this->duration());

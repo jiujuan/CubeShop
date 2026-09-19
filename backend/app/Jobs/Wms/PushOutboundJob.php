@@ -2,6 +2,7 @@
 
 namespace App\Jobs\Wms;
 
+use App\Exceptions\BusinessException;
 use App\Models\FulfillmentOrder;
 use App\Models\WmsConfig;
 use App\Services\Wms\Dto\OutboundDto;
@@ -27,7 +28,14 @@ use RuntimeException;
  *
  * 幂等：
  * - 发货单已是 `pushed/shipped/completed/cancelled` 时直接返回——重复投递不会产生第二张外部单据；
- * - `request_id` 存于发货单（`push_request_id`），重试沿用同一幂等键（P2 真实网关据此去重）。
+ * - `request_id` 存于发货单（`push_request_id`），重试沿用同一幂等键；
+ * - 对方回「单据已存在」时 Adapter 判定为**幂等成功**（`WmsResult::idempotent`），
+ *   本作业照常置 `pushed`——这是重试场景下最常发生、也最怕处理错的一类回执。
+ *
+ * 失败处置（P2 起按 Adapter 给出的语义分流，不再一律重试）：
+ * - `retryable = true`（网络抖动、对方 5xx）→ 抛异常交队列退避重试，`tries` 次后置 `push_failed`；
+ * - `retryable = false`（对方业务校验失败、我方配置/数据有误）→ **立即**置 `push_failed`
+ *   转人工，避免明知无用还反复打扰对方系统。
  *
  * 推送报文一律落 `wms_api_logs`（脱敏），是排查「发出去没有、对方回什么」的唯一依据。
  */
@@ -96,8 +104,12 @@ class PushOutboundJob implements ShouldQueue
         try {
             $adapter = $factory->make($config);
             $result = $adapter->createOutbound($dto);
+        } catch (BusinessException $e) {
+            // 我方问题（缺凭证/缺仓库货主编码/收件人地址不全/缺 SKU 映射）：
+            // 重试一万次也是同样结果，直接判失败转人工，别白打扰对方系统
+            $result = WmsResult::fail($e->getMessage(), null, [], 0, retryable: false);
         } catch (\Throwable $e) {
-            // 工厂/凭证类错误也转成结果对象，统一走下面的留痕与重试判定
+            // 工厂解析异常等未预期故障：先按可重试处理，超限后人工介入
             $result = WmsResult::fail($e->getMessage());
         }
         $duration = $apiLogs->elapsedMs($started);
@@ -113,6 +125,7 @@ class PushOutboundJob implements ShouldQueue
         );
 
         if ($result->success) {
+            // 含「对方回单据已存在」的幂等命中：业务已达成，记下 WMS 单号即可，绝不再建第二张
             $fulfillments->markPushed($fo, $this->extractWmsNo($result));
 
             return;
@@ -121,8 +134,8 @@ class PushOutboundJob implements ShouldQueue
         $error = (string) ($result->error ?: '未知错误');
         $fulfillments->recordPushFailure($fo, $error);
 
-        // 达到重试上限：置 push_failed 转人工（不再抛异常，避免队列无限重投）
-        if ((int) $fo->fresh()->push_times >= $this->tries) {
+        // 转人工的两种情形：不可重试（业务终局/我方数据问题）或已达重试上限
+        if (! $result->retryable || (int) $fo->fresh()->push_times >= $this->tries) {
             $fulfillments->markPushFailed($fo, $error);
 
             return;
@@ -149,12 +162,15 @@ class PushOutboundJob implements ShouldQueue
             'sku_code' => (string) $item->platform_sku_code,
             'wms_sku_code' => (string) $item->wms_sku_code,
             'quantity' => (int) $item->qty,
+            'product_name' => $item->product_name,
             'barcode' => $item->barcode,
         ])->all();
 
         $buyer = $fo->buyer_info ?? [];
         $shipping = $fo->shipping_info ?? [];
 
+        // 奇门 receiverInfo 要的是**拆开**的省/市/区，只有一个拼好的完整地址字符串时
+        // 无法可靠反推（直辖市/省直管县的切分规则因地区而异），故原样透传快照各字段
         return new OutboundDto(
             warehouseId: (int) $fo->warehouse_id,
             bizNo: (string) $fo->outbound_no,
@@ -163,6 +179,11 @@ class PushOutboundJob implements ShouldQueue
             receiverPhone: $buyer['contact_phone'] ?? null,
             receiverAddress: $buyer['full_address'] ?? null,
             remark: $shipping['remark'] ?? $config->remark,
+            orderNo: (string) $fo->order_no,
+            province: $buyer['province'] ?? null,
+            city: $buyer['city'] ?? null,
+            district: $buyer['district'] ?? null,
+            detailAddress: $buyer['detail_address'] ?? null,
         );
     }
 

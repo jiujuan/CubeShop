@@ -1,0 +1,11 @@
+{
+  "response": {
+    "flag": "success",
+    "code": "0",
+    "message": "success",
+    "deliveryOrderId": "CN-20260920-000001",
+    "deliveryOrderCode": "FO20260920000001",
+    "warehouseCode": "CN-WH-1",
+    "ownerCode": "CUBE_OWNER"
+  }
+}

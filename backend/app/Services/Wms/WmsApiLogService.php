@@ -5,6 +5,7 @@ namespace App\Services\Wms;
 use App\Models\WmsApiLog;
 use App\Models\WmsConfig;
 use App\Services\Wms\Dto\WmsResult;
+use App\Services\Wms\Support\PayloadMasker;
 
 /**
  * WMS 报文留痕（WMS 计划 P0 决策延续：留痕统一在编排层，Adapter 保持纯粹）
@@ -12,12 +13,18 @@ use App\Services\Wms\Dto\WmsResult;
  * 真实 Adapter / Mock / 抛错三种情况一视同仁地落 `wms_api_logs`，
  * 是排查「到底发出去没有、对方回了什么」的唯一依据。
  *
+ * **脱敏是本服务的职责，不由调用方承担**（P2 / F8）：入参与回执都先过
+ * {@see PayloadMasker} 再落库。放在这里而不是各调用点，才能保证
+ * 「任何一条路径写日志都脱敏」——调用方想忘也忘不掉。
+ *
  * 留痕失败**绝不影响主流程**：这里只 report，不抛。
  */
 class WmsApiLogService
 {
+    public function __construct(private readonly PayloadMasker $masker) {}
+
     /**
-     * @param  array<string, mixed>  $requestBody  入参（**必须已脱敏**，凭证不得入库）
+     * @param  array<string, mixed>  $requestBody  入参（内部会脱敏；凭证不得入库）
      */
     public function record(
         WmsConfig $config,
@@ -36,8 +43,9 @@ class WmsApiLogService
                 'api_name' => $apiName,
                 'request_id' => $requestId,
                 'biz_no' => $bizNo,
-                'request_body' => $requestBody,
-                'response_body' => $result->toArray(),
+                'request_body' => $this->masker->mask($requestBody),
+                // raw 里含对方完整回执（可能有收件人手机号），一并脱敏
+                'response_body' => $this->masker->mask($result->toArray() + ['raw' => $result->raw]),
                 'http_status' => $result->httpStatus,
                 'success' => $result->success,
                 'error_msg' => $result->error,

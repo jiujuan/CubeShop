@@ -2,6 +2,7 @@
 
 namespace App\Services\Wms\Contracts;
 
+use App\Services\Wms\Dto\CancelOutboundDto;
 use App\Services\Wms\Dto\InventoryQueryDto;
 use App\Services\Wms\Dto\OutboundDto;
 use App\Services\Wms\Dto\ReturnInboundDto;
@@ -15,7 +16,7 @@ use App\Services\Wms\Dto\WmsResult;
  * - 方法粒度对齐设计文档 §7 的奇门接口，菜鸟与京东各自实现，业务层只依赖本接口；
  * - 入参一律用 DTO，避免数组散弹；出参统一 {@see WmsResult}，网络/业务失败以结果表达。
  *
- * P0 只提供 Mock 实现；菜鸟实现见 P2，京东见 P8。
+ * P0 提供 Mock；P2 提供菜鸟（{@see \App\Services\Wms\Adapters\CainiaoAdapter}）；京东见 P8。
  */
 interface WmsAdapter
 {
@@ -31,8 +32,13 @@ interface WmsAdapter
     /** 创建出库单（P2） */
     public function createOutbound(OutboundDto $dto): WmsResult;
 
-    /** 取消出库单（P2，出库前才允许） */
-    public function cancelOutbound(string $bizNo): WmsResult;
+    /**
+     * 取消出库单（P2，出库前才允许）。
+     *
+     * P2 由 `string $bizNo` 改为 DTO：奇门的 `deliveryOrderId`（= `wms_outbound_no`）
+     * 是条件必填，只给平台单号可能定位不到单据。
+     */
+    public function cancelOutbound(CancelOutboundDto $dto): WmsResult;
 
     /** 创建退货入库单（P4） */
     public function createReturnInbound(ReturnInboundDto $dto): WmsResult;

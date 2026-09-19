@@ -1,0 +1,8 @@
+{
+  "error_response": {
+    "code": 25,
+    "msg": "Invalid signature",
+    "sub_code": "isv.invalid-signature",
+    "sub_msg": "签名验证失败，请检查 AppSecret 与 sign_method"
+  }
+}

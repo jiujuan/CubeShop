@@ -310,6 +310,46 @@ class FulfillmentOrderService
     }
 
     /**
+     * 记录一次「通知 WMS 撤单失败」（WMS 计划 P2 / F5）。
+     *
+     * 为什么特别处理：本地状态在 `cancel()` 时已置 `cancelled`（终态，矩阵里没有出边），
+     * 所以这里**不能也不该**把状态改回去。但仓方拒撤（典型是「已出库」）意味着
+     * **货可能已经在路上，而平台侧订单已取消**——这是必须被人看见的事。
+     * 于是：失败详情落 `extend.cancel_outbound`，并写一条操作日志（`cancel_outbound_failed`，
+     * 无操作人，属系统行为），后台审计里可检索到。
+     */
+    public function recordCancelFailure(FulfillmentOrder $fo, string $error, ?string $wmsCode = null): FulfillmentOrder
+    {
+        $extend = $fo->extend ?? [];
+        $extend['cancel_outbound'] = [
+            'success' => false,
+            'error' => $error,
+            'wms_code' => $wmsCode,
+            'at' => now()->toDateTimeString(),
+        ];
+
+        $fo->forceFill(['extend' => $extend])->save();
+
+        $this->operationLog->record(
+            null,
+            'wms',
+            'cancel_outbound_failed',
+            'fulfillment_order',
+            $fo->id,
+            [
+                'outbound_no' => $fo->outbound_no,
+                'order_no' => $fo->order_no,
+                'wms_outbound_no' => $fo->wms_outbound_no,
+                'wms_code' => $wmsCode,
+                'error' => $error,
+            ],
+            SysOperationLog::ACTOR_ADMIN,
+        );
+
+        return $fo;
+    }
+
+    /**
      * 手工重推（后台按钮 / `PushFailed`、`Exception` 修复后）。
      *
      * 状态回到 `pending_push`（已是 `pending_push` 则不动），并派发推送作业；

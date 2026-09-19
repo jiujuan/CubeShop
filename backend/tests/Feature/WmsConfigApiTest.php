@@ -161,8 +161,11 @@ test('TC-WMS-005 京东云仓保存 → 400 提示 P8', function () {
 
 // ---------- 连通性测试 ----------
 
-test('TC-WMS-006 连通性测试（Mock）成功并落 wms_api_logs', function () {
-    $this->putJson("/api/admin/wms/warehouses/{$this->warehouse->id}/config", wmsConfigPayload(), $this->adminAuth)->assertOk();
+test('TC-WMS-006 未配置真实凭证时连通性测试走 Mock 并落 wms_api_logs', function () {
+    // P2 起「有凭证走真实网关」：这里显式清掉凭证，验证的才是 Mock 兜底路径
+    $this->putJson("/api/admin/wms/warehouses/{$this->warehouse->id}/config", wmsConfigPayload([
+        'app_key' => null, 'app_secret' => '',
+    ]), $this->adminAuth)->assertOk();
 
     $resp = $this->postJson("/api/admin/wms/warehouses/{$this->warehouse->id}/config/test", [], $this->adminAuth)
         ->assertOk()->json('data');
@@ -178,6 +181,25 @@ test('TC-WMS-006 连通性测试（Mock）成功并落 wms_api_logs', function (
         ->and($log->success)->toBeTrue()
         ->and($log->provider)->toBe('cainiao')
         ->and($log->request_body)->toBeArray();
+});
+
+test('TC-WMS-006B 沙箱填了真实凭证即改走真实网关，缺网关地址时 fail-closed（不静默 Mock）', function () {
+    // 沙箱网关地址未配置（测试环境本就没有该 env），凭证齐备 → 必须走 CainiaoAdapter 并被拒绝调用
+    config(['wms.providers.cainiao.gateway.sandbox' => null]);
+
+    $this->putJson("/api/admin/wms/warehouses/{$this->warehouse->id}/config", wmsConfigPayload(), $this->adminAuth)->assertOk();
+
+    $resp = $this->postJson("/api/admin/wms/warehouses/{$this->warehouse->id}/config/test", [], $this->adminAuth)
+        ->assertOk()->json('data');
+
+    expect($resp['success'])->toBeFalse()
+        // mock 为 null = 根本没走 Mock 适配器，这正是 F9 要锁定的行为
+        ->and($resp['mock'])->toBeNull()
+        ->and($resp['error'])->toContain('网关');
+
+    $log = WmsApiLog::latest('id')->first();
+    expect($log->success)->toBeFalse()
+        ->and($log->error_msg)->toContain('网关');
 });
 
 test('TC-WMS-007 生产环境缺密钥时连通性测试 fail-closed 并落失败日志', function () {

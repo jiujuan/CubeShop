@@ -1,0 +1,26 @@
+{
+  "response": {
+    "flag": "success",
+    "code": "0",
+    "message": "success",
+    "warehouseCode": "CN-WH-1",
+    "items": {
+      "item": [
+        {
+          "itemCode": "W-SKU-001",
+          "itemId": "100001",
+          "quantity": 128,
+          "lockQuantity": 4,
+          "warehouseCode": "CN-WH-1"
+        },
+        {
+          "itemCode": "W-SKU-002",
+          "itemId": "100002",
+          "quantity": 0,
+          "lockQuantity": 0,
+          "warehouseCode": "CN-WH-1"
+        }
+      ]
+    }
+  }
+}

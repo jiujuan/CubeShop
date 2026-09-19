@@ -11,10 +11,14 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 uses(RefreshDatabase::class);
 
 /**
- * 出库单推送作业（WMS 计划 P1 / F5、Step 6）
+ * 出库单推送作业（WMS 计划 P1 / F5、Step 6；P2 语义更新）
  *
- * 覆盖成功、重试计数、超限转人工、幂等短路、配置缺失，以及「tries 来自配置且上限兜底」。
- * 失败场景用「生产环境缺凭证」触发 MockAdapter 的 fail-closed——这是真实存在且可复现的失败路径。
+ * 覆盖成功、幂等短路、终态短路、配置缺失、`tries` 上限兜底。
+ *
+ * ⚠️ P2 语义变化：失败不再「一律重试」。作业按 Adapter 给出的 `retryable` 分流——
+ * 本文件用「生产缺凭证」触发 `BusinessException`（**不可重试**）路径；
+ * **可重试**路径（网络/5xx，抛异常交队列退避）由 `tests/Feature/WmsPushOutboundTest.php`
+ * 用真实 CainiaoAdapter + `Http::fake()` 覆盖。
  */
 
 /** 建仓 + WMS 配置，返回发货单（默认 pending_push，单行 2 件） */
@@ -114,15 +118,16 @@ test('tries 来自配置传入，并兜底封顶 10 次', function () {
         ->and((new PushOutboundJob(1, 0))->tries)->toBe(1);
 });
 
-test('首次推送失败：记录错误与次数、保持推送中并抛异常交给队列重试', function () {
-    // 生产环境缺凭证 → MockAdapter fail-closed（真实可复现的失败路径）
+test('我方问题（生产缺凭证）→ 不可重试：立即转推送失败、不抛异常、落失败日志', function () {
+    // 生产环境缺凭证 → MockAdapter fail-closed 抛 BusinessException。
+    // P2 起：这类「配置/数据问题」判为**不可重试**（重试一万次也一样），
+    // 直接置 push_failed 转人工，不再抛异常去打扰队列。
     $fo = jobFulfillment(configAttrs: ['api_env' => 'prod']);
 
-    expect(fn () => (new PushOutboundJob($fo->id, 3))->handle())
-        ->toThrow(RuntimeException::class);
+    (new PushOutboundJob($fo->id, 3))->handle();
 
     $fo->refresh();
-    expect($fo->status)->toBe(FulfillmentOrder::STATUS_PUSHING)
+    expect($fo->status)->toBe(FulfillmentOrder::STATUS_PUSH_FAILED)
         ->and($fo->push_times)->toBe(1)
         ->and($fo->last_push_error)->toContain('生产环境缺少 WMS 凭证');
 
@@ -132,22 +137,15 @@ test('首次推送失败：记录错误与次数、保持推送中并抛异常�
         ->and($log->error_msg)->toContain('生产环境缺少 WMS 凭证');
 });
 
-test('重试达到配置次数后转推送失败，不再抛异常', function () {
+test('不可重试失败即便 tries 很大也不重试（不抛异常、只计一次、直接转人工）', function () {
     $fo = jobFulfillment(configAttrs: ['api_env' => 'prod']);
 
-    // 第 1、2 次未超限 → 抛异常；第 3 次（= tries）→ 落 PushFailed 且正常结束
-    foreach ([1, 2] as $attempt) {
-        expect(fn () => (new PushOutboundJob($fo->id, 3))->handle())
-            ->toThrow(RuntimeException::class);
-        expect($fo->fresh()->push_times)->toBe($attempt);
-    }
-
-    (new PushOutboundJob($fo->id, 3))->handle();
+    (new PushOutboundJob($fo->id, 10))->handle();
 
     $fo->refresh();
     expect($fo->status)->toBe(FulfillmentOrder::STATUS_PUSH_FAILED)
-        ->and($fo->push_times)->toBe(3)
-        ->and($fo->last_push_error)->not->toBeNull();
+        ->and($fo->push_times)->toBe(1)
+        ->and(WmsApiLog::where('biz_no', $fo->outbound_no)->count())->toBe(1);
 });
 
 test('终态发货单直接短路：已发货/已取消不再推送', function () {
