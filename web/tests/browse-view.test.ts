@@ -65,8 +65,9 @@ describe('分类商品列表页（BrowseView）', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
     vi.clearAllMocks()
+    // P2-11：分类 id 对外是字符串（与前端 categoryId 的比较口径保持一致）
     getCategoriesMock.mockResolvedValue({
-      data: { data: [{ id: 3, name: '数码配件', children: [{ id: 31, name: '手机配件' }] }] },
+      data: { data: [{ id: '3', name: '数码配件', children: [{ id: '31', name: '手机配件' }] }] },
     })
     getProductsMock.mockResolvedValue({
       data: { data: { list: [product], pagination: { page: 1, page_size: 20, total: 1, total_pages: 1 } } },
@@ -113,13 +114,13 @@ describe('列表页按属性筛选（T-014）', () => {
     setActivePinia(createPinia())
     vi.clearAllMocks()
     getCategoriesMock.mockResolvedValue({
-      data: { data: [{ id: 3, name: '数码配件', children: [{ id: 31, name: '手机配件' }] }] },
+      data: { data: [{ id: '3', name: '数码配件', children: [{ id: '31', name: '手机配件' }] }] },
     })
     getProductsMock.mockResolvedValue({
       data: { data: { list: [product], pagination: { page: 1, page_size: 20, total: 1, total_pages: 1 } } },
     })
     getBrandsMock.mockResolvedValue({
-      data: { data: [{ id: 5, name: '安克', logo: null }, { id: 6, name: '绿联', logo: null }] },
+      data: { data: [{ id: '5', name: '安克', logo: null }, { id: '6', name: '绿联', logo: null }] },
     })
     getAttributesMock.mockResolvedValue({
       data: {
@@ -142,48 +143,49 @@ describe('列表页按属性筛选（T-014）', () => {
     return { router, utils }
   }
 
-  it('筛选面板按当前分类渲染品牌与可筛属性', async () => {
+  it('筛选面板只渲染可筛属性（品牌已上移至顶部信息区）', async () => {
     const { utils } = await renderAtCategory()
     await fireEvent.click(screen.getByTestId('filter-toggle'))
 
     await waitFor(() => expect(screen.getByTestId('filter-panel')).toBeTruthy())
-    expect(screen.getByTestId('filter-brands')).toBeTruthy()
-    expect(screen.getByText('安克')).toBeTruthy()
+    expect(screen.queryByTestId('filter-brands')).toBeNull()
     expect(screen.getByTestId('filter-attr-11')).toBeTruthy()
     expect(screen.getByTestId('filter-attr-11-金属')).toBeTruthy()
     // 拉取筛选维度时携带当前分类（路由切换后触发）
     await waitFor(() =>
-      expect(getAttributesMock).toHaveBeenCalledWith({ category_id: 3, filterable: 1 }),
+      expect(getAttributesMock).toHaveBeenCalledWith({ category_id: '3', filterable: 1 }),
     )
+    // 品牌接口同样按当前分类收敛
+    await waitFor(() => expect(getBrandsMock).toHaveBeenCalledWith({ category_id: '3' }))
     void utils
   })
 
-  it('多选品牌与属性后请求参数组装正确，并同步 URL', async () => {
+  it('顶部品牌与属性筛选后请求参数组装正确，并同步 URL', async () => {
     const { router } = await renderAtCategory()
-    await fireEvent.click(screen.getByTestId('filter-toggle'))
-    await waitFor(() => expect(screen.getByTestId('filter-panel')).toBeTruthy())
+    await waitFor(() => expect(screen.getByTestId('heading-brand-5')).toBeTruthy())
 
     getProductsMock.mockClear()
-    await fireEvent.click(screen.getByTestId('filter-brand-5'))
+    await fireEvent.click(screen.getByTestId('heading-brand-5'))
     await waitFor(() => expect(router.currentRoute.value.query.brand).toBe('5'))
 
+    await fireEvent.click(screen.getByTestId('filter-toggle'))
+    await waitFor(() => expect(screen.getByTestId('filter-panel')).toBeTruthy())
     await fireEvent.click(screen.getByTestId('filter-attr-11-金属'))
     await waitFor(() => expect(router.currentRoute.value.query.attr).toEqual(['11:金属']))
 
     // 最后一次请求应带上品牌与属性参数
     await waitFor(() => {
       const last = getProductsMock.mock.calls.at(-1)?.[0]
-      expect(last.brand_id).toBe(5)
+      expect(last.brand_id).toBe('5')
       expect(last.attribute_values).toEqual(['11:金属'])
     })
   })
 
   it('已选条件以 chips 展示，支持单个移除与一键清空', async () => {
     const { router } = await renderAtCategory()
-    await fireEvent.click(screen.getByTestId('filter-toggle'))
-    await waitFor(() => expect(screen.getByTestId('filter-panel')).toBeTruthy())
+    await waitFor(() => expect(screen.getByTestId('heading-brand-5')).toBeTruthy())
 
-    await fireEvent.click(screen.getByTestId('filter-brand-5'))
+    await fireEvent.click(screen.getByTestId('heading-brand-5'))
     await waitFor(() => expect(screen.getByTestId('filter-chips')).toBeTruthy())
     expect(screen.getByTestId('chip-brand-5').textContent).toContain('安克')
 
@@ -192,7 +194,7 @@ describe('列表页按属性筛选（T-014）', () => {
     await waitFor(() => expect(router.currentRoute.value.query.brand).toBeUndefined())
 
     // 再选一个后一键清空
-    await fireEvent.click(screen.getByTestId('filter-brand-5'))
+    await fireEvent.click(screen.getByTestId('heading-brand-5'))
     await waitFor(() => expect(router.currentRoute.value.query.brand).toBe('5'))
     await fireEvent.click(screen.getByTestId('filter-clear'))
     await waitFor(() => expect(router.currentRoute.value.query.brand).toBeUndefined())
@@ -200,13 +202,12 @@ describe('列表页按属性筛选（T-014）', () => {
 
   it('筛选后无结果时展示空态与「清空筛选条件」入口', async () => {
     const { router } = await renderAtCategory()
-    await fireEvent.click(screen.getByTestId('filter-toggle'))
-    await waitFor(() => expect(screen.getByTestId('filter-panel')).toBeTruthy())
+    await waitFor(() => expect(screen.getByTestId('heading-brand-5')).toBeTruthy())
 
     getProductsMock.mockResolvedValue({
       data: { data: { list: [], pagination: { page: 1, page_size: 20, total: 0, total_pages: 1 } } },
     })
-    await fireEvent.click(screen.getByTestId('filter-brand-5'))
+    await fireEvent.click(screen.getByTestId('heading-brand-5'))
 
     await waitFor(() => expect(screen.getByTestId('empty-clear-filter')).toBeTruthy())
     // 点击清空后筛选条件被移除（URL query 清空）
@@ -253,5 +254,96 @@ describe('ProductCard 竖版卡片快捷加购', () => {
     await waitFor(() => expect(router.currentRoute.value.path).toBe('/login'))
     expect(getProductMock).not.toHaveBeenCalled()
     expect(addToCartMock).not.toHaveBeenCalled()
+  })
+})
+
+describe('分类页顶部信息区与价格区间浮层（2026-09-19 改版）', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    vi.clearAllMocks()
+    getCategoriesMock.mockResolvedValue({
+      data: { data: [{ id: '3', name: '数码配件', children: [{ id: '31', name: '手机配件' }] }] },
+    })
+    getProductsMock.mockResolvedValue({
+      data: { data: { list: [product], pagination: { page: 1, page_size: 20, total: 1, total_pages: 1 } } },
+    })
+    getBrandsMock.mockResolvedValue({
+      data: { data: [{ id: '5', name: '安克', logo: null }, { id: '6', name: '绿联', logo: null }] },
+    })
+    getAttributesMock.mockResolvedValue({ data: { data: [] } })
+  })
+
+  async function renderAt(path: string) {
+    const router = makeRouter()
+    render(BrowseView, { global: { plugins: [router] } })
+    await router.isReady()
+    router.push(path)
+    await waitFor(() => expect(screen.getByTestId('browse-heading')).toBeTruthy())
+    return router
+  }
+
+  it('顶部信息区展示大分类、小分类名与该分类下品牌', async () => {
+    await renderAt('/category/31')
+
+    await waitFor(() => expect(screen.getByTestId('browse-heading-root').textContent).toBe('数码配件'))
+    // 命中小分类：以高亮按钮呈现
+    const sub = screen.getByTestId('heading-sub-31')
+    expect(sub.textContent).toBe('手机配件')
+    expect(sub.className).toContain('text-[#1677ff]')
+    expect(screen.getByTestId('browse-heading-brands')).toBeTruthy()
+    expect(screen.getByTestId('heading-brand-5').textContent).toBe('安克')
+    expect(screen.getByTestId('heading-brand-6').textContent).toBe('绿联')
+  })
+
+  it('大分类与小分类均可点击：大分类回一级页，小分类进二级页', async () => {
+    const router = await renderAt('/category/31')
+
+    // 等分类数据就绪（activeRoot 依赖它）再点击
+    await waitFor(() => expect(screen.getByTestId('heading-sub-31')).toBeTruthy())
+
+    // 处于小分类时大分类可点 → 跳一级分类页
+    await fireEvent.click(screen.getByTestId('browse-heading-root'))
+    await waitFor(() => expect(router.currentRoute.value.fullPath).toBe('/category/3'))
+
+    // 处于大分类时小分类可点 → 跳二级分类页
+    await waitFor(() => expect(screen.getByTestId('heading-sub-31')).toBeTruthy())
+    await fireEvent.click(screen.getByTestId('heading-sub-31'))
+    await waitFor(() => expect(router.currentRoute.value.fullPath).toBe('/category/31'))
+  })
+
+  it('处于大分类时，小分类名位置展示其下全部小分类（均可点击）', async () => {
+    await renderAt('/category/3')
+
+    await waitFor(() => expect(screen.getByTestId('browse-heading-root').textContent).toBe('数码配件'))
+    expect(screen.getByTestId('heading-sub-31').textContent).toBe('手机配件')
+  })
+
+  it('品牌接口按当前分类拉取（category_brands 收敛）', async () => {
+    await renderAt('/category/31')
+    await waitFor(() =>
+      expect(getBrandsMock).toHaveBeenCalledWith({ category_id: '31' }),
+    )
+  })
+
+  it('点击顶部品牌名即按该品牌筛选（与 chips 同源）', async () => {
+    const router = await renderAt('/category/3')
+
+    await fireEvent.click(screen.getByTestId('heading-brand-5'))
+    await waitFor(() => expect(router.currentRoute.value.query.brand).toBe('5'))
+  })
+
+  it('价格区间浮层：点击其它地方收起，点击浮层内部不收起', async () => {
+    await renderAt('/category/3')
+
+    await fireEvent.click(screen.getByTestId('price-filter-toggle'))
+    await waitFor(() => expect(screen.getByTestId('price-filter-pop')).toBeTruthy())
+
+    // 点击浮层内部（最低价输入框）→ 保持展开
+    await fireEvent.click(screen.getByPlaceholderText('最低价'))
+    expect(screen.queryByTestId('price-filter-pop')).toBeTruthy()
+
+    // 点击页面其它位置 → 收起
+    await fireEvent.click(document.body)
+    await waitFor(() => expect(screen.queryByTestId('price-filter-pop')).toBeNull())
   })
 })

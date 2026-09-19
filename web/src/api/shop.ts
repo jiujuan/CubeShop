@@ -49,8 +49,9 @@ export function getAttributes(params: { category_id?: string; filterable?: 0 | 1
 }
 
 /** 品牌列表 */
-export function getBrands() {
-  return request.get<ApiResult<BrandOption[]>>('/brands')
+/** 品牌列表（支持按分类过滤：后台配置了 category_brands 的分类只返回其可选品牌） */
+export function getBrands(params?: { category_id?: string }) {
+  return request.get<ApiResult<BrandOption[]>>('/brands', { params })
 }
 
 /** 商品详情（API 文档 4.2） */

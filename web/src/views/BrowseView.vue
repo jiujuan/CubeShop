@@ -1,10 +1,10 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
-  ArrowUpDown, BadgeCheck, Bike, ChevronDown, ChevronRight, ChevronUp,
+  ArrowUpDown, Bike, ChevronDown, ChevronRight, ChevronUp,
   Flame, Gem, Headphones, Home as HomeIcon, House, LayoutGrid, List, PackageOpen,
-  Shirt, SlidersHorizontal, Smartphone, Sparkles, Truck, X,
+  Shirt, SlidersHorizontal, Smartphone, Sparkles, X,
 } from 'lucide-vue-next'
 import {
   getAttributes, getBrands, getCategories, getProducts,
@@ -80,11 +80,28 @@ onMounted(async () => {
   load()
 })
 
-/** 按当前分类加载可用筛选维度（品牌 + 可筛属性） */
+/* ---------- 价格区间浮层：点击浮层以外区域收起 ---------- */
+
+const pricePopRef = ref<HTMLElement | null>(null)
+
+/**
+ * 文档级 click 监听：点击价格区间浮层与其触发按钮之外的任何地方即收起。
+ * 「确定 / 清除」按钮与输入框都在浮层内部，contains 判定为 true，不受影响。
+ */
+function onDocClick(e: MouseEvent) {
+  if (!priceFilterOpen.value) return
+  const el = pricePopRef.value
+  if (el && !el.contains(e.target as Node)) priceFilterOpen.value = false
+}
+
+onMounted(() => document.addEventListener('click', onDocClick))
+onBeforeUnmount(() => document.removeEventListener('click', onDocClick))
+
+/** 按当前分类加载可用筛选维度（品牌按分类收敛 + 可筛属性） */
 async function loadFilters() {
   try {
     const [b, a] = await Promise.all([
-      getBrands(),
+      getBrands({ category_id: categoryId.value }),
       getAttributes({ category_id: categoryId.value, filterable: 1 }),
     ])
     brands.value = b.data.data
@@ -207,6 +224,24 @@ const activeName = computed(() => {
   return activeRoot.value?.children.find((c) => c.id === categoryId.value)?.name ?? '全部商品'
 })
 
+/** 顶部信息区大标题：当前大（一级）分类名；搜索 / 无分类时给出对应兜底文案 */
+const rootName = computed(() => {
+  if (keyword.value) return `搜索：${keyword.value}`
+  return activeRoot.value?.name ?? '全部商品'
+})
+
+/** 顶部信息区小分类（可点击）：命中小分类则高亮该小分类；处于大分类时展开其下全部小分类 */
+const subLinks = computed(() => {
+  const q = categoryId.value
+  if (keyword.value || !q) return []
+  const root = activeRoot.value
+  if (!root) return []
+  return root.children.map((c) => ({ id: c.id, name: c.name, active: c.id === q }))
+})
+
+/** 顶部大分类是否可点击（有分类上下文且当前不在该大分类页时） */
+const rootClickable = computed(() => !keyword.value && !!activeRoot.value && activeRoot.value.id !== categoryId.value)
+
 /** 点击分类 → 跳转分类列表页（URL 驱动） */
 function goCategory(id?: string) {
   if (id) router.push(`/category/${id}`)
@@ -254,14 +289,6 @@ const tagOf = (p: ProductBrief) => (p.sales_count >= 1000 ? 'hot' : null)
 
 const rootIcons = [Flame, Shirt, Smartphone, House, Sparkles, Bike, Gem, Headphones]
 const iconOf = (i: number) => rootIcons[i % rootIcons.length]
-
-const bannerSlogan = computed(() => {
-  if (keyword.value) return '猜你想找 · 精选好物一站直达'
-  const subs = activeRoot.value?.children.map((c) => c.name) ?? []
-  return subs.length ? subs.slice(0, 4).join(' · ') : '品质好物 · 官方直供 · 极速送达'
-})
-
-const bannerDecor = ['🎧', '📱', '🔌', '⌚']
 
 /** 是否存在任何筛选条件（含价格） */
 const hasAnyFilter = computed(() => filterCount.value > 0 || hasPriceFilter.value)
@@ -332,33 +359,43 @@ function clearAllFilters() {
 
         <!-- 右侧主区 -->
         <section class="min-w-0 flex-1">
-          <!-- 横幅 -->
-          <div class="relative mb-4 overflow-hidden rounded-xl bg-gradient-to-r from-[#dceafe] via-[#e8f4ff] to-[#c9e2ff] px-8 py-7">
-            <div class="relative z-10 max-w-lg">
-              <span class="inline-block rounded bg-white/75 px-2 py-0.5 text-xs font-medium text-[#1677ff]">
-                {{ keyword ? '搜索结果' : activeName || '全部商品' }}
-              </span>
-              <h1 class="mt-2 text-[28px] font-extrabold leading-tight tracking-wide text-[#1668dc]">
-                {{ keyword ? keyword : '品质好物 智能生活' }}
-              </h1>
-              <p class="mt-1.5 truncate text-[13px] text-[#3f83d8]">{{ bannerSlogan }}</p>
+          <!-- 分类信息（原顶部横幅图片位）：大分类 / 小分类（均可点击） / 该分类下品牌 -->
+          <div class="mb-4 rounded-xl bg-white p-5 shadow-sm" data-testid="browse-heading">
+            <div class="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+              <h1
+                class="text-xl font-bold"
+                :class="rootClickable ? 'cursor-pointer text-slate-800 hover:text-[#1677ff]' : 'text-slate-800'"
+                :title="rootClickable ? '查看该大分类下全部商品' : undefined"
+                data-testid="browse-heading-root"
+                @click="rootClickable && goCategory(activeRoot!.id)"
+              >{{ rootName }}</h1>
+              <template v-if="subLinks.length">
+                <span class="text-[13px] text-slate-300">/</span>
+                <button
+                  v-for="s in subLinks" :key="s.id"
+                  class="text-[13px] transition-colors"
+                  :class="s.active ? 'font-medium text-[#1677ff]' : 'text-slate-400 hover:text-[#1677ff]'"
+                  :data-testid="`heading-sub-${s.id}`"
+                  @click="!s.active && goCategory(s.id)"
+                >{{ s.name }}</button>
+              </template>
+            </div>
 
-              <div class="mt-4 flex flex-wrap gap-x-6 gap-y-2 text-xs text-[#1677ff]">
-                <span class="flex items-center gap-1.5"><BadgeCheck class="h-3.5 w-3.5" /> 正品保障</span>
-                <span class="flex items-center gap-1.5"><Truck class="h-3.5 w-3.5" /> 快速发货</span>
-                <span class="flex items-center gap-1.5"><Headphones class="h-3.5 w-3.5" /> 售后无忧</span>
-                <span class="flex items-center gap-1.5"><Gem class="h-3.5 w-3.5" /> 会员更优惠</span>
+            <div v-if="brands.length" class="mt-3 flex items-start gap-2.5" data-testid="browse-heading-brands">
+              <span class="shrink-0 pt-0.5 text-[13px] text-slate-400">品牌</span>
+              <div class="flex flex-wrap gap-2">
+                <button
+                  v-for="b in brands" :key="b.id"
+                  class="rounded-full border px-3 py-0.5 text-[13px] transition-colors"
+                  :class="isBrandSelected(b.id)
+                    ? 'border-[#1677ff] bg-[#e6f4ff] text-[#1677ff]'
+                    : 'border-slate-200 text-slate-600 hover:border-[#1677ff] hover:text-[#1677ff]'"
+                  :data-testid="`heading-brand-${b.id}`"
+                  @click="toggleBrand(b.id)"
+                >{{ b.name }}</button>
               </div>
             </div>
-
-            <!-- 右侧装饰 -->
-            <div class="pointer-events-none absolute inset-y-0 right-4 hidden w-64 items-center justify-center gap-3 md:flex">
-              <span
-                v-for="(e, i) in bannerDecor" :key="i"
-                class="flex items-center justify-center rounded-full bg-white/45 shadow-sm"
-                :class="['h-16 w-16 text-3xl', 'h-20 w-20 text-4xl', 'h-14 w-14 text-2xl', 'h-16 w-16 text-3xl'][i]"
-              >{{ e }}</span>
-            </div>
+            <p v-else class="mt-2 text-[13px] text-slate-400" data-testid="browse-heading-brands-empty">暂无品牌</p>
           </div>
 
           <!-- 排序工具栏 -->
@@ -385,9 +422,10 @@ function clearAllFilters() {
               </span>
             </button>
 
-            <!-- 价格区间 -->
-            <div class="relative">
+            <!-- 价格区间（点击浮层以外区域自动收起） -->
+            <div ref="pricePopRef" class="relative">
               <button
+                data-testid="price-filter-toggle"
                 class="flex items-center gap-1 rounded-full px-4 py-1.5 transition-colors"
                 :class="hasPriceFilter ? 'border border-[#1677ff] bg-[#e6f4ff] text-[#1677ff]' : 'border border-slate-200 bg-white text-slate-600 hover:border-[#1677ff] hover:text-[#1677ff]'"
                 @click="priceFilterOpen = !priceFilterOpen"
@@ -396,6 +434,7 @@ function clearAllFilters() {
               </button>
               <div
                 v-if="priceFilterOpen"
+                data-testid="price-filter-pop"
                 class="absolute left-0 top-10 z-20 w-64 rounded-lg border border-slate-100 bg-white p-3 shadow-lg"
               >
                 <div class="flex items-center gap-2">
@@ -446,27 +485,12 @@ function clearAllFilters() {
             </div>
           </div>
 
-          <!-- V1.1 T-014：筛选面板（品牌 + 可筛属性） -->
+          <!-- V1.1 T-014：筛选面板（可筛属性；品牌已上移至顶部信息区） -->
           <div
             v-if="filterOpen"
             data-testid="filter-panel"
             class="mb-3 rounded-xl border border-slate-100 bg-white p-4 shadow-sm"
           >
-            <div v-if="brands.length" class="mb-3 flex items-start gap-3 text-sm" data-testid="filter-brands">
-              <span class="w-14 shrink-0 pt-1 text-slate-500">品牌</span>
-              <div class="flex flex-wrap gap-2">
-                <button
-                  v-for="b in brands" :key="b.id"
-                  class="rounded-lg border px-3 py-1 text-[13px] transition-colors"
-                  :class="isBrandSelected(b.id)
-                    ? 'border-[#1677ff] bg-[#e6f4ff] text-[#1677ff]'
-                    : 'border-slate-200 text-slate-600 hover:border-[#1677ff] hover:text-[#1677ff]'"
-                  :data-testid="`filter-brand-${b.id}`"
-                  @click="toggleBrand(b.id)"
-                >{{ b.name }}</button>
-              </div>
-            </div>
-
             <div
               v-for="attr in filterAttributes" :key="attr.id"
               class="mb-3 flex items-start gap-3 text-sm last:mb-0"
@@ -486,7 +510,7 @@ function clearAllFilters() {
               </div>
             </div>
 
-            <p v-if="!brands.length && !filterAttributes.length" class="py-2 text-center text-xs text-slate-400">
+            <p v-if="!filterAttributes.length" class="py-2 text-center text-xs text-slate-400">
               当前分类暂无可筛选条件
             </p>
           </div>
