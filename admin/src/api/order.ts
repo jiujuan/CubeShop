@@ -176,6 +176,92 @@ export function getOrder(id: number) {
   return request.get<ApiResult<AdminOrder>>(`/admin/orders/${id}`)
 }
 
+// ---------- 订单资金视图（G7：统一资金流水聚合，权限 order.view，只读） ----------
+
+/** 资金视图中的支付单行（GET /admin/orders/{id}/funds） */
+export interface FundsPaymentRow {
+  id: number
+  payment_no: string
+  channel: string
+  channel_label: string
+  amount: string
+  status: string
+  status_label: string
+  channel_trade_no: string | null
+  paid_at: string | null
+  created_at: string | null
+}
+
+/** 支付单事件流水（创建/回调/核账/查单/关闭…，事件原文在支付日志页查看） */
+export interface FundsPaymentEvent {
+  payment_no: string
+  event: string
+  event_label: string
+  created_at: string | null
+}
+
+/** 余额流水（经 related_type=payment 关联到本单支付单） */
+export interface FundsBalanceLog {
+  type: string
+  type_label: string
+  amount: string
+  balance_before: string
+  balance_after: string
+  remark: string | null
+  created_at: string | null
+}
+
+/** 退款单行（含优惠构成快照 refund_details） */
+export interface FundsRefundRow {
+  refund_no: string
+  type: string
+  amount: string
+  status: string
+  status_label: string
+  refund_details: Record<string, unknown> | null
+  reason: string | null
+  created_at: string | null
+  processed_at: string | null
+}
+
+/** 资金汇总（渠道成功收款/退款、余额渠道真实进出、净入账） */
+export interface FundsSummary {
+  pay_success_amount: string
+  refund_success_amount: string
+  balance_consume_amount: string
+  balance_refund_amount: string
+  net_amount: string
+}
+
+/** 订单资金视图响应（订单金额块复用 AdminOrder 的口径） */
+export interface OrderFunds {
+  order: {
+    id: number
+    order_no: string
+    status: OrderStatus
+    status_label: string
+    user_id: number
+    total_amount: string
+    freight_amount: string
+    discount_amount: string
+    promotion_discount: string
+    pay_amount: string
+    amount_details?: OrderAmountDetails | null
+    created_at: string | null
+    paid_at: string | null
+  }
+  payments: FundsPaymentRow[]
+  payment_events: FundsPaymentEvent[]
+  balance_logs: FundsBalanceLog[]
+  refunds: FundsRefundRow[]
+  summary: FundsSummary
+}
+
+/** 订单资金视图（G7） */
+export function getOrderFunds(id: number) {
+  return request.get<ApiResult<OrderFunds>>(`/admin/orders/${id}/funds`)
+}
+
 export interface ShipPayload {
   /** 快递公司编码（express_companies.code，发货弹窗下拉选择） */
   express_company_code: string

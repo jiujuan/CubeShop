@@ -3,6 +3,7 @@ import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
   getOrder,
+  getOrderFunds,
   getOrderTimeline,
   ORDER_PROGRESS_FLOW,
   ORDER_STATUS_CLASS,
@@ -11,10 +12,11 @@ import {
   TRACE_STATUS_LABELS,
   WMS_FULFILLMENT_STATUS_CLASS,
   type AdminOrder,
+  type OrderFunds,
   type OrderItemView,
   type OrderLogRow,
 } from '@/api/order'
-import { ArrowLeft, MapPin, Package, Ticket, Truck } from 'lucide-vue-next'
+import { ArrowLeft, MapPin, Package, Ticket, Truck, Wallet } from 'lucide-vue-next'
 import { Button } from '@/components/ui/button'
 import LoadingSpinner from '@/components/LoadingSpinner.vue'
 
@@ -31,6 +33,7 @@ const loading = ref(true)
 const errorMsg = ref('')
 const order = ref<AdminOrder | null>(null)
 const logs = ref<OrderLogRow[]>([])
+const funds = ref<OrderFunds | null>(null)
 
 /** 两位小数金额（后端金额为字符串，避免浮点误差展示） */
 function money(v?: string | null): string {
@@ -83,6 +86,95 @@ const couponText = computed(() => {
 /** 物流（一个订单通常一条运单） */
 const shippingInfo = computed(() => order.value?.shipping?.[0] ?? null)
 
+// ---------- 资金视图（G7：统一资金流水聚合） ----------
+
+/** 资金流水时间线条目 */
+interface FundsEntry {
+  key: string
+  time: string | null
+  tag: string
+  tagClass: string
+  text: string
+  sub: string
+}
+
+/** 统一时间线：支付单 / 支付事件 / 余额流水 / 退款单按时间倒序合并 */
+const fundsTimeline = computed<FundsEntry[]>(() => {
+  const f = funds.value
+  if (!f) return []
+  const entries: FundsEntry[] = []
+
+  for (const p of f.payments) {
+    const cls =
+      p.status === 'success'
+        ? 'bg-green-100 text-green-600'
+        : p.status === 'reviewing'
+          ? 'bg-orange-100 text-orange-500'
+          : p.status === 'failed'
+            ? 'bg-red-100 text-red-500'
+            : 'bg-slate-100 text-slate-500'
+    entries.push({
+      key: `pay-${p.id}`,
+      time: p.paid_at ?? p.created_at,
+      tag: '支付',
+      tagClass: cls,
+      text: `${p.channel_label} ¥${money(p.amount)} · ${p.status_label}`,
+      sub: `${p.payment_no}${p.channel_trade_no ? ` · 渠道流水号 ${p.channel_trade_no}` : ''}`,
+    })
+  }
+
+  for (const [i, e] of f.payment_events.entries()) {
+    entries.push({
+      key: `evt-${e.payment_no}-${i}`,
+      time: e.created_at,
+      tag: '支付事件',
+      tagClass: 'bg-slate-100 text-slate-500',
+      text: e.event_label,
+      sub: e.payment_no,
+    })
+  }
+
+  for (const [i, l] of f.balance_logs.entries()) {
+    const negative = Number(l.amount) < 0
+    entries.push({
+      key: `bal-${i}`,
+      time: l.created_at,
+      tag: '余额',
+      tagClass: negative ? 'bg-blue-100 text-blue-600' : 'bg-green-100 text-green-600',
+      text: `${l.type_label} ${negative ? '−' : '+'}¥${money(Math.abs(Number(l.amount)).toFixed(2))}`,
+      sub: `余额 ${money(l.balance_before)} → ${money(l.balance_after)}${l.remark ? ` · ${l.remark}` : ''}`,
+    })
+  }
+
+  for (const r of f.refunds) {
+    entries.push({
+      key: `ref-${r.refund_no}`,
+      time: r.processed_at ?? r.created_at,
+      tag: '退款',
+      tagClass: r.status === 'success' ? 'bg-red-100 text-red-500' : 'bg-slate-100 text-slate-500',
+      text: `¥${money(r.amount)} · ${r.status_label}`,
+      sub: `${r.refund_no}${r.reason ? ` · ${r.reason}` : ''}`,
+    })
+  }
+
+  return entries.sort((a, b) => (b.time ?? '').localeCompare(a.time ?? ''))
+})
+
+/** 资金汇总（仅展示有值的项） */
+const fundsSummary = computed(() => {
+  const s = funds.value?.summary
+  if (!s) return []
+  const items = [
+    { label: '成功收款', value: `¥${money(s.pay_success_amount)}`, testid: 'funds-pay-amount' },
+    { label: '成功退款', value: `¥${money(s.refund_success_amount)}`, testid: 'funds-refund-amount' },
+    { label: '净入账', value: `¥${money(s.net_amount)}`, testid: 'funds-net-amount' },
+  ]
+  if (Number(s.balance_consume_amount) > 0) {
+    items.splice(2, 0, { label: '余额支付', value: `¥${money(s.balance_consume_amount)}`, testid: 'funds-balance-amount' })
+  }
+  return items
+})
+
 /** 收货地址全文（优先快照 full_address，缺失时按省市区拼接） */
 const fullAddress = computed(() => {
   const a = order.value?.address_snapshot
@@ -114,6 +206,14 @@ onMounted(async () => {
     logs.value = data.data?.list ?? []
   } catch {
     logs.value = []
+  }
+
+  // 资金视图（G7）同样只读且失败不阻断详情页
+  try {
+    const { data } = await getOrderFunds(id)
+    funds.value = data.data
+  } catch {
+    funds.value = null
   }
 
   loading.value = false
@@ -378,6 +478,38 @@ onMounted(async () => {
           </div>
         </div>
         <p v-else class="text-[13px] text-slate-400">暂无流水记录（可能缺少 order.log 权限）</p>
+      </div>
+
+      <!-- 资金视图（G7：统一资金流水聚合，接口失败不阻断详情页） -->
+      <div class="rounded-lg bg-white p-5 shadow-sm" data-testid="funds-card">
+        <h3 class="mb-3 flex items-center gap-1.5 text-sm font-medium text-slate-700">
+          <Wallet class="h-4 w-4 text-slate-400" /> 资金流水
+        </h3>
+        <template v-if="funds">
+          <!-- 汇总 -->
+          <div class="mb-4 flex flex-wrap gap-x-8 gap-y-2" data-testid="funds-summary">
+            <div v-for="item in fundsSummary" :key="item.label">
+              <p class="text-xs text-slate-400">{{ item.label }}</p>
+              <p class="text-[15px] font-semibold text-slate-800" :data-testid="item.testid">{{ item.value }}</p>
+            </div>
+          </div>
+
+          <!-- 统一资金流水时间线（支付/支付事件/余额/退款，按时间倒序） -->
+          <div v-if="fundsTimeline.length" class="ml-1 border-l border-slate-200 pl-4" data-testid="funds-timeline">
+            <div v-for="entry in fundsTimeline" :key="entry.key" class="relative pb-3">
+              <span class="absolute -left-[21px] top-1 h-2 w-2 rounded-full bg-slate-300" />
+              <p class="flex flex-wrap items-center gap-2 text-[13px] text-slate-700">
+                <span class="rounded px-1.5 py-0.5 text-xs" :class="entry.tagClass">{{ entry.tag }}</span>
+                {{ entry.text }}
+              </p>
+              <p class="mt-0.5 break-all text-xs text-slate-400">
+                {{ entry.time || '—' }}<template v-if="entry.sub">　{{ entry.sub }}</template>
+              </p>
+            </div>
+          </div>
+          <p v-else class="text-[13px] text-slate-400">该订单暂无资金流水</p>
+        </template>
+        <p v-else class="text-[13px] text-slate-400">资金流水加载失败（可能缺少 order.view 权限）</p>
       </div>
     </div>
   </div>

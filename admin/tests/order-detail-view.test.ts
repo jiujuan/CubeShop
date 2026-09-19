@@ -14,14 +14,16 @@ import { createMemoryHistory, createRouter } from 'vue-router'
  * 2. 商品行「实付 = 小计 − 满减分摊 − 券分摊」，与后端落库口径一致；
  * 3. 流水接口失败不阻断详情页（可能缺少 order.log 权限）。
  */
-const { getOrderMock, getOrderTimelineMock } = vi.hoisted(() => ({
+const { getOrderMock, getOrderTimelineMock, getOrderFundsMock } = vi.hoisted(() => ({
   getOrderMock: vi.fn(),
   getOrderTimelineMock: vi.fn(),
+  getOrderFundsMock: vi.fn(),
 }))
 
 vi.mock('@/api/order', () => ({
   getOrder: getOrderMock,
   getOrderTimeline: getOrderTimelineMock,
+  getOrderFunds: getOrderFundsMock,
   ORDER_PROGRESS_FLOW: [
     { status: 'pending_payment', label: '提交订单' },
     { status: 'paid', label: '支付成功' },
@@ -190,8 +192,84 @@ function timelineFixture() {
   }
 }
 
+/** 资金视图 fixture（G7）：余额支付 + 支付事件 + 余额消费 + 全额退款 */
+function fundsFixture() {
+  return {
+    order: {
+      id: 45,
+      order_no: 'CS20260917000009',
+      status: 'shipped',
+      status_label: '已发货',
+      user_id: 7,
+      total_amount: '50.00',
+      freight_amount: '10.00',
+      discount_amount: '10.00',
+      promotion_discount: '0.00',
+      pay_amount: '50.00',
+      amount_details: null,
+      created_at: '2026-09-17 10:00:00',
+      paid_at: '2026-09-17 10:01:00',
+    },
+    payments: [
+      {
+        id: 1,
+        payment_no: 'PAY20260917100030001',
+        channel: 'balance',
+        channel_label: '余额支付',
+        amount: '50.00',
+        status: 'success',
+        status_label: '支付成功',
+        channel_trade_no: null,
+        paid_at: '2026-09-17 10:01:00',
+        created_at: '2026-09-17 10:00:30',
+      },
+    ],
+    payment_events: [
+      { payment_no: 'PAY20260917100030001', event: 'create', event_label: '创建支付单', created_at: '2026-09-17 10:00:30' },
+    ],
+    balance_logs: [
+      {
+        type: 'consume',
+        type_label: '消费',
+        amount: '-50.00',
+        balance_before: '500.00',
+        balance_after: '450.00',
+        remark: '余额支付 PAY20260917100030001',
+        created_at: '2026-09-17 10:00:30',
+      },
+    ],
+    refunds: [
+      {
+        refund_no: 'RF20260917110000001',
+        type: 'refund',
+        amount: '50.00',
+        status: 'success',
+        status_label: '退款成功',
+        refund_details: null,
+        reason: '不想要了',
+        created_at: '2026-09-17 11:00:00',
+        processed_at: '2026-09-17 11:05:00',
+      },
+    ],
+    summary: {
+      pay_success_amount: '50.00',
+      refund_success_amount: '50.00',
+      balance_consume_amount: '50.00',
+      balance_refund_amount: '0.00',
+      net_amount: '0.00',
+    },
+  }
+}
+
 async function mountView(
-  options: { order?: Record<string, unknown> | null; fail?: boolean; id?: number; timelineFail?: boolean } = {},
+  options: {
+    order?: Record<string, unknown> | null
+    fail?: boolean
+    id?: number
+    timelineFail?: boolean
+    funds?: Record<string, unknown> | null
+    fundsFail?: boolean
+  } = {},
 ) {
   const id = options.id ?? 45
   if (options.fail) {
@@ -203,6 +281,11 @@ async function mountView(
     getOrderTimelineMock.mockRejectedValue(new Error('403'))
   } else {
     getOrderTimelineMock.mockResolvedValue({ data: { data: timelineFixture() } })
+  }
+  if (options.fundsFail) {
+    getOrderFundsMock.mockRejectedValue(new Error('403'))
+  } else {
+    getOrderFundsMock.mockResolvedValue({ data: { data: (options.funds ?? fundsFixture()) as never } })
   }
 
   const router = makeRouter(id)
@@ -219,6 +302,7 @@ describe('后台订单详情页', () => {
   beforeEach(() => {
     getOrderMock.mockReset()
     getOrderTimelineMock.mockReset()
+    getOrderFundsMock.mockReset()
   })
 
   it('按 id 拉取订单与流水两个接口', async () => {
@@ -380,5 +464,62 @@ describe('后台订单详情页', () => {
     expect(wrapper.find('[data-testid="status-badge"]').text()).toBe('已发货')
     expect(wrapper.text()).toContain('CS20260917000009')
     expect(wrapper.find('[data-testid="back"]').exists()).toBe(true)
+  })
+
+  it('资金视图渲染汇总（收款/退款/余额/净入账）', async () => {
+    const { wrapper } = await mountView()
+    const summary = wrapper.find('[data-testid="funds-summary"]')
+
+    expect(summary.find('[data-testid="funds-pay-amount"]').text()).toBe('¥50.00')
+    expect(summary.find('[data-testid="funds-refund-amount"]').text()).toBe('¥50.00')
+    expect(summary.find('[data-testid="funds-balance-amount"]').text()).toBe('¥50.00')
+    expect(summary.find('[data-testid="funds-net-amount"]').text()).toBe('¥0.00')
+  })
+
+  it('资金时间线按时间倒序合并支付/余额/退款，事件与流水号随行', async () => {
+    const { wrapper } = await mountView()
+    const timeline = wrapper.find('[data-testid="funds-timeline"]')
+    const items = timeline.findAll('div.relative')
+
+    expect(items).toHaveLength(4)
+    // 倒序：退款(11:05) → 支付(10:01) → 支付事件(10:00:30) → 余额(10:00:30，同秒按合并顺序稳定排序)
+    expect(items[0].text()).toContain('退款成功')
+    expect(items[0].text()).toContain('¥50.00')
+    expect(items[0].text()).toContain('RF20260917110000001')
+    expect(items[1].text()).toContain('余额支付')
+    expect(items[1].text()).toContain('支付成功')
+    expect(items[2].text()).toContain('创建支付单')
+    expect(items[3].text()).toContain('消费')
+    expect(items[3].text()).toContain('500.00 → 450.00')
+  })
+
+  it('无资金流水订单显示空态', async () => {
+    const { wrapper } = await mountView({
+      funds: {
+        ...fundsFixture(),
+        payments: [],
+        payment_events: [],
+        balance_logs: [],
+        refunds: [],
+        summary: {
+          pay_success_amount: '0.00',
+          refund_success_amount: '0.00',
+          balance_consume_amount: '0.00',
+          balance_refund_amount: '0.00',
+          net_amount: '0.00',
+        },
+      },
+    })
+
+    expect(wrapper.find('[data-testid="funds-timeline"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="funds-card"]').text()).toContain('该订单暂无资金流水')
+  })
+
+  it('资金接口失败不阻断详情页，仅显示占位文案', async () => {
+    const { wrapper } = await mountView({ fundsFail: true })
+
+    expect(wrapper.find('[data-testid="funds-card"]').text()).toContain('资金流水加载失败')
+    // 主体内容仍完整渲染
+    expect(wrapper.find('[data-testid="progress-card"]').exists()).toBe(true)
   })
 })
