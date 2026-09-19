@@ -107,5 +107,8 @@ class AppServiceProvider extends ServiceProvider
         Event::listen(\App\Events\RefundResult::class, \App\Listeners\SendRefundResultNotification::class);
         Event::listen(\App\Events\ReviewReplied::class, \App\Listeners\SendReviewRepliedNotification::class);
         Event::listen(\App\Events\LowStockAlert::class, \App\Listeners\SendLowStockNotification::class);
+
+        // WMS 计划 P1：订单进入待发货 → 建发货单（未启用 WMS 时监听器直接返回，零影响）
+        Event::listen(\App\Events\OrderAcceptedForShipment::class, \App\Listeners\Wms\CreateFulfillmentOrder::class);
     }
 }

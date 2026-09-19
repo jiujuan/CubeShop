@@ -5,7 +5,6 @@ namespace App\Services\Wms;
 use App\Exceptions\BusinessException;
 use App\Models\ProductSku;
 use App\Models\Warehouse;
-use App\Models\WmsApiLog;
 use App\Models\WmsConfig;
 use App\Models\WmsSkuMapping;
 use App\Models\SysOperationLog;
@@ -34,6 +33,7 @@ class WmsConfigService
     public function __construct(
         private readonly WmsAdapterFactory $factory,
         private readonly OperationLogService $operationLog,
+        private readonly WmsApiLogService $apiLogs,
     ) {}
 
     /** 取仓库的 WMS 配置（无则 null） */
@@ -223,7 +223,7 @@ class WmsConfigService
         return (int) round((microtime(true) - $started) * 1000);
     }
 
-    /** 落一条 wms_api_logs（失败不影响主流程） */
+    /** 落一条 wms_api_logs（失败不影响主流程）；实现收敛在 {@see WmsApiLogService} */
     private function writeLog(
         WmsConfig $config,
         string $apiName,
@@ -231,27 +231,18 @@ class WmsConfigService
         int $duration,
         ?string $requestId = null,
     ): void {
-        try {
-            WmsApiLog::create([
-                'direction' => WmsApiLog::DIRECTION_OUTBOUND,
-                'provider' => (string) $config->provider,
-                'api_name' => $apiName,
-                'request_id' => $requestId,
-                'biz_no' => 'connection-test',
-                'request_body' => [
-                    'warehouse_id' => $config->warehouse_id,
-                    'api_env' => $config->api_env,
-                    'sku_codes' => [],
-                    'duration_ms' => $duration,
-                ],
-                'response_body' => $result->toArray(),
-                'http_status' => $result->httpStatus,
-                'success' => $result->success,
-                'error_msg' => $result->error,
-                'created_at' => now(),
-            ]);
-        } catch (\Throwable $e) {
-            report($e);
-        }
+        $this->apiLogs->record(
+            $config,
+            $apiName,
+            $result,
+            $duration,
+            $requestId,
+            'connection-test',
+            [
+                'warehouse_id' => $config->warehouse_id,
+                'api_env' => $config->api_env,
+                'sku_codes' => [],
+            ],
+        );
     }
 }

@@ -3,6 +3,7 @@
 namespace App\Services\Order;
 
 use App\Exceptions\BusinessException;
+use App\Events\OrderAcceptedForShipment;
 use App\Events\OrderShipped;
 use App\Models\CartItem;
 use App\Models\Order;
@@ -328,7 +329,7 @@ class OrderService
             return $order;
         }
 
-        return $this->transitionTo(
+        $accepted = $this->transitionTo(
             $order,
             Order::STATUS_PENDING_SHIP,
             $reason ?? '订单进入发货队列',
@@ -336,6 +337,12 @@ class OrderService
             $operatorId,
             $operatorType,
         );
+
+        // WMS 履约挂钩（P1 / Step 5）：transitionTo 内部事务已提交，此处派发天然是
+        // afterCommit 语义——监听器建单/派发 Job 不会读到未提交数据，也不阻塞订单流转。
+        OrderAcceptedForShipment::dispatch($accepted);
+
+        return $accepted;
     }
 
     /**

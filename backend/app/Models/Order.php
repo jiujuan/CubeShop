@@ -90,6 +90,8 @@ class Order extends Model
         'paid_at', 'shipped_at', 'completed_at', 'cancelled_at', 'cancel_reason',
         'auto_completed',
         'express_company', 'tracking_no',
+        // WMS 履约（P1 / F3）：履约仓与发货单状态冗余（列表筛选用，真值在 fulfillment_orders）
+        'warehouse_id', 'fulfillment_status',
     ];
 
     protected $casts = [
@@ -105,6 +107,7 @@ class Order extends Model
         'completed_at' => 'datetime',
         'cancelled_at' => 'datetime',
         'auto_completed' => 'boolean',
+        'warehouse_id' => 'integer',
     ];
 
     public function items(): HasMany
@@ -127,6 +130,26 @@ class Order extends Model
     public function shipping(): HasMany
     {
         return $this->hasMany(Shipping::class, 'order_id');
+    }
+
+    /** 履约仓（WMS 计划 P1） */
+    public function warehouse(): BelongsTo
+    {
+        return $this->belongsTo(Warehouse::class, 'warehouse_id');
+    }
+
+    /** 发货单历史（同一订单可能有多张：已取消的 + 当前活跃的，WMS 计划 P1） */
+    public function fulfillmentOrders(): HasMany
+    {
+        return $this->hasMany(FulfillmentOrder::class, 'order_id');
+    }
+
+    /** 当前活跃发货单（已取消的不算） */
+    public function activeFulfillment(): HasOne
+    {
+        return $this->hasOne(FulfillmentOrder::class, 'order_id')
+            ->where('status', '!=', FulfillmentOrder::STATUS_CANCELLED)
+            ->latestOfMany();
     }
 
     /** 使用的券模板（V1.1 F06） */

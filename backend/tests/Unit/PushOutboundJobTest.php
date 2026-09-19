@@ -1,0 +1,177 @@
+<?php
+
+use App\Jobs\Wms\PushOutboundJob;
+use App\Models\FulfillmentOrder;
+use App\Models\Order;
+use App\Models\Warehouse;
+use App\Models\WmsApiLog;
+use App\Models\WmsConfig;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+
+uses(RefreshDatabase::class);
+
+/**
+ * 出库单推送作业（WMS 计划 P1 / F5、Step 6）
+ *
+ * 覆盖成功、重试计数、超限转人工、幂等短路、配置缺失，以及「tries 来自配置且上限兜底」。
+ * 失败场景用「生产环境缺凭证」触发 MockAdapter 的 fail-closed——这是真实存在且可复现的失败路径。
+ */
+
+/** 建仓 + WMS 配置，返回发货单（默认 pending_push，单行 2 件） */
+function jobFulfillment(string $status = FulfillmentOrder::STATUS_PENDING_PUSH, array $configAttrs = []): FulfillmentOrder
+{
+    $warehouse = Warehouse::create(['code' => 'WH_JOB_'.uniqid(), 'name' => '作业仓', 'status' => 1]);
+
+    WmsConfig::create(array_merge([
+        'warehouse_id' => $warehouse->id,
+        'provider' => 'cainiao',
+        'enabled' => true,
+        'auto_push' => true,
+        'auto_push_return' => true,
+        'push_retry_times' => 3,
+        'sku_mapping_mode' => 'same',
+        'api_env' => 'sandbox',
+        'callback_token' => str_repeat('j', 28).uniqid(),
+    ], $configAttrs));
+
+    $user = createTestUser('jobusr');
+
+    $order = Order::create([
+        'order_no' => 'CS'.now()->format('Ymd').random_int(1000000000, 9999999999),
+        'user_id' => $user->id,
+        'status' => Order::STATUS_PENDING_SHIP,
+        'total_amount' => 100, 'pay_amount' => 100, 'discount_amount' => 0,
+        'promotion_discount' => 0, 'freight_amount' => 0,
+        'address_snapshot' => [
+            'contact_name' => '收件人', 'contact_phone' => '13800000000',
+            'full_address' => '广东省深圳市南山区科技路 1 号',
+        ],
+        'warehouse_id' => $warehouse->id,
+    ]);
+
+    $fo = FulfillmentOrder::create([
+        'order_id' => $order->id,
+        'order_no' => $order->order_no,
+        'outbound_no' => 'FO'.now()->format('Ymd').random_int(1000000000, 9999999999),
+        'warehouse_id' => $warehouse->id,
+        'provider' => 'cainiao',
+        'status' => $status,
+        'buyer_info' => $order->address_snapshot,
+        'extend' => [],
+    ]);
+
+    $fo->items()->create([
+        'sku_id' => null,
+        'platform_sku_code' => 'SKU-JOB',
+        'wms_sku_code' => 'W-JOB',
+        'product_name' => '作业测试商品',
+        'qty' => 2,
+        'shipped_qty' => 0,
+    ]);
+
+    return $fo->load('items');
+}
+
+test('推送成功：状态转已推送并记录 WMS 单号与一条成功报文日志', function () {
+    $fo = jobFulfillment();
+
+    (new PushOutboundJob($fo->id, 3))->handle();
+
+    $fo->refresh();
+    expect($fo->status)->toBe(FulfillmentOrder::STATUS_PUSHED)
+        ->and($fo->wms_outbound_no)->toStartWith('MOCK-OUT-')
+        ->and($fo->push_times)->toBe(1)
+        ->and($fo->last_push_at)->not->toBeNull()
+        ->and($fo->last_push_error)->toBeNull();
+
+    $log = WmsApiLog::where('biz_no', $fo->outbound_no)->latest('id')->first();
+    expect($log)->not->toBeNull()
+        ->and($log->api_name)->toBe('createOutbound')
+        ->and((bool) $log->success)->toBeTrue()
+        ->and($log->direction)->toBe(WmsApiLog::DIRECTION_OUTBOUND);
+});
+
+test('作业幂等：已推送的单重复执行不会二次推送、也不新增报文日志', function () {
+    $fo = jobFulfillment();
+
+    (new PushOutboundJob($fo->id, 3))->handle();
+    $firstNo = $fo->fresh()->wms_outbound_no;
+    $logCount = WmsApiLog::where('biz_no', $fo->outbound_no)->count();
+
+    (new PushOutboundJob($fo->id, 3))->handle();
+
+    $fo->refresh();
+    expect($fo->status)->toBe(FulfillmentOrder::STATUS_PUSHED)
+        ->and($fo->wms_outbound_no)->toBe($firstNo)
+        ->and($fo->push_times)->toBe(1)
+        ->and(WmsApiLog::where('biz_no', $fo->outbound_no)->count())->toBe($logCount);
+});
+
+test('tries 来自配置传入，并兜底封顶 10 次', function () {
+    expect((new PushOutboundJob(1, 5))->tries)->toBe(5)
+        ->and((new PushOutboundJob(1, 1))->tries)->toBe(1)
+        ->and((new PushOutboundJob(1, 99))->tries)->toBe(PushOutboundJob::MAX_TRIES)
+        ->and((new PushOutboundJob(1, 0))->tries)->toBe(1);
+});
+
+test('首次推送失败：记录错误与次数、保持推送中并抛异常交给队列重试', function () {
+    // 生产环境缺凭证 → MockAdapter fail-closed（真实可复现的失败路径）
+    $fo = jobFulfillment(configAttrs: ['api_env' => 'prod']);
+
+    expect(fn () => (new PushOutboundJob($fo->id, 3))->handle())
+        ->toThrow(RuntimeException::class);
+
+    $fo->refresh();
+    expect($fo->status)->toBe(FulfillmentOrder::STATUS_PUSHING)
+        ->and($fo->push_times)->toBe(1)
+        ->and($fo->last_push_error)->toContain('生产环境缺少 WMS 凭证');
+
+    $log = WmsApiLog::where('biz_no', $fo->outbound_no)->latest('id')->first();
+    expect($log)->not->toBeNull()
+        ->and((bool) $log->success)->toBeFalse()
+        ->and($log->error_msg)->toContain('生产环境缺少 WMS 凭证');
+});
+
+test('重试达到配置次数后转推送失败，不再抛异常', function () {
+    $fo = jobFulfillment(configAttrs: ['api_env' => 'prod']);
+
+    // 第 1、2 次未超限 → 抛异常；第 3 次（= tries）→ 落 PushFailed 且正常结束
+    foreach ([1, 2] as $attempt) {
+        expect(fn () => (new PushOutboundJob($fo->id, 3))->handle())
+            ->toThrow(RuntimeException::class);
+        expect($fo->fresh()->push_times)->toBe($attempt);
+    }
+
+    (new PushOutboundJob($fo->id, 3))->handle();
+
+    $fo->refresh();
+    expect($fo->status)->toBe(FulfillmentOrder::STATUS_PUSH_FAILED)
+        ->and($fo->push_times)->toBe(3)
+        ->and($fo->last_push_error)->not->toBeNull();
+});
+
+test('终态发货单直接短路：已发货/已取消不再推送', function () {
+    foreach ([FulfillmentOrder::STATUS_SHIPPED, FulfillmentOrder::STATUS_CANCELLED] as $status) {
+        $fo = jobFulfillment($status);
+
+        (new PushOutboundJob($fo->id, 3))->handle();
+
+        $fo->refresh();
+        expect($fo->status)->toBe($status)
+            ->and($fo->push_times)->toBe(0)
+            ->and(WmsApiLog::where('biz_no', $fo->outbound_no)->count())->toBe(0);
+    }
+});
+
+test('仓库未配置 WMS 时直接转推送失败并写明原因', function () {
+    $fo = jobFulfillment();
+
+    // 抹掉配置，模拟「配置被删但发货单还在」
+    WmsConfig::where('warehouse_id', $fo->warehouse_id)->delete();
+
+    (new PushOutboundJob($fo->id, 3))->handle();
+
+    $fo->refresh();
+    expect($fo->status)->toBe(FulfillmentOrder::STATUS_PUSH_FAILED)
+        ->and($fo->last_push_error)->toContain('未配置 WMS');
+});

@@ -41,6 +41,13 @@ class NoGeneratorService
      */
     public const PREFIX_TICKET = 'TK';
 
+    /**
+     * 发货单（WMS 计划 P1：FO2026092000001234567）
+     *
+     * 出库单号会随报文发往 WMS，故用独立前缀，与订单 CS / 支付 PAY / 退款 RF 区分。
+     */
+    public const PREFIX_FULFILLMENT = 'FO';
+
     /** 随机段长度（10 位数字） */
     public const RANDOM_LENGTH = 10;
 
@@ -54,6 +61,7 @@ class NoGeneratorService
         self::PREFIX_REFUND => ['refunds', 'refund_no'],
         self::PREFIX_RECHARGE => ['balance_recharges', 'recharge_no'],
         self::PREFIX_TICKET => ['cs_ticket', 'ticket_no'],
+        self::PREFIX_FULFILLMENT => ['fulfillment_orders', 'outbound_no'],
     ];
 
     /**
@@ -118,5 +126,11 @@ class NoGeneratorService
     public function generateTicketNo(): string
     {
         return $this->generate(self::PREFIX_TICKET);
+    }
+
+    /** 发货单（出库单）号，WMS 计划 P1 */
+    public function generateOutboundNo(): string
+    {
+        return $this->generate(self::PREFIX_FULFILLMENT);
     }
 }

@@ -28,6 +28,7 @@ use App\Http\Controllers\Admin\RoleController as AdminRoleController;
 use App\Http\Controllers\Admin\UploadController;
 use App\Http\Controllers\Admin\UserController;
 use App\Http\Controllers\Admin\WmsConfigController;
+use App\Http\Controllers\Admin\WmsFulfillmentController;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\AnnouncementController;
 use App\Http\Controllers\HomeBannerController;
@@ -353,6 +354,17 @@ Route::middleware(['auth:sanctum', 'account.active'])->group(function () {
             Route::post('/warehouses/{id}/sku-mappings/batch', [WmsConfigController::class, 'importSkuMappings']);
             Route::delete('/warehouses/{id}/sku-mappings/{skuId}', [WmsConfigController::class, 'destroySkuMapping']);
         });
+
+        // WMS 发货单（WMS 计划 P1 / F8、Step 7）
+        // 查看与治理分开授权：wms.order.view 只读，wms.order.manage 才允许重推/取消
+        Route::get('/wms/fulfillment-orders', [WmsFulfillmentController::class, 'index'])
+            ->middleware('permission:wms.order.view');
+        Route::get('/wms/fulfillment-orders/{id}', [WmsFulfillmentController::class, 'show'])
+            ->middleware('permission:wms.order.view');
+        Route::post('/wms/fulfillment-orders/{id}/push', [WmsFulfillmentController::class, 'push'])
+            ->middleware('permission:wms.order.manage');
+        Route::post('/wms/fulfillment-orders/{id}/cancel', [WmsFulfillmentController::class, 'cancel'])
+            ->middleware('permission:wms.order.manage');
 
         // 评价管理 review.manage（V1.1 F01 / T-017）
         Route::post('/reviews/audit-mode', [AdminReviewController::class, 'updateAuditMode'])->middleware('permission:config.manage');
