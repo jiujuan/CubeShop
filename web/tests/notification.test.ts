@@ -151,6 +151,16 @@ describe('顶栏通知铃铛 NotificationBell', () => {
 
     await waitFor(() => expect(screen.getByTestId('notification-panel-empty')).toBeTruthy())
   })
+
+  it('鼠标移出浮层后自动收起（与个人中心一致）', async () => {
+    await renderBell()
+    await fireEvent.click(screen.getByTestId('notification-bell'))
+    await waitFor(() => expect(screen.getByTestId('notification-panel')).toBeTruthy())
+
+    // 鼠标移出容器（触发区 + 面板）即收起
+    await fireEvent.mouseLeave(screen.getByTestId('notification-root'))
+    await waitFor(() => expect(screen.queryByTestId('notification-panel')).toBeNull())
+  })
 })
 
 // ---------- 通知中心（T-019） ----------

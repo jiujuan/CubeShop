@@ -111,7 +111,8 @@ defineExpose({ refreshCount, refreshList })
 </script>
 
 <template>
-  <div v-if="auth.token" class="relative">
+  <!-- @mouseleave 关闭：与「个人中心」浮层一致，鼠标移出触发区/面板（含透明过渡带）即收起 -->
+  <div v-if="auth.token" class="relative" data-testid="notification-root" @mouseleave="open = false">
     <button
       class="flex flex-col items-center text-xs hover:text-[#1677ff]"
       data-testid="notification-bell"
@@ -128,10 +129,11 @@ defineExpose({ refreshCount, refreshList })
       消息
     </button>
 
-    <!-- 下拉面板 -->
+    <!-- 下拉面板：top-full + pt-2 透明过渡带，补齐按钮与面板间隙，
+         避免鼠标从按钮下移途中先离开容器触发 mouseleave 导致面板点不到 -->
     <div
       v-if="open"
-      class="absolute right-0 top-10 z-20 w-72 rounded-lg border border-slate-100 bg-white shadow-lg"
+      class="absolute right-0 top-full z-20 w-72 rounded-lg border border-slate-100 bg-white pt-2 shadow-lg"
       data-testid="notification-panel"
     >
       <div class="flex items-center justify-between border-b border-slate-50 px-3 py-2 text-xs text-slate-400">
