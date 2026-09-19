@@ -3,8 +3,8 @@ import { ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ShoppingCart } from 'lucide-vue-next'
 import { getProduct } from '@/api/shop'
-import { addToCart } from '@/api/user'
 import { useAuthStore } from '@/stores/auth'
+import { useCartStore } from '@/stores/cart'
 import type { ProductBrief } from '@/api/types'
 import { hashIndex } from '@/utils/id'
 
@@ -27,6 +27,7 @@ const props = withDefaults(
 const router = useRouter()
 const route = useRoute()
 const auth = useAuthStore()
+const cart = useCartStore()
 
 const adding = ref(false)
 const flash = ref<{ type: 'ok' | 'err'; text: string } | null>(null)
@@ -61,7 +62,8 @@ async function quickAdd() {
       showToast('err', '商品暂无规格')
       return
     }
-    await addToCart(sku.id, 1)
+    // 走 cart store：加购成功后自动刷新顶栏角标
+    await cart.add(sku.id, 1)
     showToast('ok', '已加入购物车')
   } catch (e) {
     showToast('err', e instanceof Error ? e.message : '加购失败')

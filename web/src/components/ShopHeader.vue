@@ -1,12 +1,12 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { Bell, ChevronDown, ClipboardList, Clock, Heart, House, MapPin, Package, ShoppingCart, SquareUser, Ticket, UserRound, Volume2 } from 'lucide-vue-next'
 import { getCategories, type CategoryNode } from '@/api/shop'
 import { getAnnouncements, type AnnouncementListItem } from '@/api/announcement'
-import { getCartCount } from '@/api/user'
 import NotificationBell from '@/components/NotificationBell.vue'
 import { useAuthStore } from '@/stores/auth'
+import { useCartStore } from '@/stores/cart'
 
 /**
  * 顶栏（按原型：公告条 + logo/搜索/购物车 + 分类导航）
@@ -20,9 +20,11 @@ import { useAuthStore } from '@/stores/auth'
 const router = useRouter()
 const route = useRoute()
 const auth = useAuthStore()
+const cart = useCartStore()
 const keyword = ref('')
 const categories = ref<CategoryNode[]>([])
-const cartCount = ref(0)
+/** 角标数量来自 cart store（单一真源）：加购/改数量/删除后各处自动同步 */
+const cartCount = computed(() => cart.count)
 const userMenuOpen = ref(false)
 
 /** 顶部公告条（P-Announcement）：拉取后台已发布公告，置顶优先轮播 */
@@ -61,14 +63,11 @@ onBeforeUnmount(() => {
 
 /** 登录态变化 / 加购后刷新角标 */
 function refreshCartCount() {
-  if (!auth.token) {
-    cartCount.value = 0
-    return
-  }
-  getCartCount()
-    .then(({ data }) => (cartCount.value = data.data.count))
-    .catch(() => (cartCount.value = 0))
+  return cart.refresh()
 }
+
+// 登录态切换（登录 / 登出 / 失效清理）→ 重新对齐角标
+watch(() => auth.token, (token) => (token ? cart.refresh() : cart.reset()))
 
 defineExpose({ refreshCartCount })
 

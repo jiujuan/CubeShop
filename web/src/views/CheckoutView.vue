@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { MapPin, NotebookPen, Plus, Ticket } from 'lucide-vue-next'
 import { getAddresses, getCart, type CartItemView, type Address } from '@/api/user'
 import { createOrder, previewFreight, type CreateOrderResult, type FreightPreview } from '@/api/order'
@@ -15,6 +15,7 @@ import LoadingSpinner from '@/components/LoadingSpinner.vue'
 import ShopFooter from '@/components/ShopFooter.vue'
 import ShopHeader from '@/components/ShopHeader.vue'
 import { useAuthStore } from '@/stores/auth'
+import { useCartStore } from '@/stores/cart'
 
 /**
  * 结算页（Roadmap P4）：选地址、备注、金额明细、提交订单
@@ -25,7 +26,9 @@ import { useAuthStore } from '@/stores/auth'
  *  - 券在下单瞬间失效（过期/占用/停发）时给出「不使用优惠券继续下单」降级入口。
  */
 const router = useRouter()
+const route = useRoute()
 const auth = useAuthStore()
+const cartStore = useCartStore()
 
 const loading = ref(true)
 const submitting = ref(false)
@@ -134,12 +137,28 @@ async function loadCouponsAndPromo() {
   }
 }
 
+/**
+ * 购物车勾选结算（2026-09-19）：由购物车页带 `?cart_item_ids=1,2,3` 进入，只结算所选行；
+ * 不带该参数（例如直接访问 /checkout）时回退为结算全部有效项，保持向后兼容。
+ */
+const selectedCartItemIds = computed<number[] | null>(() => {
+  const raw = route.query.cart_item_ids
+  const text = Array.isArray(raw) ? raw.join(',') : (raw ?? '')
+  const ids = String(text)
+    .split(',')
+    .map((s) => Number(s.trim()))
+    .filter((n) => Number.isInteger(n) && n > 0)
+  return ids.length ? ids : null
+})
+
 async function load() {
   loading.value = true
   try {
     const [addrRes, cartRes] = await Promise.all([getAddresses(), getCart()])
     addresses.value = addrRes.data.data
-    validItems.value = cartRes.data.data.items.filter((item) => item.valid)
+    const ids = selectedCartItemIds.value
+    // 只结算勾选行；未传参则结算全部有效项
+    validItems.value = cartRes.data.data.items.filter((item) => item.valid && (!ids || ids.includes(item.id)))
 
     const preferred =
       addresses.value.find((addr) => addr.is_default) ?? addresses.value[0] ?? null
@@ -182,10 +201,14 @@ async function submit() {
   try {
     const { data } = await createOrder({
       address_id: selectedAddressId.value,
+      // 只结算购物车中勾选的行（后端 createFromCart 按 cart_item_ids 取子集并移除）
+      cart_item_ids: selectedCartItemIds.value ?? undefined,
       remark: remark.value.trim() || undefined,
       user_coupon_id: selectedCouponId.value ?? undefined,
     })
     const result: CreateOrderResult = data.data
+    // 下单后所选购物车行已被后端移除 → 同步顶栏角标
+    void cartStore.refresh()
     // 与服务端核算金额核对（任务书：不一致时以服务端为准并提示）
     if (Math.abs(Number(result.pay_amount) - Number(payAmount.value)) > 0.01) {
       mismatch.value = {

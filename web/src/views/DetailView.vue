@@ -3,13 +3,13 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { Heart, Minus, Plus, ShoppingCart, Truck } from 'lucide-vue-next'
 import { getProduct, type ProductDetail } from '@/api/shop'
-import { addToCart } from '@/api/user'
 import { estimateFreight, type FreightPreview } from '@/api/order'
 import { favoriteProduct, trackProduct, unfavoriteProduct } from '@/api/favorite'
 import { getCouponCenter, type ReceivableCoupon } from '@/api/coupon'
 import { couponConditionText, couponValueText } from '@/utils/coupon'
 import { hashIndex } from '@/utils/id'
 import { useAuthStore } from '@/stores/auth'
+import { useCartStore } from '@/stores/cart'
 import ShopFooter from '@/components/ShopFooter.vue'
 import ShopHeader from '@/components/ShopHeader.vue'
 import LoadingSpinner from '@/components/LoadingSpinner.vue'
@@ -205,6 +205,7 @@ function pickSpec(dim: string, value: string) {
 }
 
 const auth = useAuthStore()
+const cart = useCartStore()
 
 /** 加入购物车：未登录跳登录（带回跳）；库存不足/规格未选给出明确提示 */
 const cartTip = ref('')
@@ -231,11 +232,10 @@ async function handleAddToCart() {
 
   adding.value = true
   try {
-    await addToCart(sku.id, quantity.value)
+    // 走 cart store：加购成功后自动刷新顶栏角标
+    await cart.add(sku.id, quantity.value)
     cartTipType.value = 'ok'
     cartTip.value = '已加入购物车'
-    // 刷新顶栏角标
-    ;(headerRef.value as { refreshCartCount: () => void } | null)?.refreshCartCount()
   } catch (e) {
     cartTipType.value = 'err'
     cartTip.value = e instanceof Error ? e.message : '加购失败'
