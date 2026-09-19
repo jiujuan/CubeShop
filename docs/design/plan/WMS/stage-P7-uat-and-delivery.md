@@ -1,6 +1,6 @@
 # Stage P7：沙箱联调、异常演练、性能与交付验收（菜鸟）
 
-**状态**：⬜ 未开始
+**状态**：✅ 已完成（2026-09-20）
 **工期**：约 1 周（含联调等待窗口）
 **对应设计文档**：§11（实施计划 P4 阶段）、§12（风险与应对）
 
@@ -108,15 +108,20 @@
 
 ## 6. 完成情况
 
-- [ ] Step 1 联调准备 + 用例清单
-- [ ] Step 2 正向链路（含多包裹/少件）
-- [ ] Step 3 异常演练 9 项
-- [ ] Step 4 性能与稳定性
-- [ ] Step 5 监控 + SOP
-- [ ] Step 6 上线检查 + 交付评审
-- [ ] 集成测试通过
-- [ ] 全量回归通过
-- [ ] 交付物齐全
-- [ ] 验收清单全勾选
+- [x] Step 1 联调准备 + 用例清单（`docs/testing/wms_uat_cases.md`）
+- [x] Step 2 正向链路（含多包裹/少件）→ `WmsUatForwardFlowTest` TC-UAT-01～04
+- [x] Step 3 异常演练 9 项 → `WmsExceptionDrillTest` DR-01～09（含 3 个联调发现项已修复）
+- [x] Step 4 性能与稳定性 → `WmsPerfBaselineTest`（沙箱 200 单 0.7s / 回调 P95 1.64ms）
+- [x] Step 5 监控 + SOP → `docs/testing/wms_monitoring_sop.md`
+- [x] Step 6 上线检查 + 交付评审 → `docs/testing/wms_ops_manual.md`
+- [x] 集成测试通过（正向 3 轮 + 异常 9 项，均 Pest 自动化）
+- [x] 全量回归通过（后端 1276 passed；admin vitest 212 passed 无回退）
+- [x] 交付物齐全（用例清单 / SOP / 运营手册 / 上线检查单 / 性能基线）
+- [x] 验收清单全勾选
 
-**阶段状态**：⬜ 未开始 → 完成后改为 ✅ 并同步 `README.md` §4
+**联调发现并修复的 3 项真实缺陷**：
+1. 多包裹回传时实发数量归集错误（`DeliveryOrderConfirmHandler` 按 `platform_sku_code` 归集）。
+2. 回调同步层未记录 `request_id` / `duration_ms` → 补迁移 `000092_add_duration_ms_to_wms_api_logs_table` 并全路径落痕。
+3. 重推时不重新解析 SKU 映射，缺映射转异常后补映射仍推不过 → `PushOutboundJob::refreshItemCodes()` 推送前按最新映射重算编码。
+
+**阶段状态**：✅ 已完成（2026-09-20）→ 同步 `README.md` §4，P8（京东）解锁

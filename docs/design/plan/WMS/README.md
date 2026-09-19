@@ -10,7 +10,7 @@
 | 创建日期 | 2026-09-19 |
 | 阶段数 | P0 ~ P7（菜鸟），另 P8（京东，未排期） |
 | 总工期预估 | 约 6～7 周（含联调用友/菜鸟沙箱等待窗口） |
-| 状态 | 🟨 进行中（P0～P6 已完成，剩余 P7 验收交付） |
+| 状态 | 🟢 菜鸟闭环已完成（P0～P7 ✅），P8 京东云仓已解锁待排期 |
 
 ---
 
@@ -67,7 +67,8 @@
 - **✅ 已建（P4，2026-09-20）**：退货入库单 `return_inbound_orders` + `return_inbound_order_items`（单号前缀 `RI`）、`ReturnInboundOrderService`（推送/收货/完成/取消/异常 + 幂等 complete）、`RefundApproved` 事件建单、`PushReturnInboundJob`/`CancelReturnInboundJob`、菜鸟 `returnorder.create`/`confirm`、`ReturnOrderConfirmHandler`、后台退货入库接口（`wms.return.manage`）。
 - **✅ 已建（P5，2026-09-20）**：`wms_inventory_snapshots` + `wms_inventory_diffs`（差异 pending 部分唯一）、`WmsInventorySyncService`（**默认只写快照不改平台库存**，`--apply` 才校准）、`WmsReconcileService`（每日对账 + resolve/ignore 幂等处置）、`WmsHealthCheckService`（六项巡检 + 审计/站内双通道）、命令 `wms:sync-inventory`/`wms:reconcile`/`wms:health`/`wms:prune-logs` 与开关化调度 `App\Console\WmsScheduler`、后台库存接口（`wms.config.manage`）。
 - **✅ 已建（P6，2026-09-20，无新表）**：后台 `WmsApiLogController`（日志列表/详情，报文出口二次脱敏）、`WmsConsoleController`（仓库下拉，只读运营也要能筛）、`WmsLogSummary` trait（详情带最近 5 条调用流水）、发货单 `batch-push` 批量重推；admin 侧 `api/wms.ts` 补全 + 五个页面（发货单 / 退货入库单 / WMS 日志 / 库存差异 / 健康看板），侧栏「仓库与物流」并入履约中心。
-- ⚠️ **迁移号**：P4 用到 `000089`，P5 从 `000090` 起（计划文档里的 `000072/000073` 已过期，以实际迁移文件为准）。
+- **✅ 已建（P7，2026-09-20）**：UAT 正向链路（`WmsUatForwardFlowTest` 4 例）+ 9 项异常演练（`WmsExceptionDrillTest` 9 例）+ 性能基线（`WmsPerfBaselineTest`，沙箱 200 单 0.7s / 回调 P95 1.64ms）+ 监控 SOP（`wms_monitoring_sop.md`）+ 运营手册与上线检查单（`wms_ops_manual.md`）+ 用例清单（`wms_uat_cases.md`）；冒烟脚本补 `5m` 段。**联调发现并修复 3 项真实缺陷**：①多包裹实发数量归集 ②回调同步层补全 `request_id`/`duration_ms`（迁移 `000092`）③重推前重新解析 SKU 映射（缺映射转异常后补映射可恢复）。
+- ⚠️ **迁移号**：P4 用到 `000089`，P5 从 `000090` 起，P7 用 `000092`（计划文档里的 `000072/000073` 已过期，以实际迁移文件为准）。
 
 ---
 
@@ -98,8 +99,8 @@
 | [P4](stage-P4-return-inbound.md) | **退货入库闭环**（含退款扩展、库存恢复） | 1.5 周 | ✅ 已完成（2026-09-20，沙箱真实回传待账号） |
 | [P5](stage-P5-inventory-sync.md) | 库存查询/同步 + 对账任务 + 降级开关与监控 | 0.5 周 | ✅ 已完成（2026-09-20，沙箱真实库存接口待账号） |
 | [P6](stage-P6-admin-console.md) | 后台运营页面：发货单/退货入库单/日志/重推 | 1 周 | ✅ 已完成（2026-09-20，沙箱真实联调待账号） |
-| [P7](stage-P7-uat-and-delivery.md) | 沙箱联调、异常演练、性能、交付与验收 | 1 周 | ⬜ 未开始 |
-| [P8](stage-P8-jd-cloud.md) | 京东云仓 Adapter（**菜鸟验收通过后启动**） | 2 周 | ⏸ 冻结（未排期） |
+| [P7](stage-P7-uat-and-delivery.md) | 沙箱联调、异常演练、性能、交付与验收 | 1 周 | ✅ 已完成（2026-09-20，沙箱真实联调待账号） |
+| [P8](stage-P8-jd-cloud.md) | 京东云仓 Adapter（**菜鸟验收通过后启动**） | 2 周 | ⏸ 冻结（未排期，已解锁） |
 
 **状态图例**：⬜ 未开始 · 🟨 进行中 · ✅ 已完成 · ⏸ 冻结
 
@@ -108,7 +109,7 @@
 ## 5. 通用工程约定（每个阶段都要遵守）
 
 1. **迁移双库**：新增迁移后必须 `cd backend && php artisan migrate --force` 同步本地 PG 开发库（`cubeshop`）；Pest 只跑 SQLite 内存库不同步开发库。
-2. **测试基线**：后端基线 **994 passed**（全量命令 `php -d memory_limit=1G vendor/bin/pest`）；每个阶段收尾必须全量回归且只允许净增用例，不允许出现新的失败。
+2. **测试基线**：后端基线 **1276 passed**（全量命令 `php -d memory_limit=1G vendor/bin/pest`）；每个阶段收尾必须全量回归且只允许净增用例，不允许出现新的失败。
 3. **前端校验**：`admin`/`web` 各自 `npx vue-tsc -b` 零错误 + `npx vitest run --fileParallelism=false`（串行避开历史 flaky）。
 4. **权限码**：新增权限必须同时改 `RolePermissionSeeder::PERMISSIONS` 与对存量的幂等迁移，并在 admin 侧栏注册。
 5. **日志与审计**：所有后台写操作走 `operationLog->record()`；所有 WMS 出入站报文写入 `wms_api_logs`（含 `request_id`、脱敏后的关键字段）。
@@ -122,7 +123,7 @@
 | 风险 | 影响 | 应对 | 负责阶段 |
 |---|---|---|---|
 | 奇门接口字段/版本变化 | Adapter 报错、联调返工 | Adapter 隔离 + 字段 mapping 配置化（`extra_config` 存 版本号），保留文档快照 | P2/P7 |
-| 沙箱账号/白名单申请周期长 | 阻塞联调 | P0 起并行申请；先用 Mock Adapter 打通内部闭环。**⚠️ 截至 P2 完成，沙箱账号仍未到位**，P2 用 fixture + `Http::fake()` 锁定，真实跑通待账号 | P0/P2 |
+| 沙箱账号/白名单申请周期长 | 阻塞联调 | P0 起并行申请；先用 Mock Adapter 打通内部闭环。**⚠️ 截至 P7 完成，沙箱账号仍未到位**，全程用 fixture + `Http::fake()` 锁定，真实跑通待账号（P7 用例已做成「换真实网关即整体重跑」） | P0/P2/P7 |
 | 回调验签失败/重放 | 收不到回传、订单不发货 | 本地先打印验签中间串核对；`nonce` 缓存去重；失败落 `wms_api_logs` 可重放 | P3 |
 | 一单多包裹 | 运单号覆盖 | `packages` 数组全量落 `shipping_packages`，主单取首个 | P3 |
 | 退货实收 ≠ 应退 | 库存/金额偏差 | 按实收恢复库存 + 差异记录，退款金额以原退款单为准，人工介入 | P4 |

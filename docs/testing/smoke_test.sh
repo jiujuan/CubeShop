@@ -320,6 +320,28 @@ LOGS=$(req GET /admin/wms/logs "$ATOK")
 WOPT=$(req GET /admin/wms/warehouse-options "$ATOK")
 [ "$(echo "$WOPT" | jpath code)" = "0" ] && ok "仓库下拉" || bad "仓库下拉: $(echo "$WOPT" | head -c 160)"
 
+echo "--- 5m. WMS P7 演练（健康可达 + 验签拒绝 + 主动查询补偿）"
+# 重新启用 WH 配置，让健康巡检从 warning 转为有有效配置
+req PUT "/admin/wms/warehouses/$WH_ID/config" "$ATOK" '{"provider":"cainiao","enabled":true,"auto_push":true,"auto_push_return":true,"push_retry_times":3,"sku_mapping_mode":"same","api_env":"sandbox","warehouse_code":"CN-WH-SMOKE","remark":"冒烟"}' >/dev/null
+
+# 健康巡检：配置就绪后接口应 200 且带 checks 结构
+HEALTH2=$(req GET /admin/wms/health "$ATOK")
+[ "$(echo "$HEALTH2" | jpath code)" = "0" ] && ok "P7 健康巡检可达（配置就绪）" || bad "P7 健康: $(echo "$HEALTH2" | head -c 160)"
+
+# 异常演练：篡改签名 → 回调拒绝（flag != success，业务零变更）
+CB_BAD=$(curl -s --noproxy '*' -X POST "$BASE/wms/callback/cainiao?token=$CB_TOKEN&sign=DEADBEEF&sign_method=md5" -H 'Content-Type: application/json' -d "$CB_PAYLOAD")
+[ "$(echo "$CB_BAD" | jpath flag)" != "success" ] && ok "P7 篡改签名被拒（异常演练）" || bad "P7 签名未拒: $CB_BAD"
+
+# 主动查询补偿（P3 命令，P7 演练段）：不存在的出库单优雅失败不崩
+if [ -f backend/artisan ]; then
+  QOUT=$(php backend/artisan wms:query-outbound NO_SUCH_OUTBOUND 2>&1); RC=$?
+  [ "$RC" -ne 0 ] && ok "P7 主动查询（不存在单优雅失败）" || bad "P7 query-outbound: $QOUT"
+fi
+
+# 复位为关闭，保持与 5i 之后的清理态一致
+req PUT "/admin/wms/warehouses/$WH_ID/config" "$ATOK" '{"provider":"cainiao","enabled":false,"auto_push":false,"auto_push_return":false,"push_retry_times":3,"sku_mapping_mode":"same","api_env":"sandbox"}' >/dev/null
+ok "复位 WMS 配置（清理）"
+
 echo "--- 6. 退出登录"
 OUT=$(req POST /auth/logout "$TOKEN" '')
 [ "$(echo "$OUT" | jpath code)" = "0" ] && ok "退出登录" || bad "退出: $(echo "$OUT" | head -c 80)"
