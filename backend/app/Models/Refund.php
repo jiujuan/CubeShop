@@ -33,6 +33,15 @@ class Refund extends Model
     public const RETURN_CONDITION_GOOD = 'good';
     public const RETURN_CONDITION_DEFECTIVE = 'defective';
 
+    /** 状态中文名（后台展示，G7 资金视图复用） */
+    public const STATUS_LABELS = [
+        self::STATUS_PENDING => '待审核',
+        self::STATUS_APPROVED => '已同意',
+        self::STATUS_REJECTED => '已拒绝',
+        self::STATUS_SUCCESS => '退款成功',
+        self::STATUS_FAILED => '退款失败',
+    ];
+
     protected $table = 'refunds';
     protected $fillable = [
         'refund_no', 'order_id', 'order_no', 'user_id', 'type', 'warehouse_id',
@@ -59,6 +68,11 @@ class Refund extends Model
     public function isReturnRefund(): bool
     {
         return $this->type === self::TYPE_RETURN_REFUND;
+    }
+
+    public function getStatusLabelAttribute(): string
+    {
+        return self::STATUS_LABELS[$this->status] ?? $this->status;
     }
 
     public function order(): BelongsTo

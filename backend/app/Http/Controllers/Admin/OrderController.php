@@ -5,6 +5,9 @@ namespace App\Http\Controllers\Admin;
 use App\Exceptions\BusinessException;
 use App\Http\Controllers\Controller;
 use App\Models\Order;
+use App\Models\Payment;
+use App\Models\Refund;
+use App\Models\UserBalanceLog;
 use App\Services\Common\OperationLogService;
 use App\Services\Order\OrderService;
 use App\Support\ApiResponse;
@@ -327,6 +330,130 @@ class OrderController extends Controller
             // WMS 履约只读摘要（WMS 计划 P3 / Step 7：无发货单为 null，前端据此隐藏）
             'wms_fulfillment' => $this->wmsFulfillmentSummary($order),
         ]);
+    }
+
+    /**
+     * 订单资金视图（G7：统一「资金流水」聚合，权限 order.view）
+     * GET /admin/orders/{id}/funds
+     *
+     * 一站式聚合与本单相关的全部资金记录：支付单（含每次支付事件）、余额流水、
+     * 退款单（含优惠构成快照），配合 amount_details 金额快照；纠纷排查不再需要
+     * 跨 payments / payment_logs / user_balance_logs / refunds / orders 五张表人工拼接。
+     *
+     * 口径约定：
+     * - 余额流水经 related_type=payment 关联到本单支付单（BalanceGateway 唯一入出口）；
+     * - summary.balance_* 仅统计余额渠道的真实资金进出，券/满减是商家让利不占资金；
+     * - net_amount = 成功收款 − 成功退款（余额支付时该值近似 0 属正常，钱未出余额账户体系）。
+     */
+    public function funds(int $id): JsonResponse
+    {
+        $order = Order::query()->find($id);
+
+        if (! $order) {
+            throw BusinessException::notFound('订单不存在');
+        }
+
+        $payments = Payment::query()
+            ->with('logs')
+            ->where('order_id', $order->id)
+            ->orderBy('id')
+            ->get();
+
+        $paymentIds = $payments->pluck('id')->all();
+
+        $balanceLogs = $paymentIds === []
+            ? collect()
+            : UserBalanceLog::query()
+                ->where('related_type', 'payment')
+                ->whereIn('related_id', $paymentIds)
+                ->orderBy('id')
+                ->get();
+
+        $refunds = Refund::query()
+            ->where('order_id', $order->id)
+            ->orderBy('id')
+            ->get();
+
+        $paySuccess = $payments->where('status', Payment::STATUS_SUCCESS)->sum('amount');
+        $refundSuccess = $refunds->where('status', Refund::STATUS_SUCCESS)->sum('amount');
+
+        return $this->success([
+            'order' => [
+                'id' => $order->id,
+                'order_no' => $order->order_no,
+                'status' => $order->status,
+                'status_label' => Order::STATUS_LABELS[$order->status] ?? $order->status,
+                'user_id' => $order->user_id,
+                'total_amount' => (string) $order->total_amount,
+                'freight_amount' => (string) $order->freight_amount,
+                'discount_amount' => (string) $order->discount_amount,
+                'promotion_discount' => (string) $order->promotion_discount,
+                'pay_amount' => (string) $order->pay_amount,
+                // G1/G2 快照随 amount_details 一并下发（券/满减规则、运费明细均在其中）
+                'amount_details' => $order->amount_details,
+                'created_at' => $order->created_at?->format('Y-m-d H:i:s'),
+                'paid_at' => $order->paid_at?->format('Y-m-d H:i:s'),
+            ],
+            'payments' => $payments->map(fn (Payment $p) => [
+                'id' => $p->id,
+                'payment_no' => $p->payment_no,
+                'channel' => $p->channel,
+                'channel_label' => $p->channel_label,
+                'amount' => (string) $p->amount,
+                'status' => $p->status,
+                'status_label' => $p->status_label,
+                'channel_trade_no' => $p->channel_trade_no,
+                'paid_at' => $p->paid_at?->format('Y-m-d H:i:s'),
+                'created_at' => $p->created_at?->format('Y-m-d H:i:s'),
+            ])->all(),
+            // 支付单事件流水（创建/回调/核账/查单/关闭…），事件原文可在支付日志页查看
+            'payment_events' => $payments->flatMap(fn (Payment $p) => $p->logs
+                ->sortBy('id')
+                ->values()
+                ->map(fn ($log) => [
+                    'payment_no' => $p->payment_no,
+                    'event' => $log->event,
+                    'event_label' => $log->event_label,
+                    'created_at' => $log->created_at?->format('Y-m-d H:i:s'),
+                ]))->values()->all(),
+            'balance_logs' => $balanceLogs->map(fn (UserBalanceLog $log) => [
+                'type' => $log->type,
+                'type_label' => $log->type_label,
+                'amount' => (string) $log->amount,
+                'balance_before' => (string) $log->balance_before,
+                'balance_after' => (string) $log->balance_after,
+                'remark' => $log->remark,
+                'created_at' => $log->created_at?->format('Y-m-d H:i:s'),
+            ])->all(),
+            'refunds' => $refunds->map(fn (Refund $r) => [
+                'refund_no' => $r->refund_no,
+                'type' => $r->type,
+                'amount' => (string) $r->amount,
+                'status' => $r->status,
+                'status_label' => $r->status_label,
+                // 优惠构成快照（G1-G3）：退款时固化到 refund_details，逐行可追溯
+                'refund_details' => $r->refund_details,
+                'reason' => $r->reason,
+                'created_at' => $r->created_at?->format('Y-m-d H:i:s'),
+                'processed_at' => $r->processed_at?->format('Y-m-d H:i:s'),
+            ])->all(),
+            'summary' => [
+                // 渠道成功收款 / 成功退款（不含 pending / failed / closed）
+                'pay_success_amount' => self::money($paySuccess),
+                'refund_success_amount' => self::money($refundSuccess),
+                // 余额渠道真实进出（consume 为负字符串，取绝对值口径，便于展示）
+                'balance_consume_amount' => self::money($balanceLogs->where('type', UserBalanceLog::TYPE_CONSUME)->sum(fn ($l) => abs((float) $l->amount))),
+                'balance_refund_amount' => self::money($balanceLogs->where('type', UserBalanceLog::TYPE_REFUND)->sum('amount')),
+                // 净入账 = 成功收款 − 成功退款
+                'net_amount' => self::money(max(0.0, $paySuccess - $refundSuccess)),
+            ],
+        ]);
+    }
+
+    /** 金额归一（两位小数字符串，容错 Collection sum 的浮点累加） */
+    private static function money(float|int|string $value): string
+    {
+        return number_format((float) $value, 2, '.', '');
     }
 
     /**

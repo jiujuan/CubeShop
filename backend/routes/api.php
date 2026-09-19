@@ -317,6 +317,8 @@ Route::middleware(['auth:sanctum', 'account.active'])->group(function () {
         Route::post('/freight-templates/{id}/set-default', [\App\Http\Controllers\Admin\FreightTemplateController::class, 'setDefault'])->middleware('permission:shipping.manage')->whereNumber('id');
 
         Route::get('/orders/{id}', [AdminOrderController::class, 'show'])->middleware('permission:order.view');
+        // 订单资金视图（G7：统一资金流水聚合，只读）
+        Route::get('/orders/{id}/funds', [AdminOrderController::class, 'funds'])->middleware('permission:order.view')->whereNumber('id');
         Route::post('/orders/{id}/ship', [AdminOrderController::class, 'ship'])->middleware('permission:order.ship');
         Route::post('/orders/{id}/accept', [AdminOrderController::class, 'accept'])->middleware('permission:order.ship');
 
