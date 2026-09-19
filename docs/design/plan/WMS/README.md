@@ -10,7 +10,7 @@
 | 创建日期 | 2026-09-19 |
 | 阶段数 | P0 ~ P7（菜鸟），另 P8（京东，未排期） |
 | 总工期预估 | 约 6～7 周（含联调用友/菜鸟沙箱等待窗口） |
-| 状态 | 🟨 进行中（P0～P5 已完成） |
+| 状态 | 🟨 进行中（P0～P6 已完成，剩余 P7 验收交付） |
 
 ---
 
@@ -66,6 +66,7 @@
 - **✅ 已建（P3，2026-09-19）**：公开回调入口 `/api/wms/callback/{provider}`（限流 + 验签 + IP 白名单 + 防重放 + 异步入队）、多包裹档 `shipping_packages`、幂等去重 `wms_callback_dedups`、补偿命令 `wms:query-outbound` / `wms:prune-callbacks`。
 - **✅ 已建（P4，2026-09-20）**：退货入库单 `return_inbound_orders` + `return_inbound_order_items`（单号前缀 `RI`）、`ReturnInboundOrderService`（推送/收货/完成/取消/异常 + 幂等 complete）、`RefundApproved` 事件建单、`PushReturnInboundJob`/`CancelReturnInboundJob`、菜鸟 `returnorder.create`/`confirm`、`ReturnOrderConfirmHandler`、后台退货入库接口（`wms.return.manage`）。
 - **✅ 已建（P5，2026-09-20）**：`wms_inventory_snapshots` + `wms_inventory_diffs`（差异 pending 部分唯一）、`WmsInventorySyncService`（**默认只写快照不改平台库存**，`--apply` 才校准）、`WmsReconcileService`（每日对账 + resolve/ignore 幂等处置）、`WmsHealthCheckService`（六项巡检 + 审计/站内双通道）、命令 `wms:sync-inventory`/`wms:reconcile`/`wms:health`/`wms:prune-logs` 与开关化调度 `App\Console\WmsScheduler`、后台库存接口（`wms.config.manage`）。
+- **✅ 已建（P6，2026-09-20，无新表）**：后台 `WmsApiLogController`（日志列表/详情，报文出口二次脱敏）、`WmsConsoleController`（仓库下拉，只读运营也要能筛）、`WmsLogSummary` trait（详情带最近 5 条调用流水）、发货单 `batch-push` 批量重推；admin 侧 `api/wms.ts` 补全 + 五个页面（发货单 / 退货入库单 / WMS 日志 / 库存差异 / 健康看板），侧栏「仓库与物流」并入履约中心。
 - ⚠️ **迁移号**：P4 用到 `000089`，P5 从 `000090` 起（计划文档里的 `000072/000073` 已过期，以实际迁移文件为准）。
 
 ---
@@ -96,7 +97,7 @@
 | [P3](stage-P3-callback.md) | 回调入口：验签/幂等 + 发货回传 + 出库状态回传 | 1 周 | ✅ 已完成（2026-09-19，沙箱真实回传待账号） |
 | [P4](stage-P4-return-inbound.md) | **退货入库闭环**（含退款扩展、库存恢复） | 1.5 周 | ✅ 已完成（2026-09-20，沙箱真实回传待账号） |
 | [P5](stage-P5-inventory-sync.md) | 库存查询/同步 + 对账任务 + 降级开关与监控 | 0.5 周 | ✅ 已完成（2026-09-20，沙箱真实库存接口待账号） |
-| [P6](stage-P6-admin-console.md) | 后台运营页面：发货单/退货入库单/日志/重推 | 1 周 | ⬜ 未开始 |
+| [P6](stage-P6-admin-console.md) | 后台运营页面：发货单/退货入库单/日志/重推 | 1 周 | ✅ 已完成（2026-09-20，沙箱真实联调待账号） |
 | [P7](stage-P7-uat-and-delivery.md) | 沙箱联调、异常演练、性能、交付与验收 | 1 周 | ⬜ 未开始 |
 | [P8](stage-P8-jd-cloud.md) | 京东云仓 Adapter（**菜鸟验收通过后启动**） | 2 周 | ⏸ 冻结（未排期） |
 

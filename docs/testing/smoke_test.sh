@@ -303,6 +303,23 @@ SNAP=$(req GET /admin/wms/inventory/snapshots "$ATOK")
 DIFFS=$(req GET /admin/wms/inventory/diffs "$ATOK")
 [ "$(echo "$DIFFS" | jpath code)" = "0" ] && ok "库存差异列表" || bad "差异列表: $(echo "$DIFFS" | head -c 160)"
 
+echo "--- 5l. WMS 履约中心运营接口（P6：单据/日志/仓库下拉）"
+# 发货单列表（P6 页面数据源，权限 wms.order.view）
+FOS=$(req GET /admin/wms/fulfillment-orders "$ATOK")
+[ "$(echo "$FOS" | jpath code)" = "0" ] && ok "发货单列表" || bad "发货单列表: $(echo "$FOS" | head -c 160)"
+
+# 退货入库单列表（权限 wms.return.manage）
+RIOS=$(req GET /admin/wms/return-inbound-orders "$ATOK")
+[ "$(echo "$RIOS" | jpath code)" = "0" ] && ok "退货入库单列表" || bad "退货单列表: $(echo "$RIOS" | head -c 160)"
+
+# WMS 调用日志（P6 F5，脱敏出口）
+LOGS=$(req GET /admin/wms/logs "$ATOK")
+[ "$(echo "$LOGS" | jpath code)" = "0" ] && ok "WMS 调用日志列表" || bad "调用日志: $(echo "$LOGS" | head -c 160)"
+
+# 仓库下拉（只读运营也要能筛仓库）
+WOPT=$(req GET /admin/wms/warehouse-options "$ATOK")
+[ "$(echo "$WOPT" | jpath code)" = "0" ] && ok "仓库下拉" || bad "仓库下拉: $(echo "$WOPT" | head -c 160)"
+
 echo "--- 6. 退出登录"
 OUT=$(req POST /auth/logout "$TOKEN" '')
 [ "$(echo "$OUT" | jpath code)" = "0" ] && ok "退出登录" || bad "退出: $(echo "$OUT" | head -c 80)"
