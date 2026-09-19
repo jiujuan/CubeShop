@@ -118,8 +118,11 @@ async function handleLogout() {
         <RouterLink to="/register" class="hover:text-[#1677ff]">注册</RouterLink>
       </div>
       <div v-else class="hidden shrink-0 items-center gap-3 sm:flex" data-testid="header-account-entry">
-        <span class="hidden max-w-[10rem] truncate md:inline">Hi，{{ auth.user?.nickname || auth.user?.username }}</span>
-        <span class="hidden text-slate-200 md:inline">|</span>
+        <!-- v-if：用户信息尚未回填（刷新瞬间）时不渲染悬空的「Hi，」 -->
+        <template v-if="auth.user">
+          <span class="hidden max-w-[10rem] truncate md:inline">Hi，{{ auth.user.nickname || auth.user.username }}</span>
+          <span class="hidden text-slate-200 md:inline">|</span>
+        </template>
         <RouterLink to="/account" class="hover:text-[#1677ff]">个人中心</RouterLink>
       </div>
     </div>
@@ -171,42 +174,47 @@ async function handleLogout() {
         <NotificationBell />
 
         <template v-if="auth.token">
-          <div class="relative">
+          <!-- @mouseleave 关闭：鼠标移出触发区/面板（含中间透明过渡带）即收起 -->
+          <div class="relative" @mouseleave="userMenuOpen = false">
             <button class="flex flex-col items-center text-xs hover:text-[#1677ff]" data-testid="user-menu-trigger" @click="userMenuOpen = !userMenuOpen">
               <SquareUser class="h-5 w-5" />
               <span class="hidden max-w-[4rem] truncate lg:block">{{ auth.user?.nickname || auth.user?.username || '我的' }}</span>
             </button>
+            <!-- top-full + pt-2：用透明带补齐按钮与面板之间的间隙。
+                 若直接留空档，鼠标从按钮下移途中会先离开容器触发 mouseleave，面板根本点不到 -->
             <div
               v-if="userMenuOpen"
-              class="absolute right-0 top-10 z-10 w-36 rounded-lg border border-slate-100 bg-white py-1 text-xs shadow-lg"
+              class="absolute right-0 top-full z-10 pt-2"
               data-testid="user-menu"
               @click="userMenuOpen = false"
             >
-              <RouterLink to="/account" class="flex items-center gap-1.5 px-3 py-2 text-slate-600 hover:bg-slate-50">
-                <UserRound class="h-3.5 w-3.5" /> 个人中心
-              </RouterLink>
-              <RouterLink to="/orders" class="flex items-center gap-1.5 px-3 py-2 text-slate-600 hover:bg-slate-50">
-                <ClipboardList class="h-3.5 w-3.5" /> 我的订单
-              </RouterLink>
-              <RouterLink to="/coupons/mine" class="flex items-center gap-1.5 px-3 py-2 text-slate-600 hover:bg-slate-50">
-                <Ticket class="h-3.5 w-3.5" /> 我的优惠券
-              </RouterLink>
-              <RouterLink to="/coupons/center" class="flex items-center gap-1.5 px-3 py-2 text-slate-600 hover:bg-slate-50">
-                <Ticket class="h-3.5 w-3.5" /> 领券中心
-              </RouterLink>
-              <RouterLink to="/account/favorites" class="flex items-center gap-1.5 px-3 py-2 text-slate-600 hover:bg-slate-50">
-                <Heart class="h-3.5 w-3.5" /> 我的收藏
-              </RouterLink>
-              <RouterLink to="/account/histories" class="flex items-center gap-1.5 px-3 py-2 text-slate-600 hover:bg-slate-50">
-                <Clock class="h-3.5 w-3.5" /> 浏览足迹
-              </RouterLink>
-              <RouterLink to="/notifications" class="flex items-center gap-1.5 px-3 py-2 text-slate-600 hover:bg-slate-50">
-                <Bell class="h-3.5 w-3.5" /> 消息通知
-              </RouterLink>
-              <RouterLink to="/account/addresses" class="flex items-center gap-1.5 px-3 py-2 text-slate-600 hover:bg-slate-50">
-                <MapPin class="h-3.5 w-3.5" /> 收货地址
-              </RouterLink>
-              <button class="w-full px-3 py-2 text-left text-red-500 hover:bg-slate-50" @click="handleLogout">退出登录</button>
+              <div class="w-36 rounded-lg border border-slate-100 bg-white py-1 text-xs shadow-lg">
+                <RouterLink to="/account" class="flex items-center gap-1.5 px-3 py-2 text-slate-600 hover:bg-slate-50">
+                  <UserRound class="h-3.5 w-3.5" /> 个人中心
+                </RouterLink>
+                <RouterLink to="/orders" class="flex items-center gap-1.5 px-3 py-2 text-slate-600 hover:bg-slate-50">
+                  <ClipboardList class="h-3.5 w-3.5" /> 我的订单
+                </RouterLink>
+                <RouterLink to="/coupons/mine" class="flex items-center gap-1.5 px-3 py-2 text-slate-600 hover:bg-slate-50">
+                  <Ticket class="h-3.5 w-3.5" /> 我的优惠券
+                </RouterLink>
+                <RouterLink to="/coupons/center" class="flex items-center gap-1.5 px-3 py-2 text-slate-600 hover:bg-slate-50">
+                  <Ticket class="h-3.5 w-3.5" /> 领券中心
+                </RouterLink>
+                <RouterLink to="/account/favorites" class="flex items-center gap-1.5 px-3 py-2 text-slate-600 hover:bg-slate-50">
+                  <Heart class="h-3.5 w-3.5" /> 我的收藏
+                </RouterLink>
+                <RouterLink to="/account/histories" class="flex items-center gap-1.5 px-3 py-2 text-slate-600 hover:bg-slate-50">
+                  <Clock class="h-3.5 w-3.5" /> 浏览足迹
+                </RouterLink>
+                <RouterLink to="/notifications" class="flex items-center gap-1.5 px-3 py-2 text-slate-600 hover:bg-slate-50">
+                  <Bell class="h-3.5 w-3.5" /> 消息通知
+                </RouterLink>
+                <RouterLink to="/account/addresses" class="flex items-center gap-1.5 px-3 py-2 text-slate-600 hover:bg-slate-50">
+                  <MapPin class="h-3.5 w-3.5" /> 收货地址
+                </RouterLink>
+                <button class="w-full px-3 py-2 text-left text-red-500 hover:bg-slate-50" @click="handleLogout">退出登录</button>
+              </div>
             </div>
           </div>
         </template>

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { render } from '@testing-library/vue'
+import { fireEvent, render } from '@testing-library/vue'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import { createPinia, setActivePinia } from 'pinia'
 import ShopHeader from '@/components/ShopHeader.vue'
@@ -50,7 +50,10 @@ async function withEmptyAnnouncements() {
   vi.mocked(getAnnouncements).mockResolvedValue({ data: { data: { list: [] } } } as never)
 }
 
-async function mountHeader() {
+/**
+ * @param options.withUser=false 模拟「刷新后 token 在、用户信息尚未回填」的瞬间
+ */
+async function mountHeader(options: { withUser?: boolean } = {}) {
   const router = createRouter({
     history: createMemoryHistory(),
     routes: [
@@ -63,7 +66,9 @@ async function mountHeader() {
 
   const auth = useAuthStore()
   auth.setToken('test-token')
-  auth.user = { id: 1, username: 'uibuyer', nickname: '测试买家' } as unknown as typeof auth.user
+  if (options.withUser !== false) {
+    auth.user = { id: 1, username: 'uibuyer', nickname: '测试买家' } as unknown as typeof auth.user
+  }
 
   router.push('/')
   await router.isReady()
@@ -161,5 +166,52 @@ describe('ShopHeader 移动端适配（P1 回归）', () => {
     expect(entry!.getAttribute('data-testid')).toBe('header-account-entry')
     // 公告缺失时不再渲染公告链接，账号区是条内唯一可见内容且被推到右侧
     expect(document.querySelector('[data-testid="announcement-bar"] a[href^="/announcements/"]')).toBeNull()
+  })
+})
+
+/**
+ * 顶栏用户菜单交互 + 账号名回填（2026-09-19 修复）
+ *
+ * 反馈现象：1) 点开「我的」浮层后鼠标移出不会收起；2) 「Hi，xxx」只显示「Hi，」。
+ * 后者根因不在模板：token 持久化在 localStorage 而 user 不持久化，
+ * `fetchUser()` 原先只在登录/注册成功后调用，刷新页面后 store.user 恒为 null。
+ * 回填逻辑在 `main.ts` 启动引导，此处锁定模板侧的两个契约。
+ */
+describe('顶栏用户菜单与账号名（ShopHeader）', () => {
+  it('鼠标移出触发区后浮层自动收起', async () => {
+    const { getByTestId, queryByTestId } = await mountHeader()
+
+    await fireEvent.click(getByTestId('user-menu-trigger'))
+    expect(queryByTestId('user-menu')).not.toBeNull()
+
+    // 容器同时含「触发按钮 + 浮层」，移出容器（DOM 包含关系）即收起
+    const triggerBox = getByTestId('user-menu-trigger').parentElement!
+    await fireEvent.mouseLeave(triggerBox)
+
+    expect(queryByTestId('user-menu')).toBeNull()
+  })
+
+  it('浮层顶部保留透明过渡带（pt-2）：否则鼠标下移途中先触发 mouseleave，面板点不到', async () => {
+    const { getByTestId } = await mountHeader()
+
+    await fireEvent.click(getByTestId('user-menu-trigger'))
+
+    const menu = getByTestId('user-menu')
+    expect(menu.className).toContain('pt-2')
+    expect(menu.className).toContain('top-full')
+  })
+
+  it('用户信息回填后展示「Hi，昵称」', async () => {
+    const { findByText } = await mountHeader()
+
+    expect(await findByText('Hi，测试买家')).toBeTruthy()
+  })
+
+  it('用户信息未回填时不渲染悬空的「Hi，」', async () => {
+    const { queryByText, findByText } = await mountHeader({ withUser: false })
+
+    // 账号入口仍在，只是没有名字可展示
+    expect(await findByText('个人中心')).toBeTruthy()
+    expect(queryByText(/^Hi，/)).toBeNull()
   })
 })
