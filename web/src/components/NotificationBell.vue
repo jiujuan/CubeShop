@@ -129,11 +129,11 @@ defineExpose({ refreshCount, refreshList })
       消息
     </button>
 
-    <!-- 下拉面板：top-full + pt-2 透明过渡带，补齐按钮与面板间隙，
-         避免鼠标从按钮下移途中先离开容器触发 mouseleave 导致面板点不到 -->
+    <!-- 下拉面板：left-1/2 -translate-x-1/2 使其水平居中于铃铛正下方；
+         top-full + pt-2 透明过渡带，避免鼠标从按钮下移途中误触发 mouseleave -->
     <div
       v-if="open"
-      class="absolute right-0 top-full z-20 w-72 rounded-lg border border-slate-100 bg-white pt-2 shadow-lg"
+      class="absolute left-1/2 top-full z-20 w-72 -translate-x-1/2 rounded-lg border border-slate-100 bg-white pt-2 shadow-lg"
       data-testid="notification-panel"
     >
       <div class="flex items-center justify-between border-b border-slate-50 px-3 py-2 text-xs text-slate-400">
