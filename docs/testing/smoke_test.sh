@@ -182,17 +182,35 @@ WH=$(req POST /admin/wms/warehouses "$ATOK" "{\"code\":\"WH_SMOKE_$(date +%s)\",
 WH_ID=$(echo "$WH" | jpath data.id)
 [ -n "$WH_ID" ] && ok "建仓(id=$WH_ID)" || bad "建仓: $(echo "$WH" | head -c 160)"
 
-# 保存配置：沙箱 + Mock 凭证 + same 映射（凭证只写不读）
-CFG=$(req PUT "/admin/wms/warehouses/$WH_ID/config" "$ATOK" '{"provider":"cainiao","enabled":true,"auto_push":true,"auto_push_return":true,"push_retry_times":3,"sku_mapping_mode":"same","app_key":"SMOKE_KEY","app_secret":"SMOKE_SECRET_WXYZ","api_env":"sandbox","warehouse_code":"CN-WH-SMOKE","remark":"冒烟"}')
-MASK=$(echo "$CFG" | jpath data.app_secret_masked)
-[ -n "$MASK" ] && ok "保存配置(掩码=$MASK)" || bad "保存配置: $(echo "$CFG" | head -c 160)"
-echo "$CFG" | grep -q "SMOKE_SECRET_WXYZ" && bad "配置响应泄漏明文密钥" || ok "配置响应无明文密钥"
+# 保存配置：沙箱 + **不配凭证** + same 映射 —— 按 P2 规则（凭证齐备才走真实网关）应走 Mock
+CFG=$(req PUT "/admin/wms/warehouses/$WH_ID/config" "$ATOK" '{"provider":"cainiao","enabled":true,"auto_push":true,"auto_push_return":true,"push_retry_times":3,"sku_mapping_mode":"same","api_env":"sandbox","warehouse_code":"CN-WH-SMOKE","remark":"冒烟"}')
+[ "$(echo "$CFG" | jpath code)" = "0" ] && ok "保存配置（未配凭证）" || bad "保存配置: $(echo "$CFG" | head -c 160)"
 CB=$(echo "$CFG" | jpath data.callback_url)
 [ -n "$CB" ] && ok "回调地址可生成" || bad "回调地址缺失"
 
-# 连通性测试（沙箱应走 Mock）
+# 连通性测试：未配凭证 → 走 Mock（沙箱账号未到位时可先跑通链路）
 TC=$(req POST "/admin/wms/warehouses/$WH_ID/config/test" "$ATOK" '')
-[ "$(echo "$TC" | jpath data.success)" = "True" ] && ok "连通性测试成功（mock=$(echo "$TC" | jpath data.mock)）" || bad "连通性: $(echo "$TC" | head -c 160)"
+if [ "$(echo "$TC" | jpath data.success)" = "True" ] && [ "$(echo "$TC" | jpath data.mock)" = "True" ]; then
+  ok "未配凭证 → 连通性走 Mock"
+else
+  bad "连通性(Mock): $(echo "$TC" | head -c 200)"
+fi
+
+# P2 / SEC-01：配了真实凭证但未配置网关地址 → fail-closed（绝不静默降级成 Mock 假成功）
+WH2=$(req POST /admin/wms/warehouses "$ATOK" "{\"code\":\"WH_SMOKE_FC_$(date +%s)\",\"name\":\"冒烟failclosed仓\",\"status\":1}")
+WH2_ID=$(echo "$WH2" | jpath data.id)
+CFG2=$(req PUT "/admin/wms/warehouses/$WH2_ID/config" "$ATOK" '{"provider":"cainiao","enabled":true,"auto_push":false,"auto_push_return":false,"push_retry_times":3,"sku_mapping_mode":"same","app_key":"SMOKE_KEY","app_secret":"SMOKE_SECRET_WXYZ","api_env":"sandbox","warehouse_code":"CN-WH-FC","remark":"冒烟"}')
+MASK=$(echo "$CFG2" | jpath data.app_secret_masked)
+[ -n "$MASK" ] && ok "保存凭证(掩码=$MASK)" || bad "保存凭证: $(echo "$CFG2" | head -c 160)"
+echo "$CFG2" | grep -q "SMOKE_SECRET_WXYZ" && bad "配置响应泄漏明文密钥" || ok "配置响应无明文密钥"
+TC2=$(req POST "/admin/wms/warehouses/$WH2_ID/config/test" "$ATOK" '')
+if [ "$(echo "$TC2" | jpath data.success)" = "False" ] && [ "$(echo "$TC2" | jpath data.mock)" != "True" ]; then
+  ok "配凭证缺网关 → fail-closed（不静默 Mock）"
+else
+  bad "fail-closed 校验: $(echo "$TC2" | head -c 220)"
+fi
+# 关掉第二个仓，避免影响后续履约（配置解析按启用态的 id 升序取第一个）
+req PUT "/admin/wms/warehouses/$WH2_ID/config" "$ATOK" '{"provider":"cainiao","enabled":false,"auto_push":false,"auto_push_return":false,"push_retry_times":3,"sku_mapping_mode":"same","api_env":"sandbox"}' >/dev/null
 
 # SKU 映射：批量导入 1 成 1 败（逐行反馈）
 BATCH=$(req POST "/admin/wms/warehouses/$WH_ID/sku-mappings/batch" "$ATOK" "{\"rows\":[{\"sku_code\":\"$SKU_CODE\",\"wms_sku_code\":\"WMS-$SKU_CODE\",\"barcode\":\"6900001\"},{\"sku_code\":\"NO-SUCH-SKU-SMOKE\",\"wms_sku_code\":\"X\"}]}")
