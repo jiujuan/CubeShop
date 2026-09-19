@@ -207,6 +207,36 @@ const router = createRouter({
           meta: { title: '首页广告位', menu: true, icon: 'Images', permission: 'home.manage' },
         },
         {
+          path: 'wms/fulfillment-orders',
+          name: 'wms-fulfillment-orders',
+          component: () => import('@/views/wms/FulfillmentOrderListView.vue'),
+          meta: { title: '履约中心 / 发货单', menu: true, icon: 'Truck', permission: 'wms.order.view' },
+        },
+        {
+          path: 'wms/return-inbound-orders',
+          name: 'wms-return-inbound-orders',
+          component: () => import('@/views/wms/ReturnInboundOrderListView.vue'),
+          meta: { title: '履约中心 / 退货入库单', menu: true, icon: 'Undo2', permission: 'wms.return.manage' },
+        },
+        {
+          path: 'wms/inventory-diffs',
+          name: 'wms-inventory-diffs',
+          component: () => import('@/views/wms/WmsInventoryDiffView.vue'),
+          meta: { title: '履约中心 / 库存差异', menu: true, icon: 'Diff', permission: 'wms.config.manage' },
+        },
+        {
+          path: 'wms/logs',
+          name: 'wms-logs',
+          component: () => import('@/views/wms/WmsApiLogView.vue'),
+          meta: { title: '履约中心 / WMS 日志', menu: true, icon: 'ScrollText', permission: 'wms.config.manage' },
+        },
+        {
+          path: 'wms/health',
+          name: 'wms-health',
+          component: () => import('@/views/wms/WmsHealthView.vue'),
+          meta: { title: '履约中心 / 健康看板', menu: true, icon: 'Activity', permission: 'wms.config.manage' },
+        },
+        {
           path: 'wms/warehouses',
           name: 'wms-warehouses',
           component: () => import('@/views/wms/WarehouseListView.vue'),

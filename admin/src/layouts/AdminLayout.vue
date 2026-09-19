@@ -2,7 +2,7 @@
 import { computed, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import {
-  BarChart3, BookOpen, Box, Calculator, ChevronDown, ChevronRight, ChevronsLeft, ChevronsRight, ClipboardList, CreditCard, FileClock, FolderTree, History, Images, LayoutDashboard, Layers, LayoutList, LifeBuoy, ListTree, LogOut, MapPinned, MessageSquare, Megaphone, Package, RotateCcw, ScrollText, Settings, ShieldCheck,   SquareUser, Tags, Truck, UploadCloud, UserCog, UserRound, Users, Wallet, Warehouse, Ticket,
+  BarChart3, BookOpen, Box, Calculator, ChevronDown, ChevronRight, ChevronsLeft, ChevronsRight, ClipboardList, CreditCard, FileClock, FolderTree, History, Images, LayoutDashboard, Layers, LayoutList, LifeBuoy, ListTree, LogOut, MapPinned, MessageSquare, Megaphone, Package, RotateCcw, ScrollText, Settings, ShieldCheck,   SquareUser, Tags, Truck, UploadCloud, UserCog, UserRound, Users, Wallet, Warehouse, Ticket, Undo2, Activity, Diff,
 } from 'lucide-vue-next'
 import { useAuthStore } from '@/stores/auth'
 
@@ -59,6 +59,9 @@ const icons: Record<string, unknown> = {
   Megaphone,
   Images,
   Warehouse,
+  Undo2,
+  Activity,
+  Diff,
 }
 
 interface MenuItem {
@@ -126,6 +129,12 @@ const menuGroups = computed<MenuGroup[]>(() => {
     {
       title: '仓库与物流',
       items: [
+        // 履约中心（WMS 计划 P6）：单据运维在前，配置治理在后——运营日常看的是单据
+        { path: '/wms/fulfillment-orders', title: '发货单', icon: 'Truck', permission: 'wms.order.view' },
+        { path: '/wms/return-inbound-orders', title: '退货入库单', icon: 'Undo2', permission: 'wms.return.manage' },
+        { path: '/wms/inventory-diffs', title: '库存差异', icon: 'Diff', permission: 'wms.config.manage' },
+        { path: '/wms/health', title: '健康看板', icon: 'Activity', permission: 'wms.config.manage' },
+        { path: '/wms/logs', title: 'WMS 日志', icon: 'ScrollText', permission: 'wms.config.manage' },
         // WMS 对接（WMS 计划 P0）：仓库档案 / 配置 / SKU 映射入口
         { path: '/wms/warehouses', title: 'WMS 对接', icon: 'Warehouse', permission: 'wms.config.manage' },
       ],

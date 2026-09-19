@@ -34,6 +34,8 @@ const emit = defineEmits<{ (e: 'confirm'): void; (e: 'cancel'): void }>()
           <div class="min-w-0">
             <h4 class="text-sm font-semibold text-slate-800">{{ title }}</h4>
             <p class="mt-1.5 text-[13px] leading-5 text-slate-500">{{ message }}</p>
+            <!-- 可选扩展区：需要额外输入（如操作理由）时由调用方填充 -->
+            <slot />
           </div>
         </div>
 
