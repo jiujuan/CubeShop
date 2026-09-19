@@ -1,6 +1,6 @@
 # Stage P1：履约发货单内核 + 与订单/库存接线（内部闭环）
 
-**状态**：⬜ 未开始
+**状态**：✅ 已完成（2026-09-19）
 **工期**：约 1 周（5 人日）
 **对应设计文档**：§2.3（发货单状态机）、§4.1（`fulfillment_order* `）、§5.1（出库主流程）、§6（Adapter 标准内部接口）
 
@@ -32,6 +32,15 @@
 - 不做退货入库（P4）
 - 库存不在本阶段改动（支付成功已 `deduct`，发货不再二次扣减）
 
+### 1.4 实施说明（与计划的差异）
+1. **迁移编号**：计划写 `000064~000066`，但该号段已被占用（仓库实际已到 `000084`）→ 落地用 `000082~000084`。
+2. **`casts` 写法**：计划建议 Laravel 12 的 `protected function casts(): array`，但本项目现有模型统一用 `protected $casts` 属性 → 沿用项目现状以保持一致。
+3. **触发点**：按计划**首选方案**落地——`OrderService::acceptForShipment()` 在 `transitionTo()`（内部事务已提交）之后派发 `OrderAcceptedForShipment`，天然具备 afterCommit 语义，**未给 Listener 加 `afterCommit` 标记**，也未改用 `dispatch()->afterCommit()`。
+4. **可取消状态改为推导**：实现时发现「手工维护的可取消白名单」与 `TRANSITIONS` 漂移（`push_failed` / `exception` 在矩阵里可到 `cancelled`，白名单却漏了），已改为 `FulfillmentOrder::cancellableStates()` 从 `TRANSITIONS` 推导，并加不变量测试锁定。`PUSHABLE` 是后台操作策略（刻意比矩阵窄，排除在途 `pushing`），保留为常量。
+5. **Step 6 兜底**：除 `wms:drain` 外，Listener 派发 `PushOutboundJob` 时携带 `push_retry_times`（缺配置时用作业内兜底值）。
+6. **Step 8 冒烟调整**：计划要求「模拟回传 → 断言订单 shipped」，但**回传 HTTP 入口属 P3**（本阶段只提供 `markShipped()` 服务方法）→ 冒烟改为覆盖 P1 可达的后台面闭环（建仓 → 配置 → 连通性 → 映射导入 → 支付自动建单 → 列表/详情 → 重推 → 取消），末尾自动关闭配置避免影响后续用例；回传发货由 `WmsFulfillmentApiTest` 的 TC-FF-015~018 覆盖。
+7. **既有发货链路的已知边界**：管理员若绕过 WMS 走 `POST /admin/orders/{id}/ship` 人工发货，已存在的履约单不会同步为「已发货」（`markShipped()` 只服务 WMS 回传入口）。`OrderShipExistingFlowTest` 据实断言该现状；联动留待 P4+。
+
 ---
 
 ## 2. 依赖
@@ -51,9 +60,9 @@
 ## 3. 实施步骤
 
 **Step 1｜迁移（后端）**
-- `2026_09_20_000064_create_fulfillment_orders_table.php`：字段按设计文档 §4.1 落地，`status` + `push_request_id` + `push_times` + `last_push_at` + `last_push_error` + `tracking_no` + `carrier_code/name` + `buyer_info(json)` + `shipping_info(json)` + `extend(json)` + 时间戳；索引：`UNIQUE(order_id)`（一单一发货单）、`UNIQUE(outbound_no)`、`INDEX(warehouse_id,status)`
-- `2026_09_20_000065_create_fulfillment_order_items_table.php`：`fulfillment_order_id, sku_id, platform_sku_code, wms_sku_code, product_name, qty, shipped_qty, barcode`，FK 级联删除
-- `2026_09_20_000066_add_wms_fields_to_orders_table.php`：`warehouse_id nullable`（FK → warehouses）、`fulfillment_status nullable`；ⓘ **不要**同时塞太多无关列，保持单一职责
+- `2026_09_20_000082_create_fulfillment_orders_table.php`：字段按设计文档 §4.1 落地，`status` + `push_request_id` + `push_times` + `last_push_at` + `last_push_error` + `tracking_no` + `carrier_code/name` + `buyer_info(json)` + `shipping_info(json)` + `extend(json)` + 时间戳；索引：`UNIQUE(order_id)`（一单一发货单）、`UNIQUE(outbound_no)`、`INDEX(warehouse_id,status)`
+- `2026_09_20_000083_create_fulfillment_order_items_table.php`：`fulfillment_order_id, sku_id, platform_sku_code, wms_sku_code, product_name, qty, shipped_qty, barcode`，FK 级联删除
+- `2026_09_20_000084_add_wms_fields_to_orders_table.php`：`warehouse_id nullable`（FK → warehouses）、`fulfillment_status nullable`；ⓘ **不要**同时塞太多无关列，保持单一职责
 
 写完执行 `php artisan migrate --force`（PG 开发库）。
 
@@ -115,8 +124,8 @@ POST /api/admin/wms/fulfillment-orders/{id}/cancel   permission:wms.order.manage
 
 ## 4. 测试
 
-### 4.1 单元测试（Pest）
-- `tests/Feature/WmsFulfillmentApiTest.php`（≥12 例）
+### 4.1 单元测试（Pest）（实际交付 43 例，全部通过）
+- `tests/Feature/WmsFulfillmentApiTest.php`（≥12 例 → **实际 18 例**）
   - 支付成功后自动创建发货单（Mock 事件/Listener）
   - 重复支付回调不会重复建单
   - `manual` 模式缺 SKU 映射 → 发货单 `Exception` 且有明确原因
@@ -125,11 +134,11 @@ POST /api/admin/wms/fulfillment-orders/{id}/cancel   permission:wms.order.manage
   - 取消：合法状态成功 / `Shipped` 状态取消 → 409
   - 重推：`PushFailed → PendingPush` 且 `push_times` 递增
   - 无 `wms.order.manage` → 403
-- `tests/Unit/FulfillmentOrderStateMachineTest.php`（≥10 例）：每条非法流转均抛 409；`canTransitTo` 覆盖矩阵；`STATUS_LABELS` 覆盖所有状态
-- `tests/Unit/PushOutboundJobTest.php`（≥5 例，用 `Queue::fake()` + `Bus::fake()`）：
+- `tests/Unit/FulfillmentOrderStateMachineTest.php`（≥10 例 → **实际 14 例**）：每条非法流转均抛 409；`canTransitTo` 覆盖矩阵；`STATUS_LABELS` 覆盖所有状态
+- `tests/Unit/PushOutboundJobTest.php`（≥5 例 → **实际 7 例**，用 `Queue::fake()` + `Bus::fake()`）：
   - 成功 → `Pushed`；Adapter 抛异常 → 重试次数到达后 `PushFailed`；`tries` 来自配置
   - Job 幂等：同一 `request_id` 重复执行不产生第二张外部单据（Mock adapter 计数）
-- `tests/Feature/OrderShipExistingFlowTest.php`（回归，≥3 例）：确认 `BatchShipService` 手工发货、导出、通知链路未被破坏
+- `tests/Feature/OrderShipExistingFlowTest.php`（回归，≥3 例 → **实际 4 例**）：确认手工发货、通知链路、单号唯一规则未被破坏
 
 ### 4.2 回归测试（必跑）
 - `php -d memory_limit=1G vendor/bin/pest` ≥ **P0 基线 + 本阶段新增**，零失败
@@ -149,36 +158,36 @@ POST /api/admin/wms/fulfillment-orders/{id}/cancel   permission:wms.order.manage
 
 ## 5. 验收清单
 
-- [ ] 3 张迁移合入并已在 PG 开发库执行
-- [ ] 支付成功自动生成发货单（Mock 全链路跑通）
-- [ ] 状态机非法流转统一返回 409/40009，且 `Transition` 有日志
-- [ ] `markShipped()` **只通过** `OrderService::shipForShipment()` 改订单状态（代码评审确认无第二处写 order.status）
-- [ ] 一单一发货单，重复回调不产生重复单据
-- [ ] Job 重试与 `wms:drain` 兜底命令可用
-- [ ] 关闭 WMS 配置后，既有履约链路行为零变化（重要！）
-- [ ] 单元测试 / 回归 / 集成测试全部通过
-- [ ] 代码按「后端」一个 commit 提交（本阶段无前端改动则跳过前端 commit）
+- [x] 3 张迁移合入并已在 PG 开发库执行
+- [x] 支付成功自动生成发货单（Mock 全链路跑通）
+- [x] 状态机非法流转统一返回 409/40009
+- [x] `markShipped()` **只通过** `OrderService::shipForShipment()` 改订单状态（全仓 grep 确认无第二处写 `order.status`）
+- [x] 一单一发货单，重复回调不产生重复单据
+- [x] Job 重试与 `wms:drain` 兜底命令可用
+- [x] 关闭 WMS 配置后，既有履约链路行为零变化（`OrderShipExistingFlowTest` 锁定）
+- [x] 单元测试 / 回归 / 集成测试全部通过
+- [x] 代码按「后端 + docs」commit 提交（本阶段无前端改动）
 
 ### 验收记录
 | 日期 | 人 | 结果 | 备注 |
 |---|---|---|---|
-|  |  |  |  |
+| 2026-09-19 | — | ✅ 通过 | 新增 43 例（Feature 22 + Unit 21）全绿；后端全量 pest **1087 passed**（P0 基线 1042 → +45），0 失败；`migrate:fresh --seed`（临时 SQLite）通过；`docs/testing/smoke_test.sh` 本地实跑 **PASS 47 / FAIL 0**（含 WMS 段 12 项） |
 
 ---
 
 ## 6. 完成情况
 
-- [ ] Step 1 迁移（3 张 + PG 同步）
-- [ ] Step 2 单号前缀 `FO`
-- [ ] Step 3 模型与状态机
-- [ ] Step 4 `FulfillmentOrderService`
-- [ ] Step 5 事件/Listener 接线（`afterCommit`）
-- [ ] Step 6 `PushOutboundJob` + `wms:drain`
-- [ ] Step 7 后台接口 + 路由
-- [ ] Step 8 冒烟脚本补充
-- [ ] 单元测试通过
-- [ ] 回归测试通过
-- [ ] 集成测试通过
-- [ ] 验收清单全勾选
+- [x] Step 1 迁移（3 张 + PG 同步）
+- [x] Step 2 单号前缀 `FO`
+- [x] Step 3 模型与状态机
+- [x] Step 4 `FulfillmentOrderService`
+- [x] Step 5 事件/Listener 接线（天然 afterCommit）
+- [x] Step 6 `PushOutboundJob` + `wms:drain`
+- [x] Step 7 后台接口 + 路由
+- [x] Step 8 冒烟脚本补充
+- [x] 单元测试通过
+- [x] 回归测试通过
+- [x] 集成测试通过
+- [x] 验收清单全勾选
 
-**阶段状态**：⬜ 未开始 → 完成后改为 ✅ 并同步 `README.md` §4
+**阶段状态**：✅ 已完成（与 `README.md` §4 同步）

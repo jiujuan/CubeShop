@@ -10,7 +10,7 @@
 | 创建日期 | 2026-09-19 |
 | 阶段数 | P0 ~ P7（菜鸟），另 P8（京东，未排期） |
 | 总工期预估 | 约 6～7 周（含联调用友/菜鸟沙箱等待窗口） |
-| 状态 | 🟨 进行中（P0 已完成；P4 退款领域能力已补） |
+| 状态 | 🟨 进行中（P0、P1 已完成；P4 退款领域能力已补） |
 
 ---
 
@@ -61,7 +61,8 @@
 
 ### 2.5 尚不存在（需新建）
 - **✅ 已建（P0，2026-09-19）**：仓库 `warehouses`、WMS 配置 `wms_configs`、SKU 映射 `wms_sku_mappings`、WMS 调用日志 `wms_api_logs`，以及后台 `/api/admin/wms/*` 配置能力（含 Mock 连通性测试、回调地址生成、权限码 `wms.*`）。
-- **仍需新建**：履约单 `fulfillment_order`（P1）、退货入库单 `return_inbound_order`（P4），以及独立于 `/api/admin` 之外的公开回调入口 `/api/wms/callback/*`（P3）。
+- **✅ 已建（P1，2026-09-19）**：履约发货单 `fulfillment_orders` / `fulfillment_order_items`（一单一发货单、状态机、推送重试、`wms:drain` 兜底），`orders.warehouse_id` / `orders.fulfillment_status` 挂载列，以及后台 `/api/admin/wms/fulfillment-orders*` 运营接口。
+- **仍需新建**：退货入库单 `return_inbound_order`（P4），以及独立于 `/api/admin` 之外的公开回调入口 `/api/wms/callback/*`（P3）。
 
 ---
 
@@ -86,7 +87,7 @@
 | 阶段 | 主题 | 工期 | 状态 |
 |------|------|------|------|
 | [P0](stage-P0-foundation.md) | 仓库/WMS 配置/SKU 映射数据模型 + 后台配置能力 | 1 周 | ✅ 已完成（2026-09-19） |
-| [P1](stage-P1-fulfillment-core.md) | 履约发货单内核 + 与订单/库存接线（无外部依赖可跑通） | 1 周 | ⬜ 未开始 |
+| [P1](stage-P1-fulfillment-core.md) | 履约发货单内核 + 与订单/库存接线（无外部依赖可跑通） | 1 周 | ✅ 已完成（2026-09-19） |
 | [P2](stage-P2-cainiao-adapter.md) | 菜鸟 Adapter：签名/网关/创建出库/取消出库 + Mock 模式下check | 1.5 周 | ⬜ 未开始 |
 | [P3](stage-P3-callback.md) | 回调入口：验签/幂等 + 发货回传 + 出库状态回传 | 1 周 | ⬜ 未开始 |
 | [P4](stage-P4-return-inbound.md) | **退货入库闭环**（含退款扩展、库存恢复） | 1.5 周 | 🟨 进行中（退款领域能力已扩展，WMS 推送/回调/`return_inbound_orders` 待接入） |
