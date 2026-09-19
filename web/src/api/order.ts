@@ -142,7 +142,63 @@ export interface AmountDetails {
   promotion_id?: number | null
   coupon_id?: number | null
   user_coupon_id?: number | null
-  lines?: Array<Record<string, string | number>>
+  /** G1：券规则快照（人读，固化名称/面额/类型/门槛，营销规则改后仍能还原当时优惠） */
+  coupon_snapshot?: CouponSnapshot | null
+  /** G1：满减活动快照（含命中梯度） */
+  promotion_snapshot?: PromotionSnapshot | null
+  /** G2：运费计算明细（模板/地区/重量口径、包邮判定） */
+  freight_detail?: FreightDetail | null
+  lines?: Array<{
+    index: number
+    product_id?: string | number | null
+    sku_id?: string | number | null
+    amount: string
+    promotion_share: string
+    coupon_share: string
+    /** G3：该行承担的运费分摊 */
+    freight_share?: string
+    payable: string
+  }>
+}
+
+/** G1：券规则快照 */
+export interface CouponSnapshot {
+  id?: number | null
+  name?: string | null
+  type?: string | null
+  type_label?: string | null
+  amount?: string | null
+  percent?: number | null
+  max_discount?: string | null
+  min_spend?: string
+  scope?: string
+  scope_label?: string | null
+}
+
+/** G1：满减活动快照 */
+export interface PromotionSnapshot {
+  id?: number | null
+  name?: string | null
+  scope?: string
+  scope_label?: string | null
+  rules?: Array<{ min: number; discount: number }>
+  hit_tier?: { min: number; discount: number } | null
+}
+
+/** G2：运费计算明细 */
+export interface FreightDetail {
+  freight_amount: string
+  free_shipping: boolean
+  free_shipping_gap?: string | null
+  province?: string | null
+  groups?: Array<{
+    template_id?: number | null
+    mode: string
+    weight_g: number
+    amount: string
+    source: string
+    spec?: Record<string, string | number> | null
+  }>
 }
 
 export interface OrderDetail extends OrderBrief {

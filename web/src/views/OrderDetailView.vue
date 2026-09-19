@@ -95,6 +95,24 @@ const couponDiscount = computed(() => {
   const promo = Number(order.value?.promotion_discount ?? 0)
   return Math.max(0, total - promo)
 })
+/** G1：券/满减规则快照——纠纷时可还原「当时用的什么券/活动、优惠了多少」 */
+const couponSnapshot = computed(() => order.value?.amount_details?.coupon_snapshot ?? null)
+const promotionSnapshot = computed(() => order.value?.amount_details?.promotion_snapshot ?? null)
+/** G2：运费计算明细（模板/地区/重量口径、包邮判定） */
+const freightDetail = computed(() => order.value?.amount_details?.freight_detail ?? null)
+const freightBreakdownText = computed(() => {
+  const f = freightDetail.value
+  if (!f) return ''
+  if (f.free_shipping) return '已满包邮门槛，运费减免为 ¥0'
+  const modeLabel: Record<string, string> = { fixed: '固定', weight: '按重量', region: '按地区' }
+  const parts = (f.groups ?? []).map((g) => {
+    const label = modeLabel[g.mode] ?? g.mode
+    const who = g.template_id ? `模板${g.template_id}` : '默认'
+    return `${who}(${label}) ¥${g.amount}`
+  })
+  const province = f.province ? `发往${f.province}；` : ''
+  return `${province}${parts.join('，')}`
+})
 const REFUND_STATUS_LABELS: Record<string, string> = {
   pending: '待审核',
   approved: '已同意',
@@ -357,17 +375,26 @@ async function onReviewSubmitted() {
             <div class="flex justify-between text-slate-600"><span>商品合计</span><span>¥{{ order.total_amount }}</span></div>
             <!-- 满减优惠（其它优惠方式，优惠额 > 0 才展示，避免无优惠时多一行） -->
             <div v-if="promotionDiscount > 0" class="flex justify-between text-[#ff7a45]" data-testid="order-promo-row">
-              <span>满减优惠</span>
+              <span>
+                满减优惠
+                <template v-if="promotionSnapshot?.name">（{{ promotionSnapshot.name }}<template v-if="promotionSnapshot.hit_tier">：满{{ promotionSnapshot.hit_tier.min }}减{{ promotionSnapshot.hit_tier.discount }}</template>）</template>
+              </span>
               <span data-testid="order-promo-amount">−¥{{ promotionDiscount.toFixed(2) }}</span>
             </div>
             <!-- 优惠券（优惠额 > 0 才展示） -->
             <div v-if="couponDiscount > 0" class="flex justify-between text-[#ff4d4f]" data-testid="order-coupon-row">
-              <span>优惠券</span>
+              <span>
+                优惠券
+                <template v-if="couponSnapshot?.name">（{{ couponSnapshot.name }}）</template>
+              </span>
               <span data-testid="order-coupon-amount">−¥{{ couponDiscount.toFixed(2) }}</span>
             </div>
             <div class="flex justify-between text-slate-600">
               <span>运费</span><span>{{ Number(order.freight_amount) === 0 ? '包邮' : `¥${order.freight_amount}` }}</span>
             </div>
+            <p v-if="freightBreakdownText" class="mt-1 text-right text-[11px] text-slate-400" data-testid="order-freight-detail">
+              {{ freightBreakdownText }}
+            </p>
             <div class="flex justify-between border-t border-slate-100 pt-2 font-medium">
               <span>实付款</span><span class="text-[#ff4d4f]">¥{{ order.pay_amount }}</span>
             </div>

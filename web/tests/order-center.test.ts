@@ -457,6 +457,50 @@ describe('订单详情金额明细优惠展示（T-039 衍生）', () => {
     expect(screen.queryByTestId('order-coupon-row')).toBeNull()
   })
 
+  it('G1/G2：快照含券名/满减名与运费明细时展示人读说明', async () => {
+    await renderDetail({
+      ...baseOrder({
+        total_amount: '200.00',
+        freight_amount: '10.00',
+        pay_amount: '160.00',
+        discount_amount: '50.00',
+        promotion_discount: '20.00',
+        amount_details: {
+          v: 1,
+          goods_amount: '200.00',
+          freight_amount: '10.00',
+          promotion_discount: '20.00',
+          coupon_discount: '30.00',
+          discount_amount: '50.00',
+          pay_amount: '160.00',
+          coupon_snapshot: { id: 1, name: '新人立减券', type: 'fixed', amount: '30.00', min_spend: '100.00', scope: 'all' },
+          promotion_snapshot: { id: 1, name: '年中大促', scope: 'all', rules: [{ min: 100, discount: 20 }], hit_tier: { min: 100, discount: 20 } },
+          freight_detail: {
+            freight_amount: '10.00',
+            free_shipping: false,
+            free_shipping_gap: null,
+            province: '广东省',
+            groups: [{
+              template_id: 3,
+              mode: 'weight',
+              weight_g: 1200,
+              amount: '10.00',
+              source: 'weight',
+              spec: { first_weight_g: 1000, first_fee: '8.00', step_weight_g: 1000, step_fee: '2.00' },
+            }],
+          },
+        },
+      }),
+      logs: logsFor('paid'),
+    })
+
+    expect(screen.getByTestId('order-coupon-row').textContent).toContain('新人立减券')
+    expect(screen.getByTestId('order-promo-row').textContent).toContain('年中大促')
+    expect(screen.getByTestId('order-promo-row').textContent).toContain('满100减20')
+    expect(screen.getByTestId('order-freight-detail').textContent).toContain('模板3')
+    expect(screen.getByTestId('order-freight-detail').textContent).toContain('按重量')
+  })
+
   it('历史订单无 amount_details 时按列回退展示券优惠', async () => {
     await renderDetail({
       ...baseOrder({
