@@ -55,6 +55,7 @@ use App\Http\Controllers\Storefront\AttributeController as StorefrontAttributeCo
 use App\Http\Controllers\Storefront\CouponController as StorefrontCouponController;
 use App\Http\Controllers\Storefront\PromotionController as StorefrontPromotionController;
 use App\Http\Controllers\Storefront\ProductController as StorefrontProductController;
+use App\Http\Controllers\Storefront\SiteController as StorefrontSiteController;
 use App\Http\Controllers\Wms\WmsCallbackController;
 use Illuminate\Support\Facades\Route;
 
@@ -94,6 +95,9 @@ Route::get('/announcements/{id}', [AnnouncementController::class, 'show']);
 
 // 首页广告位（P-HomeBanner，公开无需登录：首页轮播图/中部广告/底部广告消费）
 Route::get('/banners', [HomeBannerController::class, 'index']);
+
+// 站点基础信息（P-SiteConfig，公开无需登录：前端顶栏/登录页/页脚/文档标题消费）
+Route::get('/site/config', [StorefrontSiteController::class, 'show']);
 
 // 运费预估（T-053 Stage 3，公开无需登录：详情页/购物车运费预估；登录后传 address_id 可按省精确计算）
 Route::post('/freight/estimate', [OrderController::class, 'freightPreview'])->middleware('throttle:60,1');
@@ -229,6 +233,8 @@ Route::middleware(['auth:sanctum', 'account.active'])->group(function () {
         // 系统配置 config.manage
         Route::get('/configs', [ConfigController::class, 'index'])->middleware('permission:config.manage');
         Route::put('/configs', [ConfigController::class, 'update'])->middleware('permission:config.manage');
+        // 站点 logo 上传（独立于 /admin/upload，落在 uploads/site 目录）
+        Route::post('/configs/upload', [ConfigController::class, 'upload'])->middleware('permission:config.manage');
 
         // 操作日志 log.view
         Route::get('/operation-logs', [OperationLogController::class, 'index'])->middleware('permission:log.view');

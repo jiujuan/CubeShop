@@ -3,10 +3,12 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
-use App\Models\SysOperationLog;
 use App\Models\SystemConfig;
+use App\Services\Common\FileUploadService;
 use App\Services\Common\OperationLogService;
 use App\Support\ApiResponse;
+use App\Support\ConfigGroup;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
 
@@ -14,24 +16,56 @@ class ConfigController extends Controller
 {
     use ApiResponse;
 
+    /** 站点 logo 上传存放模块（storage/app/public/uploads/site/{Ymd}） */
+    private const SITE_LOGO_MODULE = 'site';
+
     public function __construct(
         private readonly OperationLogService $operationLog,
+        private readonly FileUploadService $uploader,
     ) {}
 
     /**
      * 系统配置列表（API 文档 8.6，权限 config.manage）
      * GET /admin/configs
+     *
+     * 返回按「分组 → 配置键」排序的扁平列表，每项带 group 标签，
+     * 后台据此渲染 Tab（分组真源见 App\Support\ConfigGroup）。
      */
     public function index()
     {
-        $configs = SystemConfig::orderBy('config_key')->get();
+        $configs = SystemConfig::orderBy('config_key')->get()
+            ->map(fn (SystemConfig $c) => [
+                'config_key' => $c->config_key,
+                'config_value' => (string) ($c->config_value ?? ''),
+                'description' => $c->description,
+                'group' => ConfigGroup::labelOf($c->config_key),
+                'updated_at' => $c->updated_at?->format('Y-m-d H:i:s'),
+            ])
+            // 先按 Tab 顺序、再按配置键排序，前端顺序取用即可得到稳定的 Tab 与条目顺序
+            ->sortBy([
+                fn (array $a, array $b) => ConfigGroup::orderOf($a['group']) <=> ConfigGroup::orderOf($b['group']),
+                fn (array $a, array $b) => $a['config_key'] <=> $b['config_key'],
+            ])
+            ->values();
 
-        return $this->success($configs->map(fn (SystemConfig $c) => [
-            'config_key' => $c->config_key,
-            'config_value' => $c->config_value,
-            'description' => $c->description,
-            'updated_at' => $c->updated_at?->format('Y-m-d H:i:s'),
-        ]));
+        return $this->success($configs);
+    }
+
+    /**
+     * 上传站点图片（logo 等，权限 config.manage）
+     * POST /admin/configs/upload  form-data: file
+     *
+     * 独立于 /admin/upload（后者落在 products 目录），此处落在 uploads/site。
+     */
+    public function upload(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'file' => ['required', 'image', 'max:5120'], // 5MB
+        ]);
+
+        $url = $this->uploader->uploadImage($data['file'], self::SITE_LOGO_MODULE);
+
+        return $this->success(['url' => $url], '上传成功');
     }
 
     /**
@@ -43,12 +77,15 @@ class ConfigController extends Controller
         $data = $request->validate([
             'configs' => ['required', 'array', 'min:1'],
             'configs.*.config_key' => ['required', 'string', Rule::exists('system_configs', 'config_key')],
-            'configs.*.config_value' => ['required', 'string', 'max:255'],
+            // present + nullable：允许提交空串以清空配置（如移除已上传的 logo）。
+            // 注意 Laravel 的 ConvertEmptyStringsToNull 会把 '' 转成 null，
+            // 若只写 required/string 则「清空」永远 422；入库时统一归一为 ''。
+            'configs.*.config_value' => ['present', 'nullable', 'string', 'max:255'],
         ]);
 
         foreach ($data['configs'] as $item) {
             SystemConfig::where('config_key', $item['config_key'])
-                ->update(['config_value' => $item['config_value']]);
+                ->update(['config_value' => $item['config_value'] ?? '']);
         }
 
         // 配置缓存失效
