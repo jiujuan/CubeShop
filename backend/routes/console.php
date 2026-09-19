@@ -23,3 +23,6 @@ Schedule::command('coupons:expire')->hourly()->withoutOverlapping();
 
 // 物流轨迹拉取（V1.1 二期 T-045）：每 30 分钟拉取在途运单轨迹；未配置渠道时命令内部安全跳过
 Schedule::command('shipping:pull-traces')->everyThirtyMinutes()->withoutOverlapping();
+
+// WMS 回调幂等登记清理（WMS 计划 P3 / Step 6）：每天 04:20 清理过期登记
+Schedule::command('wms:prune-callbacks')->dailyAt('04:20')->withoutOverlapping();

@@ -203,6 +203,23 @@ class FulfillmentOrderService
     }
 
     /**
+     * WMS 回传仓库异常（缺货/地址不清等）→ 转人工处理（WMS 计划 P3 / F2）。
+     *
+     * 入边见 {@see FulfillmentOrder::TRANSITIONS}（pending_push/pushing/pushed/picking → exception）。
+     * 已是异常态则仅更新原因（重复回传同一条异常消息时保持幂等）。
+     */
+    public function markException(FulfillmentOrder $fo, string $reason): FulfillmentOrder
+    {
+        if ($fo->status === FulfillmentOrder::STATUS_EXCEPTION) {
+            return $this->recordPushFailure($fo, $reason);
+        }
+
+        return $this->transitionTo($fo, FulfillmentOrder::STATUS_EXCEPTION, function (FulfillmentOrder $m) use ($reason) {
+            $m->exception_reason = $reason !== '' ? $reason : null;
+        });
+    }
+
+    /**
      * 回传运单 → 完成订单发货（WMS 计划 P1 / F6，**唯一入口**）。
      *
      * - 订单状态改写入 `OrderService::shipForShipment()`（唯一执行点），本服务不碰 `orders.status`；

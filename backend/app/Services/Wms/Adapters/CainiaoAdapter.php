@@ -132,6 +132,72 @@ class CainiaoAdapter implements WmsAdapter
 
     // ---------------- 退货入库（P4） ----------------
 
+    /**
+     * 单据状态主动查询（WMS 计划 P3 / Step 5，回调丢失补偿）。
+     *
+     * 回执 data 归一：
+     * - `status`：仓方原始状态（SHIPPED / PICKING / …，大写）；
+     * - `packages`：与回传解析器同形的包裹列表（{@see \App\Services\Wms\Callback\CallbackMessageParser}）。
+     */
+    public function queryOutbound(CancelOutboundDto $dto): WmsResult
+    {
+        return $this->guard(function () use ($dto) {
+            $biz = array_filter([
+                'deliveryOrderCode' => $dto->bizNo,
+                'deliveryOrderId' => $dto->wmsOutboundNo,
+                'warehouseCode' => $this->requireCode($this->normalizer->warehouseCode(), '菜鸟仓库编码（warehouse_code）'),
+                'ownerCode' => $this->requireCode($this->normalizer->ownerCode(), '菜鸟货主编码（customer_id）'),
+            ], static fn ($v) => $v !== null && $v !== '');
+
+            $envelope = $this->post('query_outbound', $biz);
+            $outcome = $this->gateway->toResult($envelope, $this->duplicateCodes());
+
+            if (! $outcome->success) {
+                return $outcome;
+            }
+
+            $order = (array) ($envelope['payload']['deliveryOrder'] ?? $envelope['payload'] ?? []);
+
+            return $outcome->with([
+                'request_id' => $envelope['request_id'] ?? null,
+                'biz_no' => $dto->bizNo,
+                'wms_order_no' => $order['deliveryOrderId'] ?? $dto->wmsOutboundNo,
+                'status' => $order['status'] ?? null,
+                'packages' => $this->packagesOf($order),
+            ]);
+        });
+    }
+
+    /**
+     * 从查询回执归一包裹列表（与回传解析器同形，让补偿逻辑零特判复用）。
+     *
+     * @param  array<string, mixed>  $order
+     * @return list<array<string, mixed>>
+     */
+    private function packagesOf(array $order): array
+    {
+        $raw = $order['packages']['package'] ?? $order['packages'] ?? [];
+        $list = is_array($raw) && array_is_list($raw) ? $raw : (is_array($raw) ? [$raw] : []);
+
+        $packages = [];
+        foreach (array_values($list) as $index => $pkg) {
+            if (! is_array($pkg)) {
+                continue;
+            }
+
+            $packages[] = [
+                'carrier_code' => $pkg['logisticsCode'] ?? null,
+                'carrier_name' => $pkg['logisticsName'] ?? null,
+                'tracking_no' => $pkg['expressCode'] ?? null,
+                'weight' => isset($pkg['weight']) && is_numeric($pkg['weight']) ? (string) $pkg['weight'] : null,
+                'items' => [],
+                'sort' => $index,
+            ];
+        }
+
+        return $packages;
+    }
+
     public function createReturnInbound(ReturnInboundDto $dto): WmsResult
     {
         throw WmsUnsupportedException::method('createReturnInbound');

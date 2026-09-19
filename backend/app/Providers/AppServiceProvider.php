@@ -101,6 +101,11 @@ class AppServiceProvider extends ServiceProvider
             return Limit::perMinute(20)->by('coupon|'.($request->user()?->id ?? $request->ip()));
         });
 
+        // WMS 回调入口（WMS 计划 P3 / Step 2）：公开无认证，按 IP 限流防洪水
+        RateLimiter::for('wms-callback', function (Request $request) {
+            return Limit::perMinute(120)->by('wms-callback|'.$request->ip());
+        });
+
         // V1.1 F02 / T-018：业务事件 → 通知监听器（站内信 + 邮件）
         Event::listen(\App\Events\OrderPaid::class, \App\Listeners\SendOrderPaidNotification::class);
         Event::listen(\App\Events\OrderShipped::class, \App\Listeners\SendOrderShippedNotification::class);

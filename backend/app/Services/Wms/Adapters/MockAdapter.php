@@ -87,6 +87,28 @@ class MockAdapter implements WmsAdapter
         ], 200, [], $this->duration());
     }
 
+    /** 主动查询：Mock 固定回「已发货 + 单包裹」（联调回调丢失补偿链路用） */
+    public function queryOutbound(CancelOutboundDto $dto): WmsResult
+    {
+        $this->assertCredentialsForProd();
+
+        return WmsResult::ok([
+            'request_id' => $this->requestId(),
+            'biz_no' => $dto->bizNo,
+            'wms_order_no' => $dto->wmsOutboundNo,
+            'status' => 'SHIPPED',
+            'packages' => [[
+                'carrier_code' => 'OTHER',
+                'carrier_name' => 'Mock 承运商',
+                'tracking_no' => 'MOCK'.$dto->bizNo,
+                'weight' => null,
+                'items' => [],
+                'sort' => 0,
+            ]],
+            'mock' => true,
+        ], 200, [], $this->duration());
+    }
+
     public function createReturnInbound(ReturnInboundDto $dto): WmsResult
     {
         $this->assertCredentialsForProd();

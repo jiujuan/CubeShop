@@ -324,6 +324,37 @@ class OrderController extends Controller
                     'occurred_at' => $t->occurred_at?->format('Y-m-d H:i:s'),
                 ])->all(),
             ])->all(),
+            // WMS 履约只读摘要（WMS 计划 P3 / Step 7：无发货单为 null，前端据此隐藏）
+            'wms_fulfillment' => $this->wmsFulfillmentSummary($order),
         ]);
+    }
+
+    /**
+     * WMS 履约只读摘要（有发货单才返回）。
+     *
+     * @return array<string, mixed>|null
+     */
+    private function wmsFulfillmentSummary(Order $order): ?array
+    {
+        $fo = \App\Models\FulfillmentOrder::query()
+            ->where('order_id', $order->id)
+            ->first();
+
+        if (! $fo) {
+            return null;
+        }
+
+        return [
+            'id' => $fo->id,
+            'outbound_no' => $fo->outbound_no,
+            'status' => $fo->status,
+            'status_label' => $fo->statusLabel(),
+            'warehouse_id' => (int) $fo->warehouse_id,
+            'push_times' => (int) $fo->push_times,
+            'last_push_error' => $fo->last_push_error,
+            'wms_outbound_no' => $fo->wms_outbound_no,
+            'carrier_code' => $fo->carrier_code,
+            'tracking_no' => $fo->tracking_no,
+        ];
     }
 }

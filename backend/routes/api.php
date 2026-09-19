@@ -51,6 +51,7 @@ use App\Http\Controllers\Storefront\AttributeController as StorefrontAttributeCo
 use App\Http\Controllers\Storefront\CouponController as StorefrontCouponController;
 use App\Http\Controllers\Storefront\PromotionController as StorefrontPromotionController;
 use App\Http\Controllers\Storefront\ProductController as StorefrontProductController;
+use App\Http\Controllers\Wms\WmsCallbackController;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -92,6 +93,11 @@ Route::get('/banners', [HomeBannerController::class, 'index']);
 
 // 运费预估（T-053 Stage 3，公开无需登录：详情页/购物车运费预估；登录后传 address_id 可按省精确计算）
 Route::post('/freight/estimate', [OrderController::class, 'freightPreview'])->middleware('throttle:60,1');
+
+// WMS 回传入口（WMS 计划 P3 / F1~F4，公开无认证：验签 + IP 白名单 + 防重放由服务层负责；
+// 命名限流 wms-callback 120 次/分钟防洪水；响应恒 HTTP 200，语义在 flag 字段）
+Route::post('/wms/callback/{provider}', [WmsCallbackController::class, 'handle'])
+    ->middleware('throttle:wms-callback');
 
 // 认证：注册 / 登录 / 验证码 / 重置密码（带限流）
 Route::middleware('throttle:auth')->group(function () {

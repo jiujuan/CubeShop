@@ -55,6 +55,8 @@ return [
                 'create_return_inbound' => env('WMS_CAINIAO_METHOD_CREATE_RETURN', 'taobao.qimen.returnorder.create'),
                 'cancel_return_inbound' => env('WMS_CAINIAO_METHOD_CANCEL_RETURN', 'taobao.qimen.returnorder.cancel'),
                 'query_inventory' => env('WMS_CAINIAO_METHOD_QUERY_INVENTORY', 'taobao.qimen.inventory.query'),
+                // P3：单据状态主动查询（回调丢失补偿）
+                'query_outbound' => env('WMS_CAINIAO_METHOD_QUERY_OUTBOUND', 'taobao.qimen.deliveryorder.query'),
             ],
 
             /*
@@ -106,6 +108,29 @@ return [
     | 注意：**故意不掩 `app_key`**——它标识「用了哪个应用」，排障时需要看；
     | 也故意不掩 `sign`——签名不是凭证，且 `design*` 之类键名会被误伤。
     */
+    /*
+    |--------------------------------------------------------------------------
+    | 回调接收（WMS 计划 P3 / Step 2）
+    |--------------------------------------------------------------------------
+    */
+    'callback' => [
+        // 允许的 provider（路由白名单，未知 provider 直接拒绝）
+        'providers' => ['cainiao'],
+
+        /*
+         | 回调来源 IP 白名单（逗号分隔 env）。
+         | **空 = 不限制**（沙箱联调时对方出口 IP 不固定）；生产环境强烈建议配置奇门网关出口段。
+         | 注意：白名单是纵深防御的第二层，第一层永远是签名验签——不可只配 IP 不验签。
+         */
+        'ip_whitelist' => array_values(array_filter(explode(',', (string) env('WMS_CALLBACK_IP_WHITELIST', '')))),
+
+        // 同一条原始报文的防重放窗口（秒）：窗口内重复推送直接按 success 吞掉
+        'replay_ttl' => (int) env('WMS_CALLBACK_REPLAY_TTL', 600),
+
+        // wms_callback_dedups 清理保留天数（wms:prune-callbacks 调度用）
+        'prune_days' => (int) env('WMS_CALLBACK_PRUNE_DAYS', 90),
+    ],
+
     'mask' => [
         'keywords' => [
             'appsecret', 'secret', 'accesstoken', 'refreshtoken',

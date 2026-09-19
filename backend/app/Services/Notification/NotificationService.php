@@ -31,6 +31,9 @@ class NotificationService
     public const TYPE_CS_TICKET_REPLY = 'cs_ticket_reply';
     public const TYPE_CS_TICKET_STATUS = 'cs_ticket_status';
 
+    // WMS 回传告警（WMS 计划 P3 / F4：单据不存在、消息类型未知、仓库异常等）
+    public const TYPE_WMS_ALERT = 'wms_alert';
+
     public function __construct(private ConfigService $config)
     {
     }

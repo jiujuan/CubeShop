@@ -40,6 +40,14 @@ interface WmsAdapter
      */
     public function cancelOutbound(CancelOutboundDto $dto): WmsResult;
 
+    /**
+     * 主动查询单据状态（WMS 计划 P3 / Step 5，回调丢失补偿）
+     *
+     * 复用 {@see CancelOutboundDto}：两者都是「按平台单号 + 仓方单号定位出库单」。
+     * 成功时 data 含 `status`（如 SHIPPED）与包裹/运单信息（各服务商结构，见实现）。
+     */
+    public function queryOutbound(CancelOutboundDto $dto): WmsResult;
+
     /** 创建退货入库单（P4） */
     public function createReturnInbound(ReturnInboundDto $dto): WmsResult;
 
