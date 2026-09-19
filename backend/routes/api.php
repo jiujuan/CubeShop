@@ -4,6 +4,7 @@ use App\Http\Controllers\AddressController;
 use App\Http\Controllers\Admin\AttributeController as AdminAttributeController;
 use App\Http\Controllers\Admin\BrandController;
 use App\Http\Controllers\Admin\CategoryAttributeController;
+use App\Http\Controllers\Admin\CategoryBrandController;
 use App\Http\Controllers\Admin\CategoryController;
 use App\Http\Controllers\Admin\AddressController as AdminAddressController;
 use App\Http\Controllers\Admin\AccountController as AdminAccountController;
@@ -263,6 +264,10 @@ Route::middleware(['auth:sanctum', 'account.active'])->group(function () {
         // 分类属性模板（V1.1 E01 / T-008）权限 product.update
         Route::get('/categories/{categoryId}/attributes', [CategoryAttributeController::class, 'show'])->middleware('permission:product.view');
         Route::put('/categories/{categoryId}/attributes', [CategoryAttributeController::class, 'update'])->middleware('permission:product.update');
+
+        // 分类可选品牌（分类 ↔ 品牌 多对多，2026-09-19）权限 product.update
+        Route::get('/categories/{categoryId}/brands', [CategoryBrandController::class, 'show'])->middleware('permission:product.view');
+        Route::put('/categories/{categoryId}/brands', [CategoryBrandController::class, 'update'])->middleware('permission:product.update');
 
         // 数据概览 dashboard.view（API 文档 8.5 / Roadmap P6）
         Route::get('/dashboard', [DashboardController::class, 'index'])->middleware('permission:dashboard.view');

@@ -7,6 +7,7 @@ use App\Models\Attribute;
 use App\Models\AttributeValue;
 use App\Models\Brand;
 use App\Models\CategoryAttribute;
+use App\Models\CategoryBrand;
 use App\Support\ApiResponse;
 use App\Support\PublicId;
 use Illuminate\Http\JsonResponse;
@@ -87,9 +88,37 @@ class AttributeController extends Controller
         return $this->success($list);
     }
 
-    /** 品牌列表（在售品牌；P2-11：对外只暴露 public_id） */
-    public function brands(): JsonResponse
+    /**
+     * 品牌列表（在售品牌；P2-11：对外只暴露 public_id）
+     *
+     * 传 category_id：只返回后台为该分类配置的品牌（category_brands，按配置排序）；
+     * 该分类未配置品牌则返回空数组。
+     * 品牌与分类是两个**正交**维度、互不隶属，此处过滤仅用于前台按分类收敛品牌范围。
+     */
+    public function brands(Request $request): JsonResponse
     {
+        $data = $request->validate([
+            'category_id' => ['nullable'],
+        ]);
+
+        // P2-11：category_id 接受 public_id 或历史 int 主键
+        $categoryId = isset($data['category_id']) && $data['category_id'] !== ''
+            ? PublicId::resolve(PublicId::SCOPE_CATEGORY, $data['category_id'])
+            : null;
+
+        if ($categoryId !== null) {
+            $list = CategoryBrand::with('brand')
+                ->where('category_id', $categoryId)
+                ->orderByDesc('sort')->orderBy('id')
+                ->get()
+                ->map(fn (CategoryBrand $row) => $row->brand)
+                ->filter(fn (?Brand $b) => $b !== null && (int) $b->status === 1)
+                ->map(fn (Brand $b) => ['id' => $b->public_id, 'name' => $b->name, 'logo' => $b->logo])
+                ->values();
+
+            return $this->success($list);
+        }
+
         $list = Brand::query()
             ->enabled()
             ->orderByDesc('sort')->orderBy('id')
