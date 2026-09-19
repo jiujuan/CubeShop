@@ -19,13 +19,14 @@ class WmsApiLog extends Model
 
     protected $fillable = [
         'direction', 'provider', 'api_name', 'request_id', 'biz_no',
-        'request_body', 'response_body', 'http_status', 'success', 'error_msg', 'created_at',
+        'request_body', 'response_body', 'http_status', 'duration_ms', 'success', 'error_msg', 'created_at',
     ];
 
     protected $casts = [
         'request_body' => 'array',
         'response_body' => 'array',
         'http_status' => 'integer',
+        'duration_ms' => 'integer',
         'success' => 'boolean',
         'created_at' => 'datetime',
     ];

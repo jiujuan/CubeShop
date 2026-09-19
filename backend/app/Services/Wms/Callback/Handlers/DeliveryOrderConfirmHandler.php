@@ -53,16 +53,22 @@ class DeliveryOrderConfirmHandler implements CallbackHandler
         $carrierCode = (string) ($first['carrier_code'] ?? '');
         $carrierName = (string) ($first['carrier_name'] ?? $carrierCode);
 
-        // 实发数量：回传带 items 时按 platform_sku_code 归集，未带的行由 markShipped 默认全量
+        /*
+         * 实发数量：跨**全部包裹**按 platform_sku_code 归集，未带 items 的行由 markShipped 默认全量。
+         *
+         * ⚠️ P7 联调发现项（D-P7-2）：原实现只读首包裹的 items，一单多包裹且货品分散时
+         * 会**少算**实发数量（例如 3 件拆 2 个包裹 → 只记 2 件），进而影响退货可退数量
+         * 与对账口径。改为逐包裹累加；包裹全无 items 时 shippedQty 仍为空，保留「默认全量」语义。
+         */
         $shippedQty = [];
-        $items = (array) ($first['items'] ?? []);
-        if ($items !== []) {
-            $byPlatformCode = $fo->items()->get()->keyBy('platform_sku_code');
-            foreach ($items as $row) {
+        $byPlatformCode = $fo->items()->get()->keyBy('platform_sku_code');
+        foreach ($packages as $package) {
+            foreach ((array) ($package['items'] ?? []) as $row) {
                 $code = (string) ($row['platform_sku_code'] ?? '');
                 $qty = (int) ($row['quantity'] ?? 0);
                 if ($code !== '' && $qty > 0 && isset($byPlatformCode[$code])) {
-                    $shippedQty[(int) $byPlatformCode[$code]->sku_id] = $qty;
+                    $skuId = (int) $byPlatformCode[$code]->sku_id;
+                    $shippedQty[$skuId] = ($shippedQty[$skuId] ?? 0) + $qty;
                 }
             }
         }

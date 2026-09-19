@@ -5,6 +5,7 @@ namespace App\Jobs\Wms;
 use App\Exceptions\BusinessException;
 use App\Models\FulfillmentOrder;
 use App\Models\WmsConfig;
+use App\Models\WmsSkuMapping;
 use App\Services\Wms\Dto\OutboundDto;
 use App\Services\Wms\Dto\WmsResult;
 use App\Services\Wms\FulfillmentOrderService;
@@ -98,6 +99,12 @@ class PushOutboundJob implements ShouldQueue
         $requestId = $fo->push_request_id ?: (string) Str::uuid();
         $fo = $fulfillments->markPushing($fo, $requestId);
 
+        // 推送前按最新映射重算 SKU 货品编码（P7 联调发现项）：
+        // 发货单建单时若缺映射会转异常并落空编码，补映射后重推必须重新解析，
+        // 否则永远卡在「缺编码」无法修复。resolvedSkuCode 缺失会抛 BusinessException，
+        // 由下方 catch 转 push_failed——这是「映射仍未配齐」的正确终局。
+        $this->refreshItemCodes($fo, $config, $configs);
+
         $dto = $this->buildDto($fo, $config);
 
         $started = microtime(true);
@@ -185,6 +192,33 @@ class PushOutboundJob implements ShouldQueue
             district: $buyer['district'] ?? null,
             detailAddress: $buyer['detail_address'] ?? null,
         );
+    }
+
+    /**
+     * 推送前按最新映射重算每个 item 的 WMS 货品编码与条码。
+     *
+     * 发货单建单时若缺映射会转异常并落空编码；补映射后重推必须重新解析，否则永远卡死。
+     * resolvedSkuCode 缺失（映射仍未配齐）会抛 BusinessException，由 handle 的 catch 转 push_failed。
+     */
+    private function refreshItemCodes(FulfillmentOrder $fo, WmsConfig $config, WmsConfigService $configs): void
+    {
+        foreach ($fo->items as $item) {
+            if (! $item->sku_id) {
+                continue;
+            }
+
+            $wmsCode = $configs->resolveSkuCode($config, (int) $item->sku_id);
+            $barcode = WmsSkuMapping::where('warehouse_id', $config->warehouse_id)
+                ->where('sku_id', (int) $item->sku_id)
+                ->where('status', 1)
+                ->value('barcode');
+
+            if ($item->wms_sku_code !== $wmsCode || $item->barcode !== $barcode) {
+                $item->forceFill(['wms_sku_code' => $wmsCode, 'barcode' => $barcode])->save();
+            }
+        }
+
+        $fo->load('items');
     }
 
     /** 从回执里取 WMS 侧单号（不同服务商字段名不同，这里做一次归一） */

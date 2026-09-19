@@ -47,6 +47,9 @@ class WmsApiLogService
                 // raw 里含对方完整回执（可能有收件人手机号），一并脱敏
                 'response_body' => $this->masker->mask($result->toArray() + ['raw' => $result->raw]),
                 'http_status' => $result->httpStatus,
+                // P7 联调发现项（D-P7-3）：本参数此前收了却没落库（表里也没这列），
+                // 现在列已补齐，出站/入站统一按毫秒记录，性能基线与排障都靠它。
+                'duration_ms' => $durationMs,
                 'success' => $result->success,
                 'error_msg' => $result->error,
                 'created_at' => now(),
