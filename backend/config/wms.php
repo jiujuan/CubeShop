@@ -132,6 +132,60 @@ return [
         'prune_days' => (int) env('WMS_CALLBACK_PRUNE_DAYS', 90),
     ],
 
+    /*
+    |--------------------------------------------------------------------------
+    | 库存同步与对账（WMS 计划 P5 / F2～F4）
+    |--------------------------------------------------------------------------
+    | ⚠️ 默认**不自动改平台可售库存**：WMS 侧数据可能脏（在途未回传、盘点未同步），
+    | 直接覆盖会造成超卖。差异只写 `wms_inventory_diffs` 交人工，
+    | 只有显式 `--apply` / 后台「按 WMS 校准」才动库存。
+    */
+    'inventory' => [
+        // 单批查询的 SKU 数（分页拉取，避免一次拉爆对方配额与本地内存）
+        'page_size' => (int) env('WMS_INVENTORY_PAGE_SIZE', 100),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | 定时任务开关（WMS 计划 P5 / F6、§4.2）
+    |--------------------------------------------------------------------------
+    | 总开关 `enabled` 关掉后所有 WMS 调度都不注册；单项开关可单独停某一路。
+    | 本地开发不想被定时任务打扰时 `WMS_SCHEDULE_ENABLED=false` 即可。
+    */
+    'schedule' => [
+        'enabled' => (bool) env('WMS_SCHEDULE_ENABLED', true),
+        'sync_inventory' => (bool) env('WMS_SCHEDULE_SYNC_INVENTORY', true),
+        'reconcile' => (bool) env('WMS_SCHEDULE_RECONCILE', true),
+        'prune_logs' => (bool) env('WMS_SCHEDULE_PRUNE_LOGS', true),
+        'health_check' => (bool) env('WMS_SCHEDULE_HEALTH_CHECK', true),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | 健康巡检阈值（WMS 计划 P5 / F5）
+    |--------------------------------------------------------------------------
+    */
+    'health' => [
+        // 卡在 pushing 超过该分钟数视为异常（正常推送应在秒级完成）
+        'pushing_timeout_minutes' => (int) env('WMS_HEALTH_PUSHING_TIMEOUT', 30),
+        // 回调/接口失败率超过该比例告警（近 24 小时 wms_api_logs 统计）
+        'fail_rate' => (float) env('WMS_HEALTH_FAIL_RATE', 0.2),
+        // 队列积压条数阈值（database 驱动的 jobs 表）
+        'queue_backlog' => (int) env('WMS_HEALTH_QUEUE_BACKLOG', 500),
+        // 统计窗口（小时）
+        'window_hours' => (int) env('WMS_HEALTH_WINDOW_HOURS', 24),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | 报文日志保留（WMS 计划 P5 / F7）
+    |--------------------------------------------------------------------------
+    | `wms_api_logs` 保留 ≥90 天供排障；清理只删整行，脱敏规则不变（见 mask）。
+    */
+    'logs' => [
+        'prune_days' => (int) env('WMS_API_LOG_PRUNE_DAYS', 90),
+    ],
+
     'mask' => [
         'keywords' => [
             'appsecret', 'secret', 'accesstoken', 'refreshtoken',

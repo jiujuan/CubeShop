@@ -26,3 +26,12 @@ Schedule::command('shipping:pull-traces')->everyThirtyMinutes()->withoutOverlapp
 
 // WMS 回调幂等登记清理（WMS 计划 P3 / Step 6）：每天 04:20 清理过期登记
 Schedule::command('wms:prune-callbacks')->dailyAt('04:20')->withoutOverlapping();
+
+/*
+ | WMS 库存同步 / 对账 / 日志清理 / 健康巡检（WMS 计划 P5）
+ |
+ | ⚠️ 全部受 `config('wms.schedule.*')` 开关控制：总开关 WMS_SCHEDULE_ENABLED=false
+ | 即整体不注册（本地开发不被打扰），单项 env 可只停某一路。
+ | 开关判定与频率见 {@see \App\Console\WmsScheduler}。
+ */
+(new \App\Console\WmsScheduler)(Schedule::getFacadeRoot());

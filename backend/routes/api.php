@@ -30,6 +30,7 @@ use App\Http\Controllers\Admin\UploadController;
 use App\Http\Controllers\Admin\UserController;
 use App\Http\Controllers\Admin\WmsConfigController;
 use App\Http\Controllers\Admin\WmsFulfillmentController;
+use App\Http\Controllers\Admin\WmsInventoryController;
 use App\Http\Controllers\Admin\WmsReturnInboundController;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\AnnouncementController;
@@ -389,6 +390,18 @@ Route::middleware(['auth:sanctum', 'account.active'])->group(function () {
             ->middleware('permission:wms.return.manage');
         Route::post('/wms/return-inbound-orders/{id}/manual-received', [WmsReturnInboundController::class, 'manualReceived'])
             ->middleware('permission:wms.return.manage');
+
+        // WMS 库存同步 / 对账 / 健康巡检（WMS 计划 P5 / Step 5）：权限 wms.config.manage
+        Route::get('/wms/inventory/snapshots', [WmsInventoryController::class, 'snapshots'])
+            ->middleware('permission:wms.config.manage');
+        Route::get('/wms/inventory/diffs', [WmsInventoryController::class, 'diffs'])
+            ->middleware('permission:wms.config.manage');
+        Route::post('/wms/inventory/diffs/{id}/resolve', [WmsInventoryController::class, 'resolve'])
+            ->middleware('permission:wms.config.manage');
+        Route::post('/wms/inventory/sync', [WmsInventoryController::class, 'sync'])
+            ->middleware('permission:wms.config.manage');
+        Route::get('/wms/health', [WmsInventoryController::class, 'health'])
+            ->middleware('permission:wms.config.manage');
 
         // 评价管理 review.manage（V1.1 F01 / T-017）
         Route::post('/reviews/audit-mode', [AdminReviewController::class, 'updateAuditMode'])->middleware('permission:config.manage');
