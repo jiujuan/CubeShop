@@ -7,6 +7,7 @@ import { getAnnouncements, type AnnouncementListItem } from '@/api/announcement'
 import NotificationBell from '@/components/NotificationBell.vue'
 import { useAuthStore } from '@/stores/auth'
 import { useCartStore } from '@/stores/cart'
+import { useSiteStore } from '@/stores/site'
 
 /**
  * 顶栏（按原型：公告条 + logo/搜索/购物车 + 分类导航）
@@ -21,6 +22,8 @@ const router = useRouter()
 const route = useRoute()
 const auth = useAuthStore()
 const cart = useCartStore()
+/** 站点名称与大小 logo（后台「系统设置 → 站点信息」可改，改完刷新即生效） */
+const site = useSiteStore()
 const keyword = ref('')
 const categories = ref<CategoryNode[]>([])
 /** 角标数量来自 cart store（单一真源）：加购/改数量/删除后各处自动同步 */
@@ -129,11 +132,36 @@ async function handleLogout() {
     <!-- 主头部 -->
     <div class="mx-auto flex h-16 max-w-6xl items-center gap-3 px-3 lg:gap-8 lg:px-6">
       <RouterLink to="/" class="flex shrink-0 items-center gap-2">
-        <span class="flex h-9 w-9 items-center justify-center rounded-lg bg-[#1677ff]">
-          <Package class="h-5 w-5 text-white" />
+        <!-- 移动端（< sm）：小 logo，未配置时回落大 logo，再回落内置图标 -->
+        <span class="flex shrink-0 items-center sm:hidden">
+          <img
+            v-if="site.mobileLogo"
+            :src="site.mobileLogo"
+            alt="站点 logo"
+            class="h-9 w-9 object-contain"
+            data-testid="site-logo-small"
+          />
+          <span v-else class="flex h-9 w-9 items-center justify-center rounded-lg bg-[#1677ff]">
+            <Package class="h-5 w-5 text-white" />
+          </span>
         </span>
-        <span class="hidden sm:block">
-          <span class="block text-xl font-bold leading-5 text-slate-800">CubeShop</span>
+
+        <!-- 桌面端（≥ sm）：大 logo，未配置时回落内置图标 -->
+        <span class="hidden shrink-0 items-center sm:flex">
+          <img
+            v-if="site.logo"
+            :src="site.logo"
+            alt="站点 logo"
+            class="h-9 object-contain"
+            data-testid="site-logo"
+          />
+          <span v-else class="flex h-9 w-9 items-center justify-center rounded-lg bg-[#1677ff]">
+            <Package class="h-5 w-5 text-white" />
+          </span>
+        </span>
+
+        <span class="hidden sm:block" data-testid="site-name-block">
+          <span class="block text-xl font-bold leading-5 text-slate-800">{{ site.name }}</span>
           <span class="hidden text-[11px] text-slate-400 lg:block">品质好物 · 购物无忧</span>
         </span>
       </RouterLink>

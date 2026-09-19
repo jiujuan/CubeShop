@@ -1,5 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
+import { setTitleBase } from '@/stores/site'
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -213,7 +214,8 @@ router.beforeEach((to) => {
 })
 
 router.afterEach((to) => {
-  document.title = (to.meta.title as string) ?? 'CubeShop'
+  // meta.title 里的品牌名统一写作占位符 CubeShop，运行时按后台配置的站点名替换
+  setTitleBase((to.meta.title as string) ?? undefined)
 })
 
 export default router

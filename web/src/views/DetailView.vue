@@ -10,6 +10,7 @@ import { couponConditionText, couponValueText } from '@/utils/coupon'
 import { hashIndex } from '@/utils/id'
 import { useAuthStore } from '@/stores/auth'
 import { useCartStore } from '@/stores/cart'
+import { useSiteStore } from '@/stores/site'
 import ShopFooter from '@/components/ShopFooter.vue'
 import ShopHeader from '@/components/ShopHeader.vue'
 import LoadingSpinner from '@/components/LoadingSpinner.vue'
@@ -206,6 +207,8 @@ function pickSpec(dim: string, value: string) {
 
 const auth = useAuthStore()
 const cart = useCartStore()
+/** 站点名（商品无副标题时用于生成兜底文案） */
+const site = useSiteStore()
 
 /** 加入购物车：未登录跳登录（带回跳）；库存不足/规格未选给出明确提示 */
 const cartTip = ref('')
@@ -290,7 +293,7 @@ const emojiByIndex = ['👕', '🎧', '🥤', '⌨️', '👟', '🧴', '💻', 
           <!-- 右：信息 -->
           <div class="min-w-0 flex-1">
             <h1 class="text-2xl font-bold text-slate-800">{{ product.title }}</h1>
-            <p class="mt-1 text-sm text-slate-400">{{ product.subtitle || '品质好物 · CubeShop 精选' }}</p>
+            <p class="mt-1 text-sm text-slate-400">{{ product.subtitle || `品质好物 · ${site.name} 精选` }}</p>
 
             <!-- 价格 -->
             <div class="mt-5 rounded-xl bg-gradient-to-r from-[#fff1f0] to-[#fff7f0] px-5 py-4">

@@ -4,10 +4,18 @@ import App from './App.vue'
 import router from './router'
 import { ApiBusinessError } from './api/request'
 import { useAuthStore } from './stores/auth'
+import { useSiteStore } from './stores/site'
 import './style.css'
 
 const pinia = createPinia()
 createApp(App).use(pinia).use(router).mount('#app')
+
+/**
+ * 站点品牌信息（名称 / 大小 logo）。
+ * store 初始化时已从 localStorage 同步水合，这里只做一次回源刷新，
+ * 不阻塞挂载——刷新页面时顶栏立即是上次的品牌，回源后再对齐后台最新配置。
+ */
+useSiteStore(pinia).load()
 
 /**
  * 回填登录用户信息。

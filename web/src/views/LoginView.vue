@@ -5,6 +5,7 @@ import { Eye, EyeOff, Lock, Package, UserRound } from 'lucide-vue-next'
 import { getCaptcha, login, type Captcha } from '@/api/auth'
 import { ApiBusinessError } from '@/api/request'
 import { useAuthStore } from '@/stores/auth'
+import { useSiteStore } from '@/stores/site'
 
 /**
  * 用户端登录页（与管理端同风格：蓝色系）
@@ -12,6 +13,7 @@ import { useAuthStore } from '@/stores/auth'
 const route = useRoute()
 const router = useRouter()
 const auth = useAuthStore()
+const site = useSiteStore()
 
 const username = ref('')
 const password = ref('')
@@ -74,11 +76,18 @@ async function submit() {
 <template>
   <div class="flex min-h-screen flex-col items-center justify-center bg-gradient-to-b from-[#e6f4ff] via-[#f5faff] to-white px-4">
     <div class="mb-6 flex items-center gap-3">
-      <span class="flex h-12 w-12 items-center justify-center rounded-xl bg-[#1677ff]">
+      <img
+        v-if="site.brandLogo"
+        :src="site.brandLogo"
+        alt="站点 logo"
+        class="h-12 object-contain"
+        data-testid="login-site-logo"
+      />
+      <span v-else class="flex h-12 w-12 items-center justify-center rounded-xl bg-[#1677ff]">
         <Package class="h-7 w-7 text-white" />
       </span>
       <div>
-        <div class="text-2xl font-bold text-slate-800">CubeShop</div>
+        <div class="text-2xl font-bold text-slate-800">{{ site.name }}</div>
         <div class="text-xs text-slate-400">品质好物 · 购物无</div>
       </div>
     </div>

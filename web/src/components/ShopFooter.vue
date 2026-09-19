@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import { CircleHelp, Info, Phone } from 'lucide-vue-next'
+import { useSiteStore } from '@/stores/site'
 
 /** 页脚（按新版原型：三项服务入口 + 版权） */
+const site = useSiteStore()
 const links = [
   { icon: Info, label: '关于我们' },
   { icon: CircleHelp, label: '帮助中心' },
@@ -16,6 +18,6 @@ const links = [
         <component :is="l.icon" class="h-3.5 w-3.5" /> {{ l.label }}
       </span>
     </div>
-    <div>© 2024 CubeShop 版权所有 京ICP备 12345678号-1</div>
+    <div>© 2024 {{ site.name }} 版权所有 京ICP备 12345678号-1</div>
   </footer>
 </template>

@@ -99,9 +99,16 @@ describe('ShopHeader 移动端适配（P1 回归）', () => {
   it('logo 文字块与副标语在窄屏隐藏', async () => {
     const { container } = await mountHeader()
 
-    const textBlock = container.querySelector('header a[href="/"] span.hidden')
+    // logo 区改为「移动端小 logo / 桌面端大 logo」两套容器后，
+    // 「首个 span.hidden」不再是文字块，故按 testid 精确定位
+    const textBlock = container.querySelector('[data-testid="site-name-block"]')
     expect(textBlock).not.toBeNull()
+    expect(textBlock!.className).toContain('hidden')
     expect(textBlock!.className).toContain('sm:block')
+
+    const slogan = textBlock!.querySelector('span.hidden')
+    expect(slogan).not.toBeNull()
+    expect(slogan!.className).toContain('lg:block')
   })
 
   it('分类下拉只在 ≥lg 渲染（移动端滚动容器会裁剪绝对定位面板）', async () => {
