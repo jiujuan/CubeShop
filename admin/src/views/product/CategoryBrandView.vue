@@ -67,11 +67,6 @@ function isChecked(id: number) {
   return id in selected.value
 }
 
-/** 取已选配置（模板中已用 isChecked 保证存在） */
-function sortOf(id: number) {
-  return selected.value[id]!
-}
-
 function toggle(id: number) {
   const next = { ...selected.value }
   if (id in next) delete next[id]
@@ -147,8 +142,12 @@ async function save() {
               </td>
               <td class="px-3 py-2">
                 <input
-                  v-if="isChecked(brand.id)" v-model.number="sortOf(brand.id)" type="number"
+                  v-if="isChecked(brand.id)"
+                  :value="selected[brand.id]"
+                  type="number"
                   class="w-16 rounded-md border border-slate-300 px-2 py-1 outline-none focus:border-[#1677ff]"
+                  :data-testid="`cb-sort-${brand.id}`"
+                  @input="selected[brand.id] = Number(($event.target as HTMLInputElement).value) || 0"
                 />
                 <span v-else class="text-slate-300">-</span>
               </td>
