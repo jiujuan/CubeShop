@@ -290,6 +290,19 @@ CB4_PAYLOAD="{\"method\":\"taobao.qimen.returnorder.confirm\",\"timestamp\":\"20
 CB4=$(CB_CALL "$CB4_PAYLOAD")
 [ "$(echo "$CB4" | jpath flag)" = "success" ] && ok "退货收货回传 success（P4）" || bad "退货回传: $CB4"
 
+echo "--- 5k. WMS 库存同步与巡检（P5：快照/差异/健康接口）"
+# 健康接口（配置缺失时为 warning，接口本身应 200 且返回 6 项检查）
+HEALTH=$(req GET /admin/wms/health "$ATOK")
+[ "$(echo "$HEALTH" | jpath code)" = "0" ] && ok "健康巡检接口" || bad "健康接口: $(echo "$HEALTH" | head -c 160)"
+
+# 库存快照列表（默认无数据也应 200）
+SNAP=$(req GET /admin/wms/inventory/snapshots "$ATOK")
+[ "$(echo "$SNAP" | jpath code)" = "0" ] && ok "库存快照列表" || bad "快照列表: $(echo "$SNAP" | head -c 160)"
+
+# 差异列表（P5 对账产出，此处只验证可读）
+DIFFS=$(req GET /admin/wms/inventory/diffs "$ATOK")
+[ "$(echo "$DIFFS" | jpath code)" = "0" ] && ok "库存差异列表" || bad "差异列表: $(echo "$DIFFS" | head -c 160)"
+
 echo "--- 6. 退出登录"
 OUT=$(req POST /auth/logout "$TOKEN" '')
 [ "$(echo "$OUT" | jpath code)" = "0" ] && ok "退出登录" || bad "退出: $(echo "$OUT" | head -c 80)"
