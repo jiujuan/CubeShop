@@ -33,8 +33,9 @@ use App\Support\WmsProvider;
  * 2. **绝不静默假成功**：配置缺失（网关地址、AppKey/AppSecret、仓库/货主编码、
  *    收件人必要信息）一律 fail-fast 抛 `BusinessException`——这类问题重试无意义，
  *    必须让运营看见并修数据；
- * 3. **退货入库不假装支持**：`createReturnInbound` / `cancelReturnInbound` 抛
- *    `WmsUnsupportedException`（P4 补齐），而不是返回一个空的成功。
+ * 3. **退货入库不假装成功**：`createReturnInbound` / `cancelReturnInbound`（P4 落地）
+ *    报文按 §7.4/§7.5 组装；「单据已存在」幂等成功、缺配置缺映射 fail-fast，
+ *    绝不返回一个空的成功。
  */
 class CainiaoAdapter implements WmsAdapter
 {
@@ -130,7 +131,110 @@ class CainiaoAdapter implements WmsAdapter
         });
     }
 
-    // ---------------- 退货入库（P4） ----------------
+    // ---------------- 退货入库（WMS 计划 P4 / 设计文档 §7.4、§7.5） ----------------
+
+    /**
+     * 创建退货入库单（`returnorder.create`）。
+     *
+     * 报文要点（§7.4）：
+     * - `returnOrderCode` = 平台 `inbound_no`（全局唯一，幂等键）；
+     * - `preDeliveryOrderCode` = 原订单号（关联原出库）；
+     * - `orderLines` 与 `returnOrder` **平级**（与 deliveryorder.create 同构的信封形状）。
+     *
+     * 响应 `returnOrderId` → 平台 `wms_inbound_no`；「单据已存在」按幂等成功。
+     */
+    public function createReturnInbound(ReturnInboundDto $dto): WmsResult
+    {
+        return $this->guard(function () use ($dto) {
+            $ownerCode = $this->requireCode($this->normalizer->ownerCode(), '菜鸟货主编码（customer_id）');
+            $warehouseCode = $this->requireCode($this->normalizer->warehouseCode(), '菜鸟仓库编码（warehouse_code）');
+
+            $lines = [];
+            foreach (array_values($dto->items) as $index => $item) {
+                $itemCode = trim((string) ($item['wms_sku_code'] ?? ''));
+                if ($itemCode === '') {
+                    throw BusinessException::badRequest('退货入库单存在缺少 WMS 货品编码的明细行，已拒绝推送');
+                }
+
+                $qty = (int) ($item['quantity'] ?? 0);
+                if ($qty <= 0) {
+                    throw BusinessException::badRequest("退货入库单明细数量必须大于 0（货品：{$itemCode}）");
+                }
+
+                $lines[] = array_filter([
+                    'orderLineNo' => $this->normalizer->orderLineNo($index),
+                    'sourceOrderCode' => $dto->orderNo,
+                    'ownerCode' => $ownerCode,
+                    'itemCode' => $itemCode,
+                    'itemName' => isset($item['product_name']) ? trim((string) $item['product_name']) : null,
+                    'planQty' => $qty,
+                    'barCode' => isset($item['barcode']) ? trim((string) $item['barcode']) : null,
+                ], static fn ($v) => $v !== null && $v !== '');
+            }
+
+            if ($lines === []) {
+                throw BusinessException::badRequest('退货入库单没有可推送的明细行，已拒绝推送');
+            }
+
+            $biz = [
+                'returnOrder' => array_filter([
+                    'returnOrderCode' => $dto->bizNo,
+                    'preDeliveryOrderCode' => $dto->orderNo,
+                    'warehouseCode' => $warehouseCode,
+                    'ownerCode' => $ownerCode,
+                    'returnReason' => $dto->returnReason !== null ? trim($dto->returnReason) : null,
+                    'remark' => $dto->remark !== null ? trim($dto->remark) : null,
+                ], static fn ($v) => $v !== null && $v !== '' && $v !== []),
+                'orderLines' => ['orderLine' => $lines],
+            ];
+
+            $envelope = $this->post('create_return_inbound', $biz);
+            $outcome = $this->gateway->toResult($envelope, $this->duplicateCodes());
+            $payload = (array) ($envelope['payload'] ?? []);
+
+            return $outcome->with([
+                'request_id' => $envelope['request_id'] ?? null,
+                'biz_no' => $dto->bizNo,
+                // 归一 WMS 单号：奇门叫 returnOrderId，平台统一记 wms_inbound_no
+                'wms_order_no' => $this->firstString($payload, ['returnOrderId', 'returnOrderCode']),
+                'idempotent' => $outcome->idempotent,
+                'payload' => $payload,
+            ]);
+        });
+    }
+
+    /**
+     * 取消退货入库单（`returnorder.cancel`，收货前才允许）。
+     *
+     * 仓方以「已收货/状态不允许」拒绝时抛 {@see WmsBizException}（业务终局），
+     * 由上层按「需人工介入」处理——本地可能已收货完成，撤单失败必须被看见。
+     */
+    public function cancelReturnInbound(string $bizNo): WmsResult
+    {
+        return $this->guard(function () use ($bizNo) {
+            $biz = array_filter([
+                'returnOrderCode' => $bizNo,
+                'warehouseCode' => $this->requireCode($this->normalizer->warehouseCode(), '菜鸟仓库编码（warehouse_code）'),
+                'ownerCode' => $this->requireCode($this->normalizer->ownerCode(), '菜鸟货主编码（customer_id）'),
+            ], static fn ($v) => $v !== null && $v !== '');
+
+            $envelope = $this->post('cancel_return_inbound', $biz);
+            $outcome = $this->gateway->toResult($envelope, $this->duplicateCodes());
+            $code = $envelope['code'] ?? null;
+
+            // 「单据状态不允许取消」（已收货/已入库）是业务终局而非故障
+            if (! $outcome->success && ! $outcome->retryable && $this->looksLikeNotCancellable($code)) {
+                throw new WmsBizException((string) $outcome->error, (string) $code, (array) ($envelope['payload'] ?? []));
+            }
+
+            return $outcome->with([
+                'request_id' => $envelope['request_id'] ?? null,
+                'biz_no' => $bizNo,
+                'status' => $outcome->success ? 'cancelled' : null,
+                'payload' => $envelope['payload'] ?? [],
+            ]);
+        });
+    }
 
     /**
      * 单据状态主动查询（WMS 计划 P3 / Step 5，回调丢失补偿）。
@@ -196,16 +300,6 @@ class CainiaoAdapter implements WmsAdapter
         }
 
         return $packages;
-    }
-
-    public function createReturnInbound(ReturnInboundDto $dto): WmsResult
-    {
-        throw WmsUnsupportedException::method('createReturnInbound');
-    }
-
-    public function cancelReturnInbound(string $bizNo): WmsResult
-    {
-        throw WmsUnsupportedException::method('cancelReturnInbound');
     }
 
     // ---------------- 报文组装 ----------------

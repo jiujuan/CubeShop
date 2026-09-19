@@ -335,6 +335,12 @@ class RefundService
         // V1.1 F02 / T-018：退款结果通知买家（失败不影响审核结果）
         event(new \App\Events\RefundResult($refund));
 
+        // WMS 计划 P4 / Step 3：退货退款审核通过 → 触发退货入库单创建（监听器内部
+        // 捕获异常，绝不阻断审核结果；仅退款类型不发本事件，老路径零变化）
+        if ($action === 'approve' && $refund->isReturnRefund()) {
+            event(new \App\Events\RefundApproved($refund));
+        }
+
         return $refund;
     }
 

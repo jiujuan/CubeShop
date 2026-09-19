@@ -48,6 +48,13 @@ class NoGeneratorService
      */
     public const PREFIX_FULFILLMENT = 'FO';
 
+    /**
+     * 退货入库单（WMS 计划 P4：RI2026092000001234567）
+     *
+     * 退货入库单号会随报文发往 WMS（returnorder.create），与出库 FO 同理用独立前缀。
+     */
+    public const PREFIX_RETURN_INBOUND = 'RI';
+
     /** 随机段长度（10 位数字） */
     public const RANDOM_LENGTH = 10;
 
@@ -62,6 +69,7 @@ class NoGeneratorService
         self::PREFIX_RECHARGE => ['balance_recharges', 'recharge_no'],
         self::PREFIX_TICKET => ['cs_ticket', 'ticket_no'],
         self::PREFIX_FULFILLMENT => ['fulfillment_orders', 'outbound_no'],
+        self::PREFIX_RETURN_INBOUND => ['return_inbound_orders', 'inbound_no'],
     ];
 
     /**
@@ -132,5 +140,11 @@ class NoGeneratorService
     public function generateOutboundNo(): string
     {
         return $this->generate(self::PREFIX_FULFILLMENT);
+    }
+
+    /** 退货入库单号，WMS 计划 P4 */
+    public function generateReturnInboundNo(): string
+    {
+        return $this->generate(self::PREFIX_RETURN_INBOUND);
     }
 }

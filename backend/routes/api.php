@@ -30,6 +30,7 @@ use App\Http\Controllers\Admin\UploadController;
 use App\Http\Controllers\Admin\UserController;
 use App\Http\Controllers\Admin\WmsConfigController;
 use App\Http\Controllers\Admin\WmsFulfillmentController;
+use App\Http\Controllers\Admin\WmsReturnInboundController;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\AnnouncementController;
 use App\Http\Controllers\HomeBannerController;
@@ -376,6 +377,18 @@ Route::middleware(['auth:sanctum', 'account.active'])->group(function () {
             ->middleware('permission:wms.order.manage');
         Route::post('/wms/fulfillment-orders/{id}/cancel', [WmsFulfillmentController::class, 'cancel'])
             ->middleware('permission:wms.order.manage');
+
+        // WMS 退货入库单（WMS 计划 P4 / F9、Step 8）：权限统一 wms.return.manage
+        Route::get('/wms/return-inbound-orders', [WmsReturnInboundController::class, 'index'])
+            ->middleware('permission:wms.return.manage');
+        Route::get('/wms/return-inbound-orders/{id}', [WmsReturnInboundController::class, 'show'])
+            ->middleware('permission:wms.return.manage');
+        Route::post('/wms/return-inbound-orders/{id}/push', [WmsReturnInboundController::class, 'push'])
+            ->middleware('permission:wms.return.manage');
+        Route::post('/wms/return-inbound-orders/{id}/cancel', [WmsReturnInboundController::class, 'cancel'])
+            ->middleware('permission:wms.return.manage');
+        Route::post('/wms/return-inbound-orders/{id}/manual-received', [WmsReturnInboundController::class, 'manualReceived'])
+            ->middleware('permission:wms.return.manage');
 
         // 评价管理 review.manage（V1.1 F01 / T-017）
         Route::post('/reviews/audit-mode', [AdminReviewController::class, 'updateAuditMode'])->middleware('permission:config.manage');

@@ -80,6 +80,7 @@ return [
                 'S07',                        // 奇门常见：单据已存在
                 'ORDER_ALREADY_EXISTS',
                 'DELIVERY_ORDER_EXISTS',
+                'RETURN_ORDER_EXISTS',        // P4：退货入库单已存在
             ],
 
             /*

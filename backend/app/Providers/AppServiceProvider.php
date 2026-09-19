@@ -115,5 +115,8 @@ class AppServiceProvider extends ServiceProvider
 
         // WMS 计划 P1：订单进入待发货 → 建发货单（未启用 WMS 时监听器直接返回，零影响）
         Event::listen(\App\Events\OrderAcceptedForShipment::class, \App\Listeners\Wms\CreateFulfillmentOrder::class);
+
+        // WMS 计划 P4：退货退款审核通过 → 建退货入库单（未启用 WMS 时监听器捕获异常留痕，零影响）
+        Event::listen(\App\Events\RefundApproved::class, \App\Listeners\CreateReturnInboundOrder::class);
     }
 }

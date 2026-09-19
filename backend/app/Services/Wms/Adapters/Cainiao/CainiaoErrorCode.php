@@ -143,6 +143,8 @@ final class CainiaoErrorCode
             'S10' => '库存不足，需人工确认',
             'S11' => '仓库不存在或已停用，请核对仓库编码',
             'S12' => '货品编码不存在，请核对 SKU 映射',
+            'RETURN_ORDER_NOT_EXISTS' => '退货入库单（或其关联的原出库单）不存在，请核对单号',
+            'RETURN_ORDER_EXISTS' => '退货入库单已存在，按幂等成功处理',
         ][$normalized] ?? null;
     }
 

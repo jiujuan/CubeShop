@@ -2,7 +2,6 @@
 
 use App\Exceptions\BusinessException;
 use App\Exceptions\Wms\WmsBizException;
-use App\Exceptions\Wms\WmsUnsupportedException;
 use App\Models\Warehouse;
 use App\Models\WmsConfig;
 use App\Services\Wms\Adapters\Cainiao\Signature;
@@ -310,17 +309,21 @@ test('TC-CN-12 取消「已出库」单据：仓方业务拒绝 → WmsBizExcept
     )))->toThrow(WmsBizException::class);
 });
 
-test('TC-CN-13 退货入库（P4）→ WmsUnsupportedException，绝不返回假成功', function () {
-    Http::fake();
+test('TC-CN-13 退货入库（P4 落地）：报文映射与幂等细节由 CainiaoReturnMappingTest 覆盖；Mock 适配器仍可用', function () {
+    Http::fake(['*' => Http::response(json_encode([
+        'response' => ['flag' => 'success', 'returnOrderId' => 'CN-RET-1'],
+    ]), 200)]);
 
-    $adapter = app(WmsAdapterFactory::class)->make(cainiaoConfig());
+    // P4 前：两个退货方法抛 WmsUnsupportedException；P4 起走真实报文链路
+    $result = app(WmsAdapterFactory::class)->make(cainiaoConfig())
+        ->createReturnInbound(new ReturnInboundDto(
+            warehouseId: 1,
+            bizNo: 'RI20260920000001',
+            items: [['sku_code' => 'S', 'wms_sku_code' => 'W', 'quantity' => 1]],
+        ));
 
-    expect(fn () => $adapter->createReturnInbound(new ReturnInboundDto(warehouseId: 1, bizNo: 'RT1', items: [])))
-        ->toThrow(WmsUnsupportedException::class)
-        ->and(fn () => $adapter->cancelReturnInbound('RT1'))
-        ->toThrow(WmsUnsupportedException::class);
-
-    Http::assertNothingSent();
+    expect($result->success)->toBeTrue()
+        ->and($result->data['wms_order_no'])->toBe('CN-RET-1');
 });
 
 test('TC-CN-14 网络异常 → 收敛为可重试失败结果（不抛异常）', function () {

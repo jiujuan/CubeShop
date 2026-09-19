@@ -31,12 +31,17 @@ class CallbackMessageParser
     public function parse(array $payload): array
     {
         $order = $this->locateOrderNode($payload);
+        $isReturn = isset($order['returnOrderCode']) || isset($order['returnOrderId']);
 
         $method = strtolower((string) ($payload['method'] ?? ''));
         $rawStatus = strtoupper((string) ($order['status'] ?? $payload['status'] ?? ''));
 
-        // msg_type 优先按 method 判定；method 缺失时按状态兜底（confirm 的 status 是 SHIPPED）
+        // msg_type 优先按 method 判定；method 缺失时按状态兜底（confirm 的 status 是 SHIPPED）。
+        // P4：returnorder.confirm（退货收货回传）单独成类，路由到退货入库单处理链。
         $msgType = match (true) {
+            str_contains($method, 'returnorder.confirm') => 'returnorder_confirm',
+            str_contains($method, 'returnorder') => 'returnorder_status',
+            $isReturn && $rawStatus === 'RECEIVED' => 'returnorder_confirm',
             str_contains($method, 'deliveryorder.confirm') => 'confirm',
             str_contains($method, 'deliveryorder') && str_contains($method, 'status') => 'status',
             str_contains($method, 'deliveryorder.pick') => 'status',
@@ -51,14 +56,16 @@ class CallbackMessageParser
             $rawStatus = strtoupper((string) $payload['status']);
         }
 
-        $packages = $this->extractPackages($order, $payload);
+        $packages = $isReturn ? [] : $this->extractPackages($order, $payload);
 
         return [
             'msg_type' => $msgType,
             'raw_status' => $rawStatus !== '' ? $rawStatus : null,
             'status_key' => strtolower($rawStatus),
-            'biz_no' => $this->stringOrNull($order['deliveryOrderCode'] ?? $payload['deliveryOrderCode'] ?? null),
-            'wms_no' => $this->stringOrNull($order['deliveryOrderId'] ?? $payload['deliveryOrderId'] ?? null),
+            'biz_no' => $this->stringOrNull($order['returnOrderCode'] ?? null)
+                ?? $this->stringOrNull($order['deliveryOrderCode'] ?? $payload['deliveryOrderCode'] ?? null),
+            'wms_no' => $this->stringOrNull($order['returnOrderId'] ?? null)
+                ?? $this->stringOrNull($order['deliveryOrderId'] ?? $payload['deliveryOrderId'] ?? null),
             'order' => $order,
             'packages' => $packages,
         ];
@@ -72,6 +79,14 @@ class CallbackMessageParser
      */
     private function locateOrderNode(array $payload): array
     {
+        // 0) P4：退货入库单节点（returnorder.* 推送）
+        foreach (['returnOrder', 'return_order', 'body.returnOrder'] as $path) {
+            $node = data_get($payload, $path);
+            if (is_array($node)) {
+                return $node;
+            }
+        }
+
         // 1) 常见包裹键
         foreach (['deliveryOrder', 'delivery_order', 'body.deliveryOrder'] as $path) {
             $node = data_get($payload, $path);
@@ -80,14 +95,14 @@ class CallbackMessageParser
             }
         }
 
-        // 2) 根层平铺（status 推送常见）：根层直接带 deliveryOrderCode / status
-        if (isset($payload['deliveryOrderCode']) || isset($payload['status'])) {
+        // 2) 根层平铺（status 推送常见）：根层直接带 deliveryOrderCode / returnOrderCode / status
+        if (isset($payload['deliveryOrderCode']) || isset($payload['returnOrderCode']) || isset($payload['status'])) {
             return $payload;
         }
 
         // 3) 根层唯一业务键包裹式
         foreach ($payload as $key => $value) {
-            if (is_array($value) && isset($value['deliveryOrderCode'], $value['status'])) {
+            if (is_array($value) && (isset($value['deliveryOrderCode'], $value['status']) || isset($value['returnOrderCode']))) {
                 return $value;
             }
         }

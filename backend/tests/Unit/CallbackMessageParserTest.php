@@ -90,7 +90,8 @@ test('method 缺失时按状态兜底判定 msg_type（SHIPPED → confirm，其
 test('未知消息类型与空报文：msg_type 为 null（外层按已消费告警处理）', function () {
     $parser = new CallbackMessageParser;
 
-    expect($parser->parse(['method' => 'taobao.qimen.returnorder.confirm', 'deliveryOrderCode' => 'FO7'])['msg_type'])->toBeNull()
+    // P4 起 returnorder.confirm 已是受支持类型，改用真正未知的 method 断言
+    expect($parser->parse(['method' => 'taobao.qimen.unknown.message', 'deliveryOrderCode' => 'FO7'])['msg_type'])->toBeNull()
         ->and($parser->parse([])['msg_type'])->toBeNull()
         ->and($parser->parse([])['biz_no'])->toBeNull();
 });

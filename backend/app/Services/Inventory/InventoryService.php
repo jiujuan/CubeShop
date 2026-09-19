@@ -135,11 +135,14 @@ class InventoryService
     /**
      * 调整库存（后台管理：delta 可正可负）。防超卖：扣减时要求 stock >= |delta|
      *
+     * @param  string|null  $bizType  流水 biz_type（inventory_logs 对账维度）；
+     *                                   退货入库固定传 'return_inbound'（WMS 计划 P4 / Step 7），
+     *                                   缺省维持 'adjust'（既有调用零改动）。
      * @throws RuntimeException 库存不足
      */
-    public function adjust(int $skuId, int $delta, ?int $operatorId = null, ?string $remark = null): int
+    public function adjust(int $skuId, int $delta, ?int $operatorId = null, ?string $remark = null, ?string $bizType = null): int
     {
-        return DB::transaction(function () use ($skuId, $delta, $operatorId, $remark) {
+        return DB::transaction(function () use ($skuId, $delta, $operatorId, $remark, $bizType) {
             if ($delta === 0) {
                 return $this->getStock($skuId);
             }
@@ -165,7 +168,7 @@ class InventoryService
             $after = $before + $delta;
             $this->log($skuId, 'adjust', $delta, $before, $after,
                 $inventory?->locked_stock ?? 0, $inventory?->locked_stock ?? 0,
-                'adjust', null, $remark, $operatorId);
+                $bizType ?? 'adjust', null, $remark, $operatorId);
 
             return $after;
         });

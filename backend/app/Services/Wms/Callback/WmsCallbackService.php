@@ -136,7 +136,9 @@ class WmsCallbackService
                 'provider' => $provider,
                 'api_name' => $apiName,
                 'request_id' => (string) ($payload['request_id'] ?? null) ?: null,
-                'biz_no' => $payload['deliveryOrderCode']
+                'biz_no' => $payload['returnOrderCode']
+                    ?? $payload['returnOrder']['returnOrderCode']
+                    ?? $payload['deliveryOrderCode']
                     ?? $payload['deliveryOrder']['deliveryOrderCode']
                     ?? null,
                 'request_body' => [
