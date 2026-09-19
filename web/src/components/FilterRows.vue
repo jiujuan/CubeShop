@@ -5,7 +5,7 @@ import { ChevronDown, ChevronUp } from 'lucide-vue-next'
 /**
  * 可折叠按钮行容器（分类页品牌区 / 筛选面板属性区共用）。
  *
- * - 收起：最多显示 collapsedRows 行（默认 4 行）
+ * - 收起：最多显示 collapsedRows 行（默认 5 行）
  * - 展开：最多显示 expandedRows 行（默认 8 行），超出部分出滚动条
  * - 行高取第一个子元素实测高度（各处按钮高度不同），内容不足收起行数时不显示切换按钮
  * - 内容自然高度用 ResizeObserver 跟踪（异步加载、窗口换行变化都能感知）
@@ -19,7 +19,7 @@ const props = withDefaults(defineProps<{
   gap?: number
   /** 测试锚点前缀 */
   testId?: string
-}>(), { collapsedRows: 4, expandedRows: 8, gap: 8 })
+}>(), { collapsedRows: 5, expandedRows: 8, gap: 8 })
 
 const inner = ref<HTMLElement | null>(null)
 /** 行高（首子元素实测），未挂载 / jsdom 下回退默认 */

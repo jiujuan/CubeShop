@@ -69,6 +69,13 @@ const attributeValuesParam = computed(() =>
   Object.entries(selectedAttrs.value).flatMap(([aid, values]) => values.map((v) => `${aid}:${v}`)),
 )
 
+/** 筛选面板属性组折叠：不带分类时可能返回全部属性（几十组），默认只显示前 5 组 */
+const ATTR_GROUPS_COLLAPSED = 5
+const attrGroupsExpanded = ref(false)
+const visibleAttrs = computed(() =>
+  attrGroupsExpanded.value ? filterAttributes.value : filterAttributes.value.slice(0, ATTR_GROUPS_COLLAPSED),
+)
+
 const filterCount = computed(
   () => selectedBrands.value.length + attributeValuesParam.value.length,
 )
@@ -141,6 +148,7 @@ watch(
     categoryId.value = route.params.id ? String(route.params.id) : undefined
     sort.value = (route.query.sort as string) || 'newest'
     priceFilterOpen.value = false
+    attrGroupsExpanded.value = false
     parseFiltersFromQuery()
     await loadFilters()
     load(1)
@@ -494,12 +502,12 @@ function clearAllFilters() {
             class="mb-3 rounded-xl border border-slate-100 bg-white p-4 shadow-sm"
           >
             <div
-              v-for="attr in filterAttributes" :key="attr.id"
-              class="mb-3 flex items-start gap-3 text-sm last:mb-0"
+              v-for="attr in visibleAttrs" :key="attr.id"
+              class="mb-3 flex items-start gap-3 text-sm"
               :data-testid="`filter-attr-${attr.id}`"
             >
               <span class="w-14 shrink-0 pt-1 text-slate-500">{{ attr.name }}</span>
-              <!-- 属性值多时收起为 4 行，「更多/收起」展开（超 8 行滚动） -->
+              <!-- 属性值多时收起为 5 行，「更多/收起」展开（超 8 行滚动） -->
               <FilterRows :test-id="`filter-attr-rows-${attr.id}`">
                 <button
                   v-for="v in attr.values" :key="v.id"
@@ -512,6 +520,19 @@ function clearAllFilters() {
                 >{{ v.value }}</button>
               </FilterRows>
             </div>
+
+            <!-- 属性组超过 5 组：更多 / 收起 -->
+            <button
+              v-if="filterAttributes.length > ATTR_GROUPS_COLLAPSED"
+              type="button"
+              class="flex items-center gap-0.5 text-xs text-[#1677ff] hover:text-[#4096ff]"
+              data-testid="attr-groups-toggle"
+              @click="attrGroupsExpanded = !attrGroupsExpanded"
+            >
+              {{ attrGroupsExpanded ? '收起' : '更多' }}
+              <ChevronUp v-if="attrGroupsExpanded" class="h-3 w-3" />
+              <ChevronDown v-else class="h-3 w-3" />
+            </button>
 
             <p v-if="!filterAttributes.length" class="py-2 text-center text-xs text-slate-400">
               当前分类暂无可筛选条件

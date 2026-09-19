@@ -160,6 +160,31 @@ describe('列表页按属性筛选（T-014）', () => {
     void utils
   })
 
+  it('属性组超过 5 组时默认只显示前 5 组，「更多」展开全部', async () => {
+    // 不带分类的 /search 页会返回全部可筛属性（几十组）
+    getAttributesMock.mockResolvedValue({
+      data: {
+        data: Array.from({ length: 7 }, (_, i) => ({
+          id: 20 + i, name: `属性${i}`, type: 'param', is_filterable: true, is_multiple: false,
+          values: [{ id: 100 + i, value: `值${i}` }],
+        })),
+      },
+    })
+    await renderAtCategory()
+    await fireEvent.click(screen.getByTestId('filter-toggle'))
+    await waitFor(() => expect(screen.getByTestId('filter-panel')).toBeTruthy())
+
+    // 默认只渲染前 5 组
+    expect(screen.queryByTestId('filter-attr-20')).toBeTruthy()
+    expect(screen.queryByTestId('filter-attr-24')).toBeTruthy()
+    expect(screen.queryByTestId('filter-attr-25')).toBeNull()
+
+    // 更多 → 全部展开，按钮变「收起」
+    await fireEvent.click(screen.getByTestId('attr-groups-toggle'))
+    await waitFor(() => expect(screen.queryByTestId('filter-attr-26')).toBeTruthy())
+    expect(screen.getByTestId('attr-groups-toggle').textContent).toContain('收起')
+  })
+
   it('顶部品牌与属性筛选后请求参数组装正确，并同步 URL', async () => {
     const { router } = await renderAtCategory()
     await waitFor(() => expect(screen.getByTestId('heading-brand-5')).toBeTruthy())

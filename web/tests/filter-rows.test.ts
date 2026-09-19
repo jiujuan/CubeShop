@@ -7,7 +7,7 @@ import FilterRows from '@/components/FilterRows.vue'
  * FilterRows：品牌/属性按钮行折叠容器。
  * jsdom 无真实布局且 Element.prototype 上不存在 offsetHeight/scrollHeight
  * 访问器，用 Object.defineProperty 注入 mock getter 模拟实测行高与内容
- * 自然高度（默认行高 30、间距 8 → 收起 144px、展开 296px）。
+ * 自然高度（默认行高 30、间距 8 → 收起 182px、展开 296px）。
  */
 let mockRowHeight = 30
 let mockContentHeight = 0
@@ -48,13 +48,13 @@ describe('FilterRows 折叠容器', () => {
   }
 
   it('内容不足收起行数时不显示「更多/收起」', async () => {
-    await mountWithHeights(100) // 100 < 收起上限 144+2
+    await mountWithHeights(100) // 100 < 收起上限 182+2
 
     expect(screen.queryByTestId('fr-toggle')).toBeNull()
     // 收起态：overflow-hidden、max-height 为 4 行高度
     const viewport = screen.getByTestId('fr-viewport')
     expect(viewport.className).toContain('overflow-hidden')
-    expect(viewport.style.maxHeight).toBe('144px')
+    expect(viewport.style.maxHeight).toBe('182px')
   })
 
   it('内容超收起行数时显示「更多」，点击展开、再点收起', async () => {
@@ -63,7 +63,7 @@ describe('FilterRows 折叠容器', () => {
     // 初始收起
     const toggle = screen.getByTestId('fr-toggle')
     expect(toggle.textContent).toContain('更多')
-    expect(screen.getByTestId('fr-viewport').style.maxHeight).toBe('144px')
+    expect(screen.getByTestId('fr-viewport').style.maxHeight).toBe('182px')
 
     // 展开：max-height 变为 8 行高度，超出滚动
     await fireEvent.click(toggle)
@@ -75,12 +75,12 @@ describe('FilterRows 折叠容器', () => {
 
     // 再点收起还原
     await fireEvent.click(screen.getByTestId('fr-toggle'))
-    expect(screen.getByTestId('fr-viewport').style.maxHeight).toBe('144px')
+    expect(screen.getByTestId('fr-viewport').style.maxHeight).toBe('182px')
     expect(screen.getByTestId('fr-viewport').className).not.toContain('overflow-y-auto')
   })
 
   it('展开后内容不超过 8 行时不显示滚动条', async () => {
-    await mountWithHeights(200) // 介于 144 与 296 之间：可展开但无需滚动
+    await mountWithHeights(200) // 介于 182 与 296 之间：可展开但无需滚动
 
     await fireEvent.click(screen.getByTestId('fr-toggle'))
     const viewport = screen.getByTestId('fr-viewport')
