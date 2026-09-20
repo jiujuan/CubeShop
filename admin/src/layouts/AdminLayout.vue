@@ -2,7 +2,7 @@
 import { computed, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import {
-  BarChart3, BookOpen, Box, Calculator, ChevronDown, ChevronRight, ChevronsLeft, ChevronsRight, ClipboardList, CreditCard, FileClock, FolderTree, History, Images, LayoutDashboard, Layers, LayoutList, LifeBuoy, ListTree, LogOut, MapPinned, MessageSquare, Megaphone, Package, RotateCcw, ScrollText, Settings, ShieldCheck,   SquareUser, Tags, Truck, UploadCloud, UserCog, UserRound, Users, Wallet, Warehouse, Ticket, Undo2, Activity, Diff,
+  BarChart3, BookOpen, Box, Calculator, ChevronDown, ChevronRight, ChevronsLeft, ChevronsRight, ClipboardList, CreditCard, FileClock, FolderTree, History, Images, LayoutDashboard, Layers, LayoutList, LifeBuoy, ListTree, LogOut, MapPinned, Menu, MessageSquare, Megaphone, Package, RotateCcw, ScrollText, Settings, ShieldCheck,   SquareUser, Tags, Truck, UploadCloud, UserCog, UserRound, Users, Wallet, Warehouse, Ticket, Undo2, Activity, Diff,
 } from 'lucide-vue-next'
 import { useAuthStore } from '@/stores/auth'
 
@@ -58,6 +58,7 @@ const icons: Record<string, unknown> = {
   BookOpen,
   Megaphone,
   Images,
+  Menu,
   Warehouse,
   Undo2,
   Activity,
@@ -120,6 +121,7 @@ const menuGroups = computed<MenuGroup[]>(() => {
         { path: '/reviews', title: '评价管理', icon: 'MessageSquare', permission: 'review.manage' },
         { path: '/marketing', title: '营销管理', icon: 'Ticket', permission: 'marketing.manage' },
         { path: '/home-banners', title: '首页广告位', icon: 'Images', permission: 'home.manage' },
+        { path: '/nav', title: '导航管理', icon: 'Menu', permission: 'nav.manage' },
         { path: '/cs/tickets', title: '服务工单', icon: 'LifeBuoy', permission: 'cs.ticket.view' },
         { path: '/cs/faq', title: '内容管理', icon: 'BookOpen', permission: 'cs.faq.manage' },
         { path: '/cs/quick-replies', title: '回复模板管理', icon: 'MessageSquare', permission: 'cs.faq.manage' },

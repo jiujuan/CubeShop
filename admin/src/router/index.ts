@@ -204,6 +204,13 @@ const router = createRouter({
           meta: { title: '首页广告位', menu: true, icon: 'Images', permission: 'home.manage' },
         },
         {
+          // 前台顶部导航编排（商品分类引用 / 自定义链接，位置由 sort 决定）
+          path: 'nav',
+          name: 'nav',
+          component: () => import('@/views/site/NavView.vue'),
+          meta: { title: '导航管理', menu: true, icon: 'Menu', permission: 'nav.manage' },
+        },
+        {
           path: 'wms/fulfillment-orders',
           name: 'wms-fulfillment-orders',
           component: () => import('@/views/wms/FulfillmentOrderListView.vue'),
