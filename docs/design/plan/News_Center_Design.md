@@ -3,7 +3,7 @@
 > 目标：后台「内容管理」里新增**新闻中心**大分类；前台有**独立设计的新闻中心页**，页内分
 > 「图文新闻 / 列表新闻」两个小分类，点标题进详情页；服务于**站点 SEO** 与**种草文章**。
 >
-> 状态：**已拍板，待实施**（决策结论见 §5）。本文只做方案，未实施。
+> 状态：**已实施**（决策结论见 §5；一期 + §7 后期增强均已落地，见文末「实施记录」）。本文为方案与实现依据。
 
 ---
 
@@ -200,7 +200,7 @@ cs_faq_article  → 新闻文章（category_id 指向上面两个子栏目）
 
 ---
 
-## 7. 后续可增强（一期不做）
+## 7. 后续增强（已实施，2026-09-21）
 
 - 文章 slug 与 `/news/{slug}` 语义化 URL；
 - 文章级 SEO 三列 + 后台折叠区；
@@ -208,3 +208,33 @@ cs_faq_article  → 新闻文章（category_id 指向上面两个子栏目）
 - 标签/专题（repeater 字段即可，不必新表）；
 - 阅读量排行、上一篇/下一篇；
 - 新闻详情页 JSON-LD（Article 结构化数据，利于搜索结果展现）。
+
+---
+
+## 8. 实施记录（2026-09-21）
+
+一期（D1~D8）与 §7 后期增强均已落地，`backend / admin / web` 三条工作流分别提交。
+
+### 迁移（新增，最大号推进到 000107）
+| 迁移 | 内容 |
+|------|------|
+| `000102` | `cs_faq_category` 加 `list_style`（card/list，默认 list） |
+| `000103` | 幂等播种「新闻中心」根(slug=news, slug 锁定) + 图文新闻(card) / 列表新闻(list) |
+| `000104` | `cs_faq_article` 加 `slug`（可空 + 唯一索引） |
+| `000105` | `cs_faq_article` 加 `seo_title / seo_keywords / seo_description` |
+| `000106` | 新建 `cs_faq_article_product` 关联表（多对多，外键级联删） |
+| `000107` | `cs_faq_article` 加 `tags`（JSON 数组） |
+
+### 后期增强落地要点
+- **slug**：`NewsService::slugify/uniqueSlug` 由标题派生唯一 slug；详情接口 `{key}` 收 slug 或 id（slug 优先、id 兜底，兼容旧 URL）；sitemap 有 slug 用 slug。后台留空自动生成、编辑留空不覆盖既有 URL。
+- **文章级 SEO**：详情页 `applySeo` 优先文章三列、回落标题/摘要；后台「SEO 设置」折叠区。
+- **标签/专题**：`tags` JSON 列 + `normalizeTags` 归一；`/api/news/articles?tag=`（`whereJsonContains`，SQLite/PG 双兼容）、`/api/news/tags`；前台 `/news/tag/:tag` 专题页 + 列表/详情标签云。
+- **阅读量排行**：`/api/news/hot`（view_count desc）；列表页右侧栏「热门排行」。
+- **商品种草**：`cs_faq_article_product` 关联；文章详情带 `products`（id=public_id）；`/api/news/by-product/{id}` 供商品详情页「相关资讯」反查。
+
+### 验证（09-21）
+- 后端 `php -d memory_limit=1G vendor/bin/pest` 全量：**1428 passed**。
+- admin：`vue-tsc -b` 0 错、vitest 全绿（28 files / 266 tests）、`npm run build` OK。
+- web：`vue-tsc -b` 0 错、vitest 全绿（`account-center` 并发偶发 flaky，重跑即过）、`npm run build` OK。
+- curl：`/api/news/channels|articles|tags|hot|by-product/{id}` 均 200。
+
