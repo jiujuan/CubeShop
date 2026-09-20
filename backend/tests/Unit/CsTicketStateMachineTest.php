@@ -145,10 +145,11 @@ it('工单类型种子幂等：重复执行不产生重复记录', function () {
 it('默认帮助中心分类为 5 个且每类一篇草稿文章', function () {
     // CMS-101 起迁移另播种 2 个单页栏目（type=page，关于我们/联系我们），故按类型分别断言
     // CMS-204 起迁移再播种 1 个「公告」承载栏目：它是 channel，但不属于帮助中心类目，
-    // 故这里按名字把它排除后再数（8 = 5 帮助分类 + 2 单页 + 1 公告承载栏目）。
+    // 故这里按名字把它排除后再数（11 = 5 帮助分类 + 2 单页 + 1 公告承载栏目 + 3 新闻中心栏目）。
+    // 注：新闻中心（CMS 新闻中心一期）由迁移 000103 另播种 3 个 channel 栏目，一并计入。
     expect(CsFaqCategory::where('type', CsFaqCategory::TYPE_CHANNEL)
-        ->where('name', '!=', CsFaqCategory::ANNOUNCEMENT_CATEGORY_NAME)->count())->toBe(5)
-        ->and(CsFaqCategory::query()->count())->toBe(8)
+        ->where('name', '!=', CsFaqCategory::ANNOUNCEMENT_CATEGORY_NAME)->count())->toBe(8)
+        ->and(CsFaqCategory::query()->count())->toBe(11)
         ->and(CsFaqArticle::query()->count())->toBe(5)
         ->and(CsFaqArticle::where('status', CsFaqArticle::STATUS_PUBLISHED)->count())->toBe(0);
 });
@@ -157,8 +158,8 @@ it('分类种子幂等：重复执行不产生重复记录', function () {
     $this->seed(\Database\Seeders\CsFaqCategorySeeder::class);
 
     expect(CsFaqCategory::where('type', CsFaqCategory::TYPE_CHANNEL)
-        ->where('name', '!=', CsFaqCategory::ANNOUNCEMENT_CATEGORY_NAME)->count())->toBe(5)
-        ->and(CsFaqCategory::query()->count())->toBe(8)
+        ->where('name', '!=', CsFaqCategory::ANNOUNCEMENT_CATEGORY_NAME)->count())->toBe(8)
+        ->and(CsFaqCategory::query()->count())->toBe(11)
         ->and(CsFaqArticle::query()->count())->toBe(5);
 });
 

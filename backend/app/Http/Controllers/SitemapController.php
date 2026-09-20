@@ -31,17 +31,28 @@ class SitemapController extends Controller
     {
         $siteUrl = (string) config('cms.site_url');
         $announcementCarrierId = CsFaqCategory::announcementCarrierId();
+        $newsRootId = CsFaqCategory::newsRootId();
         $urls = [];
 
         foreach ((array) config('cms.static_pages', []) as $path) {
             $urls[] = ['loc' => $siteUrl.$path, 'lastmod' => null];
         }
 
+        // 帮助中心文章：排除「公告承载栏目」与「新闻中心子树」，只出 /service-center/faq/{id}
+        // —— 否则同一内容会在 sitemap 里出现第二个 URL（CMS-204 / CMS 新闻中心分流）
+        $excludeCategoryIds = [];
+        foreach (array_filter([$announcementCarrierId, $newsRootId]) as $rootId) {
+            $excludeCategoryIds = array_merge($excludeCategoryIds, CsFaqCategory::subtreeIds((int) $rootId));
+        }
+
         $articles = CsFaqArticle::query()
             ->published()
-            ->whereHas('category', fn ($q) => $q
-                ->where('type', CsFaqCategory::TYPE_CHANNEL)
-                ->when($announcementCarrierId, fn ($qq) => $qq->where('id', '!=', $announcementCarrierId)))
+            ->whereHas('category', function ($q) use ($excludeCategoryIds) {
+                $q->where('type', CsFaqCategory::TYPE_CHANNEL);
+                if ($excludeCategoryIds !== []) {
+                    $q->whereNotIn('id', $excludeCategoryIds);
+                }
+            })
             ->orderByDesc('updated_at')
             ->get(['id', 'updated_at']);
 
@@ -50,6 +61,22 @@ class SitemapController extends Controller
                 'loc' => $siteUrl.'/service-center/faq/'.$article->id,
                 'lastmod' => $article->updated_at?->toAtomString(),
             ];
+        }
+
+        // 新闻文章：只出 /news/{id}（与帮助中心分流，避免同一文章两个 URL）
+        if ($newsRootId !== null) {
+            $newsArticles = CsFaqArticle::query()
+                ->published()
+                ->whereIn('category_id', CsFaqCategory::subtreeIds($newsRootId))
+                ->orderByDesc('updated_at')
+                ->get(['id', 'updated_at']);
+
+            foreach ($newsArticles as $article) {
+                $urls[] = [
+                    'loc' => $siteUrl.'/news/'.$article->id,
+                    'lastmod' => $article->updated_at?->toAtomString(),
+                ];
+            }
         }
 
         $pages = CsFaqCategory::query()

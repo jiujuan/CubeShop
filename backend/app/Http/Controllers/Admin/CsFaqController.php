@@ -9,6 +9,7 @@ use App\Services\Cms\CmsCategoryService;
 use App\Services\Common\FileUploadService;
 use App\Support\ApiResponse;
 use App\Support\CmsBlock;
+use App\Support\CmsListStyle;
 use App\Support\CmsPageTemplate;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -62,6 +63,8 @@ class CsFaqController extends Controller
             'icon' => ['nullable', 'string', 'max:32'],
             'sort' => ['nullable', 'integer', 'min:0', 'max:9999'],
             'is_active' => ['nullable', 'boolean'],
+            // CMS 新闻中心：列表形态（仅 channel 有意义；page 忽略）
+            'list_style' => ['nullable', 'string', Rule::in(CmsListStyle::values())],
             // CMS-202：SEO 三列。⚠️ 用 nullable 而非 required —— 空串会被
             // ConvertEmptyStringsToNull 转成 null，required 会导致「清空 SEO」永远 422。
             'seo_title' => ['nullable', 'string', 'max:128'],
@@ -84,6 +87,15 @@ class CsFaqController extends Controller
         $category = CsFaqCategory::findOrFail($id);
         $parentId = (int) $request->input('parent_id', $category->parent_id);
 
+        // CMS 新闻中心：根栏目 slug 已锁定（前端 /news 依赖它），运营改了会让前台路由 404
+        if (
+            $category->id === CsFaqCategory::newsRootId()
+            && $request->has('slug')
+            && (string) ($request->input('slug') ?? '') !== (string) $category->slug
+        ) {
+            throw ValidationException::withMessages(['slug' => ['新闻中心根栏目的 slug 已锁定（前端 /news 依赖），不可修改']]);
+        }
+
         $data = $request->validate([
             'name' => [
                 'sometimes', 'string', 'max:64',
@@ -96,6 +108,8 @@ class CsFaqController extends Controller
             'icon' => ['nullable', 'string', 'max:32'],
             'sort' => ['nullable', 'integer', 'min:0', 'max:9999'],
             'is_active' => ['nullable', 'boolean'],
+            // CMS 新闻中心：列表形态（仅 channel 有意义；page 忽略）
+            'list_style' => ['nullable', 'string', Rule::in(CmsListStyle::values())],
             // CMS-202：SEO 三列（nullable ⇒ 可清空）
             'seo_title' => ['nullable', 'string', 'max:128'],
             'seo_keywords' => ['nullable', 'string', 'max:255'],
@@ -215,6 +229,8 @@ class CsFaqController extends Controller
             'sort' => ['nullable', 'integer', 'min:0'],
             'is_hot' => ['nullable', 'boolean'],
             'status' => ['nullable', 'string', 'in:draft,published,offline'],
+            // CMS 新闻中心：封面图（图文新闻卡片用；存上传返回的 URL/相对路径，长度宽松）
+            'cover_image' => ['nullable', 'string', 'max:512'],
         ]);
 
         $data['status'] ??= CsFaqArticle::STATUS_DRAFT;
@@ -240,6 +256,8 @@ class CsFaqController extends Controller
             'sort' => ['nullable', 'integer', 'min:0'],
             'is_hot' => ['nullable', 'boolean'],
             'status' => ['nullable', 'string', 'in:draft,published,offline'],
+            // CMS 新闻中心：封面图（图文新闻卡片用；存上传返回的 URL/相对路径）
+            'cover_image' => ['nullable', 'string', 'max:512'],
         ]);
 
         if (! empty($data['status'])) {

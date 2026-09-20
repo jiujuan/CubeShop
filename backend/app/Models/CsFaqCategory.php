@@ -19,6 +19,16 @@ class CsFaqCategory extends Model
     public const TYPE_CHANNEL = 'channel';
     public const TYPE_PAGE = 'page';
 
+    /**
+     * 「新闻中心」根栏目锚点（CMS 新闻中心，一期）
+     *
+     * 与「公告」（CMS-204 按 name 锚定）不同，新闻中心是**规划内**、结构稳定，
+     * 故以 `slug` 为首选锚点（运营改名不影响），`name` 作为兜底（运营改了 slug 也能锚回同一棵）。
+     * 帮助中心/sitemap 排除新闻子树、前台 `NewsController` 取根，三处都认这个锚点。
+     */
+    public const NEWS_SLUG = 'news';
+    public const NEWS_ROOT_NAME = '新闻中心';
+
     public const TYPE_LABELS = [
         self::TYPE_CHANNEL => '栏目',
         self::TYPE_PAGE => '单页',
@@ -39,7 +49,7 @@ class CsFaqCategory extends Model
     protected $table = 'cs_faq_category';
 
     protected $fillable = [
-        'name', 'parent_id', 'level', 'path', 'type', 'slug', 'template',
+        'name', 'parent_id', 'level', 'path', 'type', 'slug', 'template', 'list_style',
         'show_in_nav', 'icon', 'sort', 'is_active',
         'seo_title', 'seo_keywords', 'seo_description',
     ];
@@ -97,6 +107,47 @@ class CsFaqCategory extends Model
             ->value('id');
 
         return $id === null ? null : (int) $id;
+    }
+
+    /**
+     * 「新闻中心」根栏目 id；未播种返回 null
+     *
+     * 优先按 `slug` 找、命中不到再用 `name` 兜底（与公告的「只认 name」不同，
+     * 新闻中心结构稳定，slug 是首选锚点）。帮助中心/sitemap 排除新闻子树用它算出
+     * 要摘掉（连同整棵子树）的 id；刻意不进程内缓存——测试库每个用例重建，
+     * 缓存一个 id 会跨用例串味（与 `announcementCarrierId()` 同一体例）。
+     */
+    public static function newsRootId(): ?int
+    {
+        $id = self::query()
+            ->where('slug', self::NEWS_SLUG)
+            ->orWhere('name', self::NEWS_ROOT_NAME)
+            ->orderByDesc('id')
+            ->value('id');
+
+        return $id === null ? null : (int) $id;
+    }
+
+    /**
+     * 取某根栏目（含自身）的整棵子树 id 集合（BFS，栏目量级极小）
+     *
+     * 用于「排除新闻子树」：`FaqService::articles()` 用 `whereNotIn('category_id', …)`
+     * 把新闻文章挡在帮助中心之外（path 前缀匹配在 id 不定长时会误伤兄弟树，故用精确 id 集）。
+     */
+    public static function subtreeIds(int $rootId): array
+    {
+        $ids = [$rootId];
+        $queue = [$rootId];
+
+        while ($queue !== []) {
+            $pid = array_pop($queue);
+            foreach (self::where('parent_id', $pid)->pluck('id')->all() as $cid) {
+                $ids[] = (int) $cid;
+                $queue[] = (int) $cid;
+            }
+        }
+
+        return $ids;
     }
 
     public function parent(): BelongsTo

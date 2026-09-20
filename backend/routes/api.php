@@ -57,6 +57,7 @@ use App\Http\Controllers\Storefront\AttributeController as StorefrontAttributeCo
 use App\Http\Controllers\Storefront\CouponController as StorefrontCouponController;
 use App\Http\Controllers\Storefront\PromotionController as StorefrontPromotionController;
 use App\Http\Controllers\Storefront\NavController as StorefrontNavController;
+use App\Http\Controllers\Storefront\NewsController as StorefrontNewsController;
 use App\Http\Controllers\Storefront\ProductController as StorefrontProductController;
 use App\Http\Controllers\Storefront\SiteController as StorefrontSiteController;
 use App\Http\Controllers\Wms\WmsCallbackController;
@@ -137,6 +138,14 @@ Route::prefix('cms')->group(function () {
     Route::get('/categories', [CmsController::class, 'categories']);
     // 单页内容（/p/{slug}）——对外以 slug 标识，不暴露 id
     Route::get('/pages/{slug}', [CmsController::class, 'page']);
+});
+
+// 新闻中心（CMS 新闻中心，一期，公开无需登录：前台 /news 消费，且需被搜索引擎抓取）
+Route::prefix('news')->group(function () {
+    Route::get('/channels', [StorefrontNewsController::class, 'channels']);
+    Route::get('/articles', [StorefrontNewsController::class, 'articles']);
+    // 详情必须注册在列表之后，避免 /articles/{id} 抢走 /articles
+    Route::get('/articles/{id}', [StorefrontNewsController::class, 'detail']);
 });
 
 /*

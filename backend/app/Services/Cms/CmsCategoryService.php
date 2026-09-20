@@ -4,6 +4,7 @@ namespace App\Services\Cms;
 
 use App\Exceptions\BusinessException;
 use App\Models\CsFaqCategory;
+use App\Support\CmsListStyle;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
@@ -28,12 +29,15 @@ class CmsCategoryService
 
     /** update() 允许写入的键 */
     private const UPDATABLE = [
-        'name', 'sort', 'is_active', 'type', 'slug', 'template', 'show_in_nav', 'icon',
+        'name', 'sort', 'is_active', 'type', 'slug', 'template', 'list_style', 'show_in_nav', 'icon',
         'seo_title', 'seo_keywords', 'seo_description',
     ];
 
     /** 允许被清空（空串归一为 null）的可选文本列 */
     private const NULLABLE_TEXT = ['slug', 'template', 'icon', 'seo_title', 'seo_keywords', 'seo_description'];
+
+    /** 列表形态（CMS 新闻中心，一期）：channel 栏目可切 card/list，落库归一为合法值或默认 */
+    private const LIST_STYLE_KEY = 'list_style';
 
     /**
      * 构建栏目树
@@ -98,6 +102,7 @@ class CmsCategoryService
                 'type' => $data['type'] ?? CsFaqCategory::TYPE_CHANNEL,
                 'slug' => ($data['slug'] ?? '') ?: null,
                 'template' => ($data['template'] ?? '') ?: null,
+                'list_style' => $this->normalizeListStyle($data['list_style'] ?? null),
                 'show_in_nav' => (bool) ($data['show_in_nav'] ?? false),
                 'icon' => ($data['icon'] ?? '') ?: null,
                 'seo_title' => ($data['seo_title'] ?? '') ?: null,
@@ -130,6 +135,11 @@ class CmsCategoryService
             if (array_key_exists($nullableKey, $payload)) {
                 $payload[$nullableKey] = $payload[$nullableKey] ?: null;
             }
+        }
+
+        // list_style 归一：非法/空 ⇒ 默认 list（仅 channel 有意义，page 忽略也无妨）
+        if (array_key_exists(self::LIST_STYLE_KEY, $payload)) {
+            $payload[self::LIST_STYLE_KEY] = $this->normalizeListStyle($payload[self::LIST_STYLE_KEY] ?? null);
         }
 
         $category->fill($payload)->save();
@@ -263,6 +273,16 @@ class CmsCategoryService
     private function buildPath(?CsFaqCategory $parent, int $id): string
     {
         return ($parent?->path ?? '/').$id.'/';
+    }
+
+    /** list_style 归一：非法/空值回落默认（防御性，控制器另有 in 校验兜底） */
+    private function normalizeListStyle(?string $style): string
+    {
+        if ($style !== null && CmsListStyle::isValid($style)) {
+            return $style;
+        }
+
+        return CmsListStyle::DEFAULT;
     }
 
     /** 递归重写子孙的 level 与 path（栏目量级小，递归足够且直观） */

@@ -23,6 +23,7 @@ return [
         '/',
         '/service-center/faq',
         '/announcements',
+        '/news',
         '/coupons/center',
     ],
 

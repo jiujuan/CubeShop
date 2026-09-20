@@ -48,7 +48,11 @@ class CmsController extends Controller
                 'active_only' => true,
                 'parent_id' => (int) ($data['parent_id'] ?? 0),
                 // CMS-204：「公告」走独立入口，不作为用户端类目出现（与 /api/cs/faq/categories 同口径）
-                'exclude_ids' => array_filter([CsFaqCategory::announcementCarrierId()]),
+                // CMS 新闻中心：新闻中心是独立前台页，同样不进帮助中心侧栏
+                'exclude_ids' => array_filter([
+                    CsFaqCategory::announcementCarrierId(),
+                    CsFaqCategory::newsRootId(),
+                ]),
             ])
         );
     }

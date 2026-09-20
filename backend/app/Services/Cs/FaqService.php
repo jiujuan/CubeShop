@@ -43,7 +43,11 @@ class FaqService
                 'active_only' => true,
                 'type' => CsFaqCategory::TYPE_CHANNEL,
                 // CMS-204：「公告」有自己的前台入口，不作为帮助中心类目出现（连同子树一并摘掉）
-                'exclude_ids' => array_filter([CsFaqCategory::announcementCarrierId()]),
+                // CMS 新闻中心：新闻中心是独立前台页，同样不能混进帮助中心类目树
+                'exclude_ids' => array_filter([
+                    CsFaqCategory::announcementCarrierId(),
+                    CsFaqCategory::newsRootId(),
+                ]),
             ])
         );
     }
@@ -82,10 +86,17 @@ class FaqService
         $keyword = $this->normalizeKeyword($keyword);
 
         // 分类存在性由控制器用 exists 规则校验（非法 → 422）；此处只做查询。
+        $newsSubtree = CsFaqCategory::newsRootId();
         $query = CsFaqArticle::query()
             ->published()
             ->with('category')
-            ->whereHas('category', fn ($q) => $q->where('type', CsFaqCategory::TYPE_CHANNEL))
+            ->whereHas('category', function ($q) use ($newsSubtree) {
+                $q->where('type', CsFaqCategory::TYPE_CHANNEL);
+                // CMS 新闻中心：新闻文章走独立 /api/news，不能出现在帮助中心列表/搜索里
+                if ($newsSubtree !== null) {
+                    $q->whereNotIn('id', CsFaqCategory::subtreeIds($newsSubtree));
+                }
+            })
             ->when($categoryId !== null, fn ($q) => $q->where('category_id', $categoryId))
             ->when($keyword !== null, fn ($q) => $this->applyKeyword($q, $keyword))
             ->orderByDesc('is_hot')
