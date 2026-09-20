@@ -2,7 +2,7 @@
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { Eye, EyeOff, Lock, RefreshCw, ShieldCheck, SquareUser, Store } from 'lucide-vue-next'
-import { getCaptcha, register, type Captcha } from '@/api/auth'
+import { CAPTCHA_LENGTH, getCaptcha, register, type Captcha } from '@/api/auth'
 import { useAuthStore } from '@/stores/auth'
 
 /**
@@ -46,6 +46,10 @@ async function handleRegister() {
   }
   if (!f.captcha_code || !captcha.value) {
     errorMsg.value = '请输入验证码'
+    return
+  }
+  if (f.captcha_code.trim().length !== CAPTCHA_LENGTH) {
+    errorMsg.value = `请输入 ${CAPTCHA_LENGTH} 位验证码`
     return
   }
 
@@ -126,9 +130,9 @@ async function handleRegister() {
           <div class="flex gap-2">
             <div class="flex flex-1 items-center gap-2 rounded-lg border border-slate-200 px-3 transition-colors focus-within:border-[#1677ff]">
               <ShieldCheck class="h-4.5 w-4.5 shrink-0 text-slate-400" />
-              <input v-model="form.captcha_code" type="text" placeholder="请输入验证码" maxlength="4" class="h-10 w-full bg-transparent text-sm outline-none placeholder:text-slate-300" />
+              <input v-model="form.captcha_code" type="text" placeholder="请输入验证码" maxlength="5" class="h-10 w-full bg-transparent text-sm outline-none placeholder:text-slate-300" />
             </div>
-            <button type="button" title="点击刷新验证码" class="relative h-10 w-[120px] shrink-0 overflow-hidden rounded-lg border border-dashed border-slate-300 bg-slate-50 hover:border-[#1677ff]" @click="refreshCaptcha">
+            <button type="button" title="点击刷新验证码" class="relative h-10 w-[140px] shrink-0 overflow-hidden rounded-lg border border-dashed border-slate-300 bg-slate-50 hover:border-[#1677ff]" @click="refreshCaptcha">
               <img v-if="captcha" :src="captcha.image" alt="验证码" class="h-full w-full" />
               <RefreshCw v-else class="absolute inset-0 m-auto h-4 w-4 animate-spin text-slate-400" />
             </button>

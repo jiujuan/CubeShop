@@ -19,6 +19,14 @@ export interface Captcha {
   debug_code?: string
 }
 
+/**
+ * 图形验证码位数（前端单一真源）
+ *
+ * ⚠️ 必须与后端 `App\Services\Common\CaptchaService::LENGTH` 保持一致 ——
+ * 改位数要同时改两处，否则用户永远输不满、登录必然失败。
+ */
+export const CAPTCHA_LENGTH = 5
+
 /** 图形验证码（登录页） */
 export function getCaptcha() {
   return request.post<ApiResult<Captcha>>('/auth/captcha')

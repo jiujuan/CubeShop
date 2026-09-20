@@ -2,7 +2,7 @@
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { Eye, EyeOff, Lock, RefreshCw, ShieldCheck, SquareUser, Store } from 'lucide-vue-next'
-import { getCaptcha, login, type Captcha } from '@/api/auth'
+import { CAPTCHA_LENGTH, getCaptcha, login, type Captcha } from '@/api/auth'
 import { landingPath } from '@/router'
 import { useAuthStore } from '@/stores/auth'
 
@@ -42,6 +42,10 @@ async function handleLogin() {
   }
   if (!form.value.captcha_code) {
     errorMsg.value = '请输入验证码'
+    return
+  }
+  if (form.value.captcha_code.trim().length !== CAPTCHA_LENGTH) {
+    errorMsg.value = `请输入 ${CAPTCHA_LENGTH} 位验证码`
     return
   }
   if (!captcha.value) {
@@ -147,7 +151,7 @@ async function handleLogin() {
                 v-model="form.captcha_code"
                 type="text"
                 placeholder="请输入验证码"
-                maxlength="4"
+                maxlength="5"
                 class="h-10 w-full bg-transparent text-sm outline-none placeholder:text-slate-300"
                 @keyup.enter="handleLogin"
               />
@@ -155,7 +159,7 @@ async function handleLogin() {
             <button
               type="button"
               title="点击刷新验证码"
-              class="relative h-10 w-[120px] shrink-0 overflow-hidden rounded-lg border border-dashed border-slate-300 bg-slate-50 transition-colors hover:border-[#1677ff]"
+              class="relative h-10 w-[140px] shrink-0 overflow-hidden rounded-lg border border-dashed border-slate-300 bg-slate-50 transition-colors hover:border-[#1677ff]"
               @click="refreshCaptcha"
             >
               <img v-if="captcha" :src="captcha.image" alt="验证码" class="h-full w-full" />
