@@ -114,7 +114,7 @@ async function save() {
 
 <template>
   <div class="mx-auto max-w-3xl space-y-4">
-    <h1 class="text-lg font-semibold">系统设置</h1>
+    <h1 class="text-lg font-semibold text-black">系统设置</h1>
 
     <div v-if="loading" class="rounded-lg bg-white p-5 shadow-sm"><LoadingSpinner /></div>
 
@@ -131,8 +131,8 @@ async function save() {
           class="rounded-md px-3 py-1.5 transition-colors"
           :class="
             activeTab === g.label
-              ? 'bg-white font-medium text-[#1677ff] shadow-sm'
-              : 'text-slate-500 hover:text-slate-700'
+              ? 'bg-white font-medium text-black shadow-sm'
+              : 'text-black'
           "
           :data-testid="`config-tab-${g.label}`"
           @click="activeTab = g.label"
@@ -145,7 +145,7 @@ async function save() {
         class="rounded-lg bg-white p-5 shadow-sm"
         :data-testid="`config-panel-${activeTab}`"
       >
-        <h2 class="mb-4 flex items-center gap-2 text-sm font-medium text-slate-700">
+        <h2 class="mb-4 flex items-center gap-2 text-sm font-medium text-black">
           <Settings class="h-4 w-4 text-[#1677ff]" />
           {{ activeTab || '系统设置' }}
         </h2>
@@ -154,8 +154,8 @@ async function save() {
           <div v-for="c in activeConfigs" :key="c.config_key">
             <!-- 图片类配置（logo）：上传 + 预览 + 移除 -->
             <template v-if="isLogo(c.config_key)">
-              <div class="text-[13px] text-slate-500">
-                <span class="font-mono text-slate-700">{{ c.config_key }}</span>
+              <div class="text-[13px] text-black">
+                <span class="font-mono text-black">{{ c.config_key }}</span>
                 <span v-if="c.description" class="ml-2 text-slate-400">{{ c.description }}</span>
               </div>
               <div class="mt-2 flex items-center gap-3">
@@ -173,7 +173,7 @@ async function save() {
                 </div>
                 <div class="flex flex-col gap-2">
                   <label
-                    class="flex h-8 cursor-pointer items-center gap-1.5 rounded border border-slate-200 px-3 text-[13px] text-slate-600 hover:border-[#1677ff] hover:text-[#1677ff]"
+                    class="flex h-8 cursor-pointer items-center gap-1.5 rounded border border-slate-200 px-3 text-[13px] text-black hover:border-[#1677ff] hover:text-[#1677ff]"
                     :class="{ 'cursor-not-allowed opacity-60': !canManage }"
                   >
                     <ImagePlus class="h-3.5 w-3.5" />
@@ -189,7 +189,7 @@ async function save() {
                   </label>
                   <button
                     v-if="drafts[c.config_key]"
-                    class="flex h-8 items-center gap-1.5 self-start rounded px-3 text-[13px] text-slate-500 hover:text-red-500"
+                    class="flex h-8 items-center gap-1.5 self-start rounded px-3 text-[13px] text-black hover:text-red-500"
                     :data-testid="`logo-clear-${c.config_key}`"
                     @click="clearLogo(c.config_key)"
                   >
@@ -203,15 +203,15 @@ async function save() {
             </template>
 
             <!-- 文本类配置 -->
-            <label v-else class="block text-[13px] text-slate-500">
-              <span class="font-mono text-slate-700">{{ c.config_key }}</span>
+            <label v-else class="block text-[13px] text-black">
+              <span class="font-mono text-black">{{ c.config_key }}</span>
               <span v-if="c.description" class="ml-2 text-slate-400">{{ c.description }}</span>
               <input
                 v-model="drafts[c.config_key]"
                 type="text"
                 :disabled="!canManage"
                 :data-testid="`config-input-${c.config_key}`"
-                class="mt-1 h-9 w-full rounded border border-slate-200 px-2 text-sm outline-none focus:border-[#1677ff] disabled:bg-slate-50 disabled:text-slate-400"
+                class="mt-1 h-9 w-full rounded border border-slate-200 px-2 text-sm text-black outline-none focus:border-[#1677ff] disabled:bg-slate-50 disabled:text-slate-400"
               />
             </label>
           </div>

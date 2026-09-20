@@ -21,6 +21,7 @@ final class ConfigGroup
     public const PREFIX_LABELS = [
         'site' => '站点信息',
         'auth' => '认证安全',
+        'payment' => '支付与充值',
         'order' => '订单交易',
         'inventory' => '库存与预警',
         'review' => '评价与通知',

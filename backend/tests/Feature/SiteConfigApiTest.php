@@ -49,6 +49,13 @@ test('TC-CFG-001 配置列表带分组标签，按 Tab 顺序聚拢且站点信�
     expect($list->where('group', '站点信息')->pluck('config_key')->all())
         ->toContain('site.name', 'site.logo', 'site.logo_small');
 
+    // payment.* 归入「支付与充值」，不得落到兜底分组
+    expect($list->where('group', '支付与充值')->pluck('config_key')->all())
+        ->toContain('payment.default_channel');
+
+    // 所有前缀均已登记：不应有任何配置落到「其它设置」（防新增前缀漏登记）
+    expect($list->where('group', '其它设置'))->toBeEmpty();
+
     // 同组条目连续出现（不交错），且首次出现的分组顺序 = Tab 顺序
     $encounter = [];
     $prev = null;
