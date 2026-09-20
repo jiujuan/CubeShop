@@ -74,23 +74,40 @@ function openEdit(row: CategoryNode) {
   dialogOpen.value = true
 }
 
+/** 内联提示条：请求层的 toast handler 未注册，失败必须在这里显式呈现，否则点了没反应 */
+const tip = ref('')
+const tipOk = ref(false)
+function notify(ok: boolean, text: string) {
+  tipOk.value = ok
+  tip.value = text
+}
+
 async function submit() {
   if (!form.value.name.trim()) return
-  if (editing.value) {
-    await updateCategory(editing.value.id, form.value)
-  } else {
-    await createCategory(form.value)
+  try {
+    if (editing.value) {
+      await updateCategory(editing.value.id, form.value)
+    } else {
+      await createCategory(form.value)
+    }
+    dialogOpen.value = false
+    notify(true, '已保存')
+    await load()
+  } catch (e) {
+    notify(false, e instanceof Error ? e.message : '保存失败')
   }
-  dialogOpen.value = false
-  await load()
 }
 
 async function remove(row: CategoryNode) {
   askConfirm('删除分类', `确定删除分类「${row.name}」？删除后不可恢复。`, async () => {
-    await deleteCategory(row.id)
-    await load()
+    try {
+      await deleteCategory(row.id)
+      notify(true, '已删除')
+      await load()
+    } catch (e) {
+      notify(false, e instanceof Error ? e.message : '删除失败')
+    }
   })
-  await load()
 }
 /** 危险操作二次确认 */
 const confirmState = ref<{ title: string; message: string; run: () => Promise<void> } | null>(null)
@@ -114,6 +131,13 @@ async function onConfirm() {
         <Plus class="mr-1 h-4 w-4" /> 新建一级分类
       </Button>
     </div>
+
+    <p
+      v-if="tip"
+      class="mb-3 rounded-md px-3 py-2 text-xs"
+      :class="tipOk ? 'bg-green-50 text-green-600' : 'bg-red-50 text-red-500'"
+      data-testid="category-tip"
+    >{{ tip }}</p>
 
     <table class="w-full text-[13px]">
       <thead>
@@ -151,7 +175,11 @@ async function onConfirm() {
               <button class="inline-flex items-center gap-0.5 hover:underline" @click="openEdit(row)">
                 <Pencil class="h-3.5 w-3.5" /> 编辑
               </button>
-              <button class="inline-flex items-center gap-0.5 text-red-500 hover:underline" @click="remove(row)">
+              <button
+                class="inline-flex items-center gap-0.5 text-red-500 hover:underline"
+                data-testid="category-delete"
+                @click="remove(row)"
+              >
                 <Trash2 class="h-3.5 w-3.5" /> 删除
               </button>
             </div>
