@@ -204,10 +204,31 @@ export function batchAssignCsTickets(ids: number[], assigneeId: number | null) {
 export interface CsFaqCategoryRow {
   id: number
   name: string
+  /** 父栏目 id，0=根 */
+  parent_id: number
+  /** 层级，根为 1 */
+  level: number
+  /** 物化路径，如 /1/5/ */
+  path: string
+  /** channel=栏目（挂文章） / page=单页 */
+  type: 'channel' | 'page'
+  /** 单页 URL 标识（前台 /p/{slug}） */
+  slug: string | null
+  /** 单页模板 key（后端 CmsPageTemplate 真源） */
+  template: string | null
+  /** 是否进入前台导航 */
+  show_in_nav: boolean
+  icon: string | null
   sort: number
   is_active: boolean
+  /** CMS-202：SEO（可为空，空则前台按栏目名/正文回落） */
+  seo_title: string | null
+  seo_keywords: string | null
+  seo_description: string | null
   articles_count: number
   published_count: number
+  /** 仅树形接口返回 */
+  children?: CsFaqCategoryRow[]
 }
 
 export interface CsFaqArticleRow {
@@ -245,12 +266,36 @@ export function getCsFaqCategories() {
   return request.get<ApiResult<CsFaqCategoryRow[]>>('/admin/cs/faq/categories')
 }
 
-export function createCsFaqCategory(data: { name: string; sort?: number; is_active?: boolean }) {
+/** 栏目新建/更新入参（CMS-104：支持父子、类型与单页属性） */
+export interface CsFaqCategoryPayload {
+  name: string
+  parent_id?: number
+  type?: 'channel' | 'page'
+  slug?: string | null
+  template?: string | null
+  show_in_nav?: boolean
+  icon?: string | null
+  sort?: number
+  is_active?: boolean
+  /** CMS-202：SEO 三列（空串表示清空，后端归一为 null） */
+  seo_title?: string | null
+  seo_keywords?: string | null
+  seo_description?: string | null
+}
+
+export function createCsFaqCategory(data: CsFaqCategoryPayload) {
   return request.post<ApiResult<CsFaqCategoryRow>>('/admin/cs/faq/categories', data)
 }
 
-export function updateCsFaqCategory(id: number, data: Partial<{ name: string; sort: number; is_active: boolean }>) {
+export function updateCsFaqCategory(id: number, data: Partial<CsFaqCategoryPayload>) {
   return request.put<ApiResult<CsFaqCategoryRow>>(`/admin/cs/faq/categories/${id}`, data)
+}
+
+/** 栏目换父（防环与子树级联由后端 CmsCategoryService 保证） */
+export function moveCsFaqCategory(id: number, parentId: number) {
+  return request.post<ApiResult<CsFaqCategoryRow>>(`/admin/cs/faq/categories/${id}/move`, {
+    parent_id: parentId,
+  })
 }
 
 export function deleteCsFaqCategory(id: number) {
@@ -290,6 +335,107 @@ export function previewCsFaqArticle(id: number) {
     id: number; title: string; summary: string | null; content: string; category_name: string | null
     is_hot: boolean; status: string; view_count: number; helpful_count: number; unhelpful_count: number; helpful_rate: number
   }>>(`/admin/cs/faq/articles/${id}/preview`)
+}
+
+// ================= 单页内容（CMS-105，权限 cs.faq.manage） =================
+
+/** 单页字段类型（与后端 CmsField::TYPES 一一对应；select/channels 为 CMS-203 新增） */
+export type CmsPageFieldType =
+  | 'text' | 'textarea' | 'markdown' | 'image' | 'image_list' | 'repeater' | 'select' | 'channels'
+
+export interface CmsPageField {
+  key: string
+  label: string
+  type: CmsPageFieldType
+  required?: boolean
+  default?: unknown
+  hint?: string
+  /** 仅 repeater：子字段 schema */
+  item?: CmsPageField[]
+  /** 仅 select：可选值（真源在后端 schema） */
+  options?: Array<{ value: string; label: string }>
+}
+
+export interface CmsPageTemplateOption {
+  key: string
+  label: string
+}
+
+/** 区块定义（CMS-203，真源在后端 CmsBlock）；fields 与单页字段同一套结构 */
+export interface CmsPageBlockOption {
+  key: string
+  label: string
+  description: string
+  fields: CmsPageField[]
+}
+
+/** 待保存的区块：`type` 取自区块库，`data` 按该区块的 schema 填写 */
+export interface CmsPageBlockPayload {
+  type: string
+  data: Record<string, unknown>
+}
+
+/** 频道类栏目下拉项（`channels` 字段用，只含 type=channel） */
+export interface CsChannelOption {
+  id: number
+  name: string
+  level: number
+}
+
+export interface CmsPageDetail {
+  category: {
+    id: number
+    name: string
+    slug: string | null
+    template: string | null
+    is_active: boolean
+  }
+  template: {
+    key: string
+    label: string
+    fields: CmsPageField[]
+    /** CMS-203：内容改由 blocks 编排（此时 fields 恒为空数组） */
+    is_blocks: boolean
+  }
+  /** 字段值（后端已与 schema 默认值合并，前端不做默认值兜底） */
+  values: Record<string, unknown>
+  /** 区块值（固定模板恒为空数组） */
+  blocks: CmsPageBlockPayload[]
+  updated_at: string | null
+}
+
+/** 单页模板下拉（新增单页时选择；真源在后端注册表） */
+export function getCsFaqPageTemplates() {
+  return request.get<ApiResult<CmsPageTemplateOption[]>>('/admin/cs/faq/page-templates')
+}
+
+/** 区块库（选中「自由区块」模板后才需要，故与模板下拉分开） */
+export function getCsFaqPageBlocks() {
+  return request.get<ApiResult<CmsPageBlockOption[]>>('/admin/cs/faq/page-blocks')
+}
+
+/** 取单页模板 schema 与当前字段值 */
+export function getCsFaqPage(id: number) {
+  return request.get<ApiResult<CmsPageDetail>>(`/admin/cs/faq/pages/${id}`)
+}
+
+/** 保存单页字段（schema 外的未知键由后端丢弃） */
+export function saveCsFaqPage(id: number, fields: Record<string, unknown>) {
+  return request.put<ApiResult<null>>(`/admin/cs/faq/pages/${id}`, { fields })
+}
+
+/** 保存区块化单页（与 saveCsFaqPage 是同一接口的另一种载体，后端按模板分流） */
+export function saveCsFaqPageBlocks(id: number, blocks: CmsPageBlockPayload[]) {
+  return request.put<ApiResult<null>>(`/admin/cs/faq/pages/${id}`, { blocks })
+}
+
+/** 单页图片上传（落 uploads/cms，与商品图片分开存放便于运维清理） */
+export function uploadCmsImage(file: File) {
+  const form = new FormData()
+  form.append('file', file)
+  return request.post<ApiResult<{ url: string }>>('/admin/cs/faq/upload', form, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  })
 }
 
 // ================= 快捷回复模板（CS-203 / CS-204） =================

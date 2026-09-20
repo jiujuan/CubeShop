@@ -1,13 +1,11 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import { MdEditor } from 'md-editor-v3'
-import 'md-editor-v3/lib/style.css'
+import MarkdownEditor from '@/components/MarkdownEditor.vue'
 import {
   createAnnouncement, deleteAnnouncement, getAnnouncements, offlineAnnouncement,
   previewAnnouncement, publishAnnouncement, updateAnnouncement,
   type AnnouncementDetail, type AnnouncementRow,
 } from '@/api/announcement'
-import { uploadImage } from '@/api/product'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import LoadingSpinner from '@/components/LoadingSpinner.vue'
 import TablePagination from '@/components/TablePagination.vue'
@@ -180,18 +178,7 @@ async function confirmDelete() {
   }
 }
 
-// ---------------- md-editor-v3 图片上传 ----------------
-async function onUploadImg(
-  files: File[],
-  callback: (urls: Array<{ url: string; alt: string; title: string }>) => void,
-) {
-  try {
-    const results = await Promise.all(files.map((f) => uploadImage(f)))
-    callback(results.map(({ data }) => ({ url: data.data.url, alt: '', title: '' })))
-  } catch (e) {
-    notify('err', e instanceof Error ? e.message : '图片上传失败')
-  }
-}
+// 图片上传与工具栏已封装进 components/MarkdownEditor.vue（CMS-108）
 
 onMounted(load)
 </script>
@@ -324,13 +311,10 @@ onMounted(load)
 
           <div class="text-[13px]">
             <span class="mb-1 block text-slate-500">正文（Markdown）</span>
-            <MdEditor
+            <MarkdownEditor
               v-model="form.content_md"
-              language="zh-CN"
-              :toolbars-exclude="['github', 'save']"
-              :style="{ height: '420px' }"
-              :on-upload-img="onUploadImg"
               data-testid="announcement-form-content"
+              @upload-error="(msg: string) => notify('err', msg)"
             />
           </div>
         </div>

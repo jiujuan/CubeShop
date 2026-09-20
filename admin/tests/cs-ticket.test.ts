@@ -448,13 +448,14 @@ describe('侧栏客服菜单权限显隐（CS-114 / R7）', () => {
   it('无 cs.ticket.view / cs.faq.manage 时不渲染客服菜单', async () => {
     const wrapper = await mountLayout(['review.manage'])
     expect(wrapper.text()).not.toContain('服务工单')
-    expect(wrapper.text()).not.toContain('帮助中心')
+    expect(wrapper.text()).not.toContain('内容管理')
   })
 
-  it('有权限时渲染「服务工单」「帮助中心」菜单', async () => {
+  it('有权限时渲染「服务工单」「内容管理」菜单', async () => {
     const wrapper = await mountLayout(['cs.ticket.view', 'cs.faq.manage'])
     expect(wrapper.text()).toContain('服务工单')
-    expect(wrapper.text()).toContain('帮助中心')
+    // CMS-111：菜单文案由「帮助中心」升级为「内容管理」（路径 /cs/faq 与权限 cs.faq.manage 不变）
+    expect(wrapper.text()).toContain('内容管理')
   })
 
   it('客服视角不显示工作台入口（工作台含经营数据，客服进不去）', async () => {

@@ -39,7 +39,7 @@ describe('登录落地页 landingPath（CS-117 缺陷 #4）', () => {
     expect(landingPath()).toBe('/cs/tickets')
   })
 
-  it('只维护帮助中心的角色落在帮助中心', () => {
+  it('只维护内容中心的角色落在内容管理页', () => {
     authWith(['cs.faq.manage'], ['cs_agent'])
     expect(landingPath()).toBe('/cs/faq')
   })

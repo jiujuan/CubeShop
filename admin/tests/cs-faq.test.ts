@@ -7,9 +7,10 @@ import { useAuthStore } from '@/stores/auth'
 
 const {
   getCsFaqCategoriesMock, getCsFaqArticlesMock, createCsFaqCategoryMock, updateCsFaqCategoryMock,
-  deleteCsFaqCategoryMock, sortCsFaqCategoriesMock, createCsFaqArticleMock, updateCsFaqArticleMock,
-  deleteCsFaqArticleMock, publishCsFaqArticleMock, offlineCsFaqArticleMock, previewCsFaqArticleMock,
-  uploadImageMock,
+  deleteCsFaqCategoryMock, sortCsFaqCategoriesMock, moveCsFaqCategoryMock, createCsFaqArticleMock,
+  updateCsFaqArticleMock, deleteCsFaqArticleMock, publishCsFaqArticleMock, offlineCsFaqArticleMock,
+  previewCsFaqArticleMock, getCsFaqPageMock, saveCsFaqPageMock, getCsFaqPageTemplatesMock,
+  uploadCmsImageMock, uploadImageMock,
 } = vi.hoisted(() => ({
   getCsFaqCategoriesMock: vi.fn(),
   getCsFaqArticlesMock: vi.fn(),
@@ -17,12 +18,17 @@ const {
   updateCsFaqCategoryMock: vi.fn(),
   deleteCsFaqCategoryMock: vi.fn(),
   sortCsFaqCategoriesMock: vi.fn(),
+  moveCsFaqCategoryMock: vi.fn(),
   createCsFaqArticleMock: vi.fn(),
   updateCsFaqArticleMock: vi.fn(),
   deleteCsFaqArticleMock: vi.fn(),
   publishCsFaqArticleMock: vi.fn(),
   offlineCsFaqArticleMock: vi.fn(),
   previewCsFaqArticleMock: vi.fn(),
+  getCsFaqPageMock: vi.fn(),
+  saveCsFaqPageMock: vi.fn(),
+  getCsFaqPageTemplatesMock: vi.fn(),
+  uploadCmsImageMock: vi.fn(),
   uploadImageMock: vi.fn(),
 }))
 
@@ -33,12 +39,20 @@ vi.mock('@/api/cs', () => ({
   updateCsFaqCategory: updateCsFaqCategoryMock,
   deleteCsFaqCategory: deleteCsFaqCategoryMock,
   sortCsFaqCategories: sortCsFaqCategoriesMock,
+  moveCsFaqCategory: moveCsFaqCategoryMock,
   createCsFaqArticle: createCsFaqArticleMock,
   updateCsFaqArticle: updateCsFaqArticleMock,
   deleteCsFaqArticle: deleteCsFaqArticleMock,
   publishCsFaqArticle: publishCsFaqArticleMock,
   offlineCsFaqArticle: offlineCsFaqArticleMock,
   previewCsFaqArticle: previewCsFaqArticleMock,
+  getCsFaqPage: getCsFaqPageMock,
+  saveCsFaqPage: saveCsFaqPageMock,
+  getCsFaqPageTemplates: getCsFaqPageTemplatesMock,
+  // CMS-203 区块接口：本文件不测区块，但组件 import 了就必须提供（否则访问即抛错）
+  getCsFaqPageBlocks: vi.fn(),
+  saveCsFaqPageBlocks: vi.fn(),
+  uploadCmsImage: uploadCmsImageMock,
 }))
 
 vi.mock('@/api/product', () => ({ uploadImage: uploadImageMock }))
@@ -93,7 +107,10 @@ const globalCfg = (pinia: ReturnType<typeof freshPinia>) => ({
 })
 
 const category = (o: Record<string, unknown> = {}) => ({
-  id: 1, name: '售后政策', sort: 1, is_active: true, articles_count: 2, published_count: 1, ...o,
+  id: 1, name: '售后政策', sort: 1, is_active: true, articles_count: 2, published_count: 1,
+  parent_id: 0, level: 1, path: '/1/', type: 'channel', slug: null, template: null,
+  show_in_nav: false, icon: null, children: [],
+  seo_title: null, seo_keywords: null, seo_description: null, ...o,
 })
 const article = (o: Record<string, unknown> = {}) => ({
   id: 1, category_id: 1, category: { id: 1, name: '售后政策' }, title: '如何退货', summary: '',
@@ -101,15 +118,37 @@ const article = (o: Record<string, unknown> = {}) => ({
   helpful_count: 0, unhelpful_count: 0, helpful_rate: null, created_at: '2026-09-17 10:00:00', ...o,
 })
 
+const pageCategory = (o: Record<string, unknown> = {}) => category({
+  id: 9, name: '关于我们', type: 'page', slug: 'about', template: 'about',
+  articles_count: 0, published_count: 0, ...o,
+})
+
 function mockArticles(list: unknown[]) {
   getCsFaqArticlesMock.mockResolvedValue({ data: { data: { list, pagination: { page: 1, page_size: 15, total: list.length, total_pages: 1 } } } })
+}
+
+function mockPage(overrides: Record<string, unknown> = {}) {
+  getCsFaqPageMock.mockResolvedValue({ data: { data: {
+    category: { id: 9, name: '关于我们', slug: 'about', template: 'about', is_active: true },
+    template: { key: 'about', label: '关于我们', fields: [
+      { key: 'intro', label: '公司简介', type: 'markdown', required: true },
+      { key: 'phone', label: '联系电话', type: 'text' },
+    ] },
+    values: { intro: '我们是一家公司', phone: '' },
+    updated_at: '2026-09-20 10:00:00',
+    ...overrides,
+  } } })
 }
 
 beforeEach(() => {
   vi.clearAllMocks()
   document.body.innerHTML = ''
   getCsFaqCategoriesMock.mockResolvedValue({ data: { data: [category()] } })
+  getCsFaqPageTemplatesMock.mockResolvedValue({ data: { data: [
+    { key: 'about', label: '关于我们' }, { key: 'contact', label: '联系我们' },
+  ] } })
   mockArticles([article()])
+  mockPage()
 })
 
 async function mountView(permissions?: string[]) {
@@ -118,16 +157,34 @@ async function mountView(permissions?: string[]) {
   return wrapper
 }
 
-describe('FAQ 管理页 CsFaqView（CS-115）', () => {
+describe('内容管理页 CsFaqView（CMS-109）', () => {
   it('无 cs.faq.manage 时隐藏所有写操作入口', async () => {
     const wrapper = await mountView([])
+    // 右侧文章区（默认选中首个栏目）
     expect(wrapper.find('[data-testid="cs-article-create"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="cs-article-edit-1"]').exists()).toBe(false)
-
-    await wrapper.find('[data-testid="cs-faq-tab-categories"]').trigger('click')
-    await flushPromises()
+    // 左侧栏目树
     expect(wrapper.find('[data-testid="cs-cat-create"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="cs-cat-delete-1"]').exists()).toBe(false)
+  })
+
+  it('左侧栏目树按 level 缩进渲染父子层级', async () => {
+    getCsFaqCategoriesMock.mockResolvedValue({ data: { data: [
+      category({ id: 1, name: '售后政策', children: [
+        category({ id: 3, name: '退货', parent_id: 1, level: 2, path: '/1/3/' }),
+      ] }),
+      category({ id: 2, name: '配送', parent_id: 0, level: 1, path: '/2/' }),
+    ] } })
+    const wrapper = await mountView()
+
+    const rootRow = wrapper.find('[data-testid="cs-faq-category-row-1"]')
+    const childRow = wrapper.find('[data-testid="cs-faq-category-row-3"]')
+    expect(rootRow.exists()).toBe(true)
+    expect(childRow.exists()).toBe(true)
+
+    // 子级缩进比父级多 14px
+    const indent = (sel: string) => Number(/padding-left:\s*(\d+)px/.exec(wrapper.find(sel).attributes('style') ?? '')?.[1] ?? 0)
+    expect(indent('[data-testid="cs-faq-category-row-3"]')).toBe(indent('[data-testid="cs-faq-category-row-1"]') + 14)
   })
 
   it('文章状态标签（草稿/已发布/已下架）渲染正确', async () => {
@@ -154,11 +211,9 @@ describe('FAQ 管理页 CsFaqView（CS-115）', () => {
     expect(wrapper.find('[data-testid="cs-article-rate-1"]').text()).toBe('75%')
   })
 
-  it('分类删除被拒时展示后端返回的冲突原因', async () => {
-    deleteCsFaqCategoryMock.mockRejectedValue(new Error('该分类下存在已发布文章，请先下架或迁移后再删除'))
+  it('栏目删除被拒时展示后端返回的冲突原因', async () => {
+    deleteCsFaqCategoryMock.mockRejectedValue(new Error('该栏目下存在子栏目，请先删除或移动子栏目'))
     const wrapper = await mountView()
-    await wrapper.find('[data-testid="cs-faq-tab-categories"]').trigger('click')
-    await flushPromises()
 
     await wrapper.find('[data-testid="cs-cat-delete-1"]').trigger('click')
     await flushPromises()
@@ -166,7 +221,7 @@ describe('FAQ 管理页 CsFaqView（CS-115）', () => {
     confirmBtn.click()
     await flushPromises()
 
-    expect(wrapper.find('[data-testid="cs-faq-tip"]').text()).toContain('已发布文章')
+    expect(wrapper.find('[data-testid="cs-faq-tip"]').text()).toContain('子栏目')
   })
 
   it('发布操作触发二次确认并调用发布接口', async () => {
@@ -308,5 +363,178 @@ describe('FAQ 管理页 CsFaqView（CS-115）', () => {
 
     expect(callback).toHaveBeenCalledWith([])
     expect(wrapper.find('[data-testid="cs-faq-tip"]').text()).toContain('文件过大')
+  })
+
+  // ---------- 左右联动（CMS-109 新增） ----------
+
+  it('选中单页栏目时右侧渲染字段表单并回显后端 values', async () => {
+    getCsFaqCategoriesMock.mockResolvedValue({ data: { data: [pageCategory()] } })
+    const wrapper = await mountView()
+
+    expect(getCsFaqPageMock).toHaveBeenCalledWith(9)
+    expect(wrapper.find('[data-testid="cs-faq-page"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="cs-faq-articles"]').exists()).toBe(false)
+    // schema 驱动的字段渲染（markdown → MdEditor 桩；text → input）
+    expect(wrapper.find('[data-testid="page-field-intro"]').exists()).toBe(true)
+    expect((wrapper.find('[data-testid="page-field-input-phone"]').element as HTMLInputElement).value).toBe('')
+    expect(wrapper.find('[data-testid="page-field-markdown-intro"]').exists()).toBe(true)
+  })
+
+  it('保存单页时把字段值提交给后端接口', async () => {
+    getCsFaqCategoriesMock.mockResolvedValue({ data: { data: [pageCategory()] } })
+    saveCsFaqPageMock.mockResolvedValue({ data: { data: null } })
+    const wrapper = await mountView()
+
+    await wrapper.find('[data-testid="page-field-input-phone"]').setValue('400-000-0000')
+    await wrapper.find('[data-testid="cs-page-save"]').trigger('click')
+    await flushPromises()
+
+    expect(saveCsFaqPageMock).toHaveBeenCalledWith(9, expect.objectContaining({ phone: '400-000-0000', intro: '我们是一家公司' }))
+    expect(wrapper.find('[data-testid="cs-faq-tip"]').text()).toContain('已保存')
+  })
+
+  it('从栏目切换到单页栏目时右侧切换到字段表单（不串数据）', async () => {
+    getCsFaqCategoriesMock.mockResolvedValue({ data: { data: [category({ id: 1 }), pageCategory({ id: 9 })] } })
+    const wrapper = await mountView()
+
+    // 默认选中首个栏目 → 文章区
+    expect(wrapper.find('[data-testid="cs-faq-articles"]').exists()).toBe(true)
+
+    await wrapper.find('[data-testid="cs-cat-select-9"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="cs-faq-page"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="cs-faq-articles"]').exists()).toBe(false)
+  })
+
+  it('新增单页栏目时提交 type/slug/template', async () => {
+    createCsFaqCategoryMock.mockResolvedValue({ data: { data: pageCategory() } })
+    const wrapper = await mountView()
+
+    await wrapper.find('[data-testid="cs-cat-create"]').trigger('click')
+    await flushPromises()
+    await wrapper.find('[data-testid="cs-category-name"]').setValue('公司介绍')
+    await wrapper.find('[data-testid="cs-category-type"]').setValue('page')
+    await flushPromises()
+    await wrapper.find('[data-testid="cs-category-template"]').setValue('about')
+    await wrapper.find('[data-testid="cs-category-slug"]').setValue('company')
+    await wrapper.find('[data-testid="cs-category-nav"]').setValue(true)
+    await wrapper.find('[data-testid="cs-category-save"]').trigger('click')
+    await flushPromises()
+
+    expect(createCsFaqCategoryMock).toHaveBeenCalledWith(expect.objectContaining({
+      name: '公司介绍', type: 'page', slug: 'company', template: 'about', show_in_nav: true, parent_id: 0,
+    }))
+  })
+
+  it('编辑栏目时切换上级栏目会调用 move 接口', async () => {
+    getCsFaqCategoriesMock.mockResolvedValue({ data: { data: [
+      category({ id: 1, name: '售后政策' }),
+      category({ id: 2, name: '配送', children: [
+        category({ id: 3, name: '退货', parent_id: 2, level: 2, path: '/2/3/' }),
+      ] }),
+    ] } })
+    updateCsFaqCategoryMock.mockResolvedValue({ data: { data: category({ id: 3 }) } })
+    moveCsFaqCategoryMock.mockResolvedValue({ data: { data: category({ id: 3, parent_id: 1 }) } })
+    const wrapper = await mountView()
+
+    await wrapper.find('[data-testid="cs-cat-edit-3"]').trigger('click')
+    await flushPromises()
+    await wrapper.find('[data-testid="cs-category-parent"]').setValue('1')
+    await wrapper.find('[data-testid="cs-category-save"]').trigger('click')
+    await flushPromises()
+
+    expect(updateCsFaqCategoryMock).toHaveBeenCalledWith(3, expect.objectContaining({ name: '退货' }))
+    expect(moveCsFaqCategoryMock).toHaveBeenCalledWith(3, 1)
+  })
+
+  it('单页栏目的 SEO 三列可回填与提交（CMS-202）', async () => {
+    getCsFaqCategoriesMock.mockResolvedValue({ data: { data: [
+      pageCategory({ seo_title: '关于我们 | 品质电商', seo_keywords: '电商', seo_description: '一句话说明' }),
+    ] } })
+    updateCsFaqCategoryMock.mockResolvedValue({ data: { data: pageCategory() } })
+    const wrapper = await mountView()
+
+    await wrapper.find('[data-testid="cs-cat-edit-9"]').trigger('click')
+    await flushPromises()
+
+    // 回填
+    const title = wrapper.find('[data-testid="cs-category-seo-title"]').element as HTMLInputElement
+    expect(title.value).toBe('关于我们 | 品质电商')
+
+    await wrapper.find('[data-testid="cs-category-seo-keywords"]').setValue('电商,正品')
+    await wrapper.find('[data-testid="cs-category-save"]').trigger('click')
+    await flushPromises()
+
+    expect(updateCsFaqCategoryMock).toHaveBeenCalledWith(9, expect.objectContaining({
+      seo_title: '关于我们 | 品质电商', seo_keywords: '电商,正品', seo_description: '一句话说明',
+    }))
+  })
+
+  it('清空单页 SEO 时提交空串（后端归一为 null）', async () => {
+    getCsFaqCategoriesMock.mockResolvedValue({ data: { data: [
+      pageCategory({ seo_title: '旧标题', seo_keywords: '旧', seo_description: '旧描述' }),
+    ] } })
+    updateCsFaqCategoryMock.mockResolvedValue({ data: { data: pageCategory() } })
+    const wrapper = await mountView()
+
+    await wrapper.find('[data-testid="cs-cat-edit-9"]').trigger('click')
+    await flushPromises()
+    await wrapper.find('[data-testid="cs-category-seo-title"]').setValue('')
+    await wrapper.find('[data-testid="cs-category-seo-keywords"]').setValue('')
+    await wrapper.find('[data-testid="cs-category-seo-description"]').setValue('')
+    await wrapper.find('[data-testid="cs-category-save"]').trigger('click')
+    await flushPromises()
+
+    expect(updateCsFaqCategoryMock).toHaveBeenCalledWith(9, expect.objectContaining({
+      seo_title: '', seo_keywords: '', seo_description: '',
+    }))
+  })
+
+  it('栏目（非单页）不显示 SEO 表单，且提交时置空', async () => {
+    updateCsFaqCategoryMock.mockResolvedValue({ data: { data: category() } })
+    const wrapper = await mountView()
+
+    await wrapper.find('[data-testid="cs-cat-edit-1"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="cs-category-seo-title"]').exists()).toBe(false)
+
+    await wrapper.find('[data-testid="cs-category-save"]').trigger('click')
+    await flushPromises()
+
+    expect(updateCsFaqCategoryMock).toHaveBeenCalledWith(1, expect.objectContaining({
+      seo_title: null, seo_keywords: null, seo_description: null,
+    }))
+  })
+})
+
+describe('公告并入内容中心（CMS-204）', () => {
+  it('「公告」栏目里的热门标记显示为「置顶」，其他栏目仍是「热门」', async () => {
+    const announcement = category({ id: 30, name: '公告', type: 'channel', articles_count: 1 })
+    const aftersale = category({ id: 1, name: '售后政策', type: 'channel' })
+    getCsFaqCategoriesMock.mockResolvedValue({ data: { data: [announcement, aftersale] } })
+    mockArticles([
+      article({ id: 1, category_id: 30, title: '系统维护通知', is_hot: true }),
+      article({ id: 2, category_id: 1, title: '退换货政策', is_hot: true }),
+    ])
+
+    const wrapper = await mountView()
+
+    expect(wrapper.find('[data-testid="cs-article-hot-1"]').text()).toBe('置顶')
+    expect(wrapper.find('[data-testid="cs-article-hot-2"]').text()).toBe('热门')
+  })
+
+  it('在公告栏目下打开文章表单时，标记文案同步为「置顶」', async () => {
+    getCsFaqCategoriesMock.mockResolvedValue({ data: { data: [category({ id: 30, name: '公告', type: 'channel' })] } })
+    mockArticles([article({ id: 1, category_id: 30, title: '系统维护通知' })])
+
+    const wrapper = await mountView()
+    await wrapper.find('[data-testid="cs-article-edit-1"]').trigger('click')
+    await flushPromises()
+
+    const label = wrapper.find('[data-testid="cs-article-form-hot"]').element.parentElement
+    expect(label?.textContent).toContain('置顶')
+    expect(label?.textContent).not.toContain('热门')
   })
 })

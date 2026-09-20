@@ -1,25 +1,33 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import { ChevronLeft, ChevronRight, Eye, Plus, X } from 'lucide-vue-next'
-import { MdEditor } from 'md-editor-v3'
-import 'md-editor-v3/lib/style.css'
+import { ChevronLeft, ChevronRight, Eye, ExternalLink, Pencil, Plus, Trash2, X } from 'lucide-vue-next'
+import MarkdownEditor from '@/components/MarkdownEditor.vue'
+import PageBlockEditor from '@/components/PageBlockEditor.vue'
+import PageFieldForm from '@/components/PageFieldForm.vue'
 import {
   createCsFaqArticle, createCsFaqCategory, deleteCsFaqArticle, deleteCsFaqCategory,
-  getCsFaqArticles, getCsFaqCategories, offlineCsFaqArticle, previewCsFaqArticle,
-  publishCsFaqArticle, sortCsFaqCategories, updateCsFaqArticle, updateCsFaqCategory,
-  type CsFaqArticlePayload, type CsFaqArticleRow, type CsFaqCategoryRow,
+  getCsFaqArticles, getCsFaqCategories, getCsFaqPage, getCsFaqPageBlocks, getCsFaqPageTemplates,
+  moveCsFaqCategory, offlineCsFaqArticle, previewCsFaqArticle,
+  publishCsFaqArticle, saveCsFaqPage, saveCsFaqPageBlocks, sortCsFaqCategories,
+  updateCsFaqArticle, updateCsFaqCategory,
+  type CmsPageBlockOption, type CmsPageBlockPayload, type CmsPageDetail, type CmsPageTemplateOption,
+  type CsChannelOption, type CsFaqArticlePayload, type CsFaqArticleRow,
+  type CsFaqCategoryPayload, type CsFaqCategoryRow,
 } from '@/api/cs'
-import { uploadImage } from '@/api/product'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import LoadingSpinner from '@/components/LoadingSpinner.vue'
 import { useAuthStore } from '@/stores/auth'
 
 /**
- * FAQ 分类与文章管理（CS-115）
+ * 内容中心 CMS 后台管理页（原 CS-115 帮助中心 → CMS-109 内容管理）
  *
- * 分类：增删改、排序、启停（有已发布文章的分类删除被后端拒绝，前端展示原因）。
- * 文章：筛选 + 增删改 + 发布/下架/预览 + 统计列。
- * 正文用 md-editor-v3 编辑 **Markdown**（源存入 content_md），HTML 产物由后端渲染派生。
+ * 布局：**左栏目树 + 右内容区**。右侧按选中栏目的 `type` 自动切换：
+ * - `type=channel` → 文章列表（筛选 / 分页 / 增删改 / 发布 / 下架 / 预览）
+ * - `type=page`    → 单页内容：固定模板用字段表单（PageFieldForm），
+ *                    `template=blocks` 用区块编辑器（PageBlockEditor，CMS-203）
+ *
+ * 栏目支持无限父子（后端 CmsCategoryService 维护 level/path，本页只做展示与转发）。
+ * 正文用 Markdown 编辑（源存 content_md），HTML 产物由后端渲染派生。
  * 无 cs.faq.manage 时页面只读，不渲染任何写操作入口。
  */
 const auth = useAuthStore()
@@ -27,13 +35,6 @@ const canManage = computed(() => auth.hasPermission('cs.faq.manage'))
 
 const STATUS_LABELS: Record<string, string> = { draft: '草稿', published: '已发布', offline: '已下架' }
 
-const tab = ref<'categories' | 'articles'>('articles')
-
-// 与营销管理页同款分段控件（Tab 的位置与样式保持一致）
-const tabs: Array<{ key: 'articles' | 'categories'; label: string }> = [
-  { key: 'articles', label: '文章管理' },
-  { key: 'categories', label: '分类管理' },
-]
 const tip = ref('')
 const tipType = ref<'ok' | 'err'>('ok')
 
@@ -42,43 +43,182 @@ function notify(type: 'ok' | 'err', text: string) {
   tip.value = text
 }
 
-// ---------------- 分类 ----------------
+// ---------------- 栏目树 ----------------
+
 const categories = ref<CsFaqCategoryRow[]>([])
 const catLoading = ref(false)
-const catEditor = ref<{ open: boolean; id: number | null; name: string; sort: number; is_active: boolean }>(
-  { open: false, id: null, name: '', sort: 0, is_active: true },
-)
+const selectedCategoryId = ref<number | null>(null)
+
+/** 拍平成「节点 + 深度」的行列表，便于按 level 缩进渲染（树只渲染一层 DOM） */
+const flatCategories = computed(() => {
+  const out: Array<{ node: CsFaqCategoryRow; depth: number }> = []
+  const walk = (nodes: CsFaqCategoryRow[], depth: number) => {
+    for (const n of nodes) {
+      out.push({ node: n, depth })
+      if (n.children?.length) walk(n.children, depth + 1)
+    }
+  }
+  walk(categories.value, 0)
+  return out
+})
+
+const allNodes = computed(() => flatCategories.value.map((x) => x.node))
+
+const selectedCategory = computed(() => allNodes.value.find((n) => n.id === selectedCategoryId.value) ?? null)
+
+/** 单页模板下拉（真源在后端 CmsPageTemplate 注册表） */
+const templateOptions = ref<CmsPageTemplateOption[]>([])
+
+const catEditor = ref<{
+  open: boolean
+  id: number | null
+  name: string
+  sort: number
+  is_active: boolean
+  parent_id: number
+  type: 'channel' | 'page'
+  slug: string
+  template: string
+  show_in_nav: boolean
+  /** CMS-202：SEO 三列（空串即清空） */
+  seo_title: string
+  seo_keywords: string
+  seo_description: string
+}>({
+  open: false, id: null, name: '', sort: 0, is_active: true,
+  parent_id: 0, type: 'channel', slug: '', template: '', show_in_nav: false,
+  seo_title: '', seo_keywords: '', seo_description: '',
+})
 const deleteCatTarget = ref<CsFaqCategoryRow | null>(null)
 const sortSaving = ref(false)
+
+/** 编辑时的「上级栏目」候选：排除自身与其所有后代（后端另有防环兜底） */
+const parentOptions = computed(() => {
+  const editingId = catEditor.value.id
+  if (editingId === null) return flatCategories.value
+
+  const excluded = new Set<number>()
+  const findNode = (nodes: CsFaqCategoryRow[]): CsFaqCategoryRow | null => {
+    for (const n of nodes) {
+      if (n.id === editingId) return n
+      const hit = findNode(n.children ?? [])
+      if (hit) return hit
+    }
+    return null
+  }
+  const collect = (n: CsFaqCategoryRow) => {
+    excluded.add(n.id)
+    ;(n.children ?? []).forEach(collect)
+  }
+  const self = findNode(categories.value)
+  if (self) collect(self)
+
+  return flatCategories.value.filter((x) => !excluded.has(x.node.id))
+})
 
 async function loadCategories() {
   catLoading.value = true
   try {
-    categories.value = (await getCsFaqCategories()).data.data
+    const { data } = await getCsFaqCategories()
+    categories.value = data.data
+
+    const nodes = allNodes.value
+    const stillExists = nodes.some((n) => n.id === selectedCategoryId.value)
+    if (!stillExists) {
+      // 优先落到第一个非单页栏目（列表为主场景）；否则第一个节点
+      const fallback = nodes.find((n) => n.type !== 'page') ?? nodes[0] ?? null
+      await selectCategory(fallback)
+    } else {
+      // 选中项仍在：刷新右侧（如改名后需要同步）
+      await selectCategory(selectedCategory.value)
+    }
   } finally {
     catLoading.value = false
   }
 }
 
+/** 选中栏目并按类型加载右侧内容区 */
+async function selectCategory(node: CsFaqCategoryRow | null) {
+  selectedCategoryId.value = node?.id ?? null
+  pageDetail.value = null
+
+  if (!node) return
+
+  if (node.type === 'page') {
+    await loadPage(node.id)
+  } else {
+    artFilters.value.category_id = node.id
+    await loadArticles(1)
+  }
+}
+
 function openCatCreate() {
-  catEditor.value = { open: true, id: null, name: '', sort: 0, is_active: true }
+  catEditor.value = {
+    open: true, id: null, name: '', sort: 0, is_active: true,
+    parent_id: 0, type: 'channel', slug: '', template: '', show_in_nav: false,
+    seo_title: '', seo_keywords: '', seo_description: '',
+  }
 }
+
+/** 在指定栏目下新建子栏目 */
+function openCatCreateChild(parent: CsFaqCategoryRow) {
+  catEditor.value = {
+    open: true, id: null, name: '', sort: 0, is_active: true,
+    parent_id: parent.id, type: 'channel', slug: '', template: '', show_in_nav: false,
+    seo_title: '', seo_keywords: '', seo_description: '',
+  }
+}
+
 function openCatEdit(c: CsFaqCategoryRow) {
-  catEditor.value = { open: true, id: c.id, name: c.name, sort: c.sort, is_active: c.is_active }
+  catEditor.value = {
+    open: true, id: c.id, name: c.name, sort: c.sort, is_active: c.is_active,
+    parent_id: c.parent_id, type: c.type ?? 'channel', slug: c.slug ?? '',
+    template: c.template ?? '', show_in_nav: c.show_in_nav,
+    seo_title: c.seo_title ?? '', seo_keywords: c.seo_keywords ?? '',
+    seo_description: c.seo_description ?? '',
+  }
 }
+
 async function saveCategory() {
-  if (!catEditor.value.name.trim()) { notify('err', '请填写分类名称'); return }
+  const e = catEditor.value
+  if (!e.name.trim()) { notify('err', '请填写栏目名称'); return }
+  if (e.type === 'page') {
+    if (!e.slug.trim()) { notify('err', '单页必须填写 slug（前台 /p/{slug} 访问）'); return }
+    if (!e.template) { notify('err', '单页必须选择模板'); return }
+  }
+
+  const payload: CsFaqCategoryPayload = {
+    name: e.name.trim(),
+    sort: e.sort,
+    is_active: e.is_active,
+    type: e.type,
+    slug: e.type === 'page' ? e.slug.trim() : null,
+    template: e.type === 'page' ? e.template : null,
+    show_in_nav: e.show_in_nav,
+    // CMS-202：SEO 只对单页开放（栏目页的 SEO 还没做前台出口）；空串即清空
+    seo_title: e.type === 'page' ? e.seo_title.trim() : null,
+    seo_keywords: e.type === 'page' ? e.seo_keywords.trim() : null,
+    seo_description: e.type === 'page' ? e.seo_description.trim() : null,
+  }
+
   try {
-    const payload = { name: catEditor.value.name.trim(), sort: catEditor.value.sort, is_active: catEditor.value.is_active }
-    if (catEditor.value.id === null) await createCsFaqCategory(payload)
-    else await updateCsFaqCategory(catEditor.value.id, payload)
+    if (e.id === null) {
+      payload.parent_id = e.parent_id
+      await createCsFaqCategory(payload)
+    } else {
+      const current = allNodes.value.find((n) => n.id === e.id)
+      const parentChanged = !!current && current.parent_id !== e.parent_id
+      await updateCsFaqCategory(e.id, payload)
+      if (parentChanged) await moveCsFaqCategory(e.id, e.parent_id)
+    }
     catEditor.value.open = false
     notify('ok', '已保存')
     await loadCategories()
-  } catch (e) {
-    notify('err', e instanceof Error ? e.message : '保存失败')
+  } catch (err) {
+    notify('err', err instanceof Error ? err.message : '保存失败')
   }
 }
+
 async function toggleCategory(c: CsFaqCategoryRow) {
   try {
     await updateCsFaqCategory(c.id, { is_active: !c.is_active })
@@ -87,10 +227,11 @@ async function toggleCategory(c: CsFaqCategoryRow) {
     notify('err', e instanceof Error ? e.message : '操作失败')
   }
 }
+
 async function saveSort() {
   sortSaving.value = true
   try {
-    await sortCsFaqCategories(categories.value.map((c) => ({ id: c.id, sort: c.sort })))
+    await sortCsFaqCategories(allNodes.value.map((c) => ({ id: c.id, sort: c.sort })))
     notify('ok', '排序已保存')
     await loadCategories()
   } catch (e) {
@@ -99,12 +240,14 @@ async function saveSort() {
     sortSaving.value = false
   }
 }
+
 async function doDeleteCategory() {
   const target = deleteCatTarget.value
   deleteCatTarget.value = null
   if (!target) return
   try {
     await deleteCsFaqCategory(target.id)
+    if (selectedCategoryId.value === target.id) selectedCategoryId.value = null
     notify('ok', '已删除')
     await loadCategories()
   } catch (e) {
@@ -112,7 +255,77 @@ async function doDeleteCategory() {
   }
 }
 
+function categoryBadge(c: CsFaqCategoryRow): string {
+  return c.type === 'page' ? '单页' : '栏目'
+}
+
+// ---------------- 单页内容 ----------------
+
+const pageDetail = ref<CmsPageDetail | null>(null)
+const pageValues = ref<Record<string, unknown>>({})
+/** CMS-203：区块化单页的内容（固定模板恒为空数组） */
+const pageBlocks = ref<CmsPageBlockPayload[]>([])
+/** 区块库（真源在后端 CmsBlock）；只在遇到区块模板时才拉，避免每次开弹窗多传一份 schema */
+const blockOptions = ref<CmsPageBlockOption[]>([])
+const pageLoading = ref(false)
+const pageSaving = ref(false)
+
+/**
+ * 可选栏目（`channels` 字段用）
+ *
+ * 复用左栏目的扁平列表并剔掉单页 —— 与后端 `faqEmbedItems` 的口径一致
+ * （单页不是「文章容器」，嵌进去只会得到空列表）。
+ */
+const channelOptions = computed<CsChannelOption[]>(() =>
+  allNodes.value
+    .filter((n) => n.type !== 'page')
+    .map((n) => ({ id: n.id, name: n.name, level: n.level })),
+)
+
+async function loadPage(id: number) {
+  pageLoading.value = true
+  pageDetail.value = null
+  pageValues.value = {}
+  pageBlocks.value = []
+  try {
+    const { data } = await getCsFaqPage(id)
+    pageDetail.value = data.data
+    // 后端已与 schema 默认值合并，前端只做浅拷贝以便就地编辑
+    pageValues.value = { ...data.data.values }
+    pageBlocks.value = data.data.blocks.map((b) => ({ ...b, data: { ...b.data } }))
+
+    if (data.data.template.is_blocks && !blockOptions.value.length) {
+      const res = await getCsFaqPageBlocks()
+      blockOptions.value = res.data.data
+    }
+  } catch (e) {
+    notify('err', e instanceof Error ? e.message : '单页加载失败')
+  } finally {
+    pageLoading.value = false
+  }
+}
+
+async function savePage() {
+  const cat = selectedCategory.value
+  if (!cat || !pageDetail.value) return
+  pageSaving.value = true
+  try {
+    // 两套载体走同一接口，后端按模板分流（固定模板写 fields，区块模板写 blocks）
+    if (pageDetail.value.template.is_blocks) {
+      await saveCsFaqPageBlocks(cat.id, pageBlocks.value)
+    } else {
+      await saveCsFaqPage(cat.id, pageValues.value)
+    }
+    notify('ok', '单页内容已保存')
+  } catch (e) {
+    notify('err', e instanceof Error ? e.message : '保存失败')
+  } finally {
+    pageSaving.value = false
+  }
+}
+
 // ---------------- 文章 ----------------
+
 const articles = ref<CsFaqArticleRow[]>([])
 const artLoading = ref(false)
 const artPagination = ref({ page: 1, page_size: 15, total: 0, total_pages: 1 })
@@ -147,7 +360,8 @@ async function loadArticles(page = 1) {
 
 function openArtCreate() {
   const form = emptyForm()
-  form.category_id = categories.value[0]?.id ?? 0
+  const channel = selectedCategory.value
+  form.category_id = channel && channel.type !== 'page' ? channel.id : (allNodes.value.find((n) => n.type !== 'page')?.id ?? 0)
   articleEditor.value = { open: true, id: null, form }
 }
 function openArtEdit(a: CsFaqArticleRow) {
@@ -209,34 +423,7 @@ async function openPreview(a: CsFaqArticleRow) {
   }
 }
 
-// ---------------- 正文编辑（md-editor-v3） ----------------
-//
-// 正文的源是 Markdown（存 content_md），HTML 产物由后端 MarkdownRenderer 渲染 +
-// HtmlSanitizer 白名单净化后写入 content —— 前端不做净化，也不生成 HTML。
-// 注意：编辑器内置预览用的是它自带的 markdown-it，与后端渲染口径可能有细微差异，
-// 以「预览」按钮（走后端、与用户端同一份内容）为准。
-
-/**
- * md-editor-v3 的图片上传钩子：复用后台统一上传接口 `POST /api/admin/upload`，
- * 拿到 url 后回填让编辑器插入 markdown 图片语法。
- */
-async function onUploadImg(
-  files: File[],
-  callback: (urls: Array<{ url: string; alt: string; title: string }>) => void,
-) {
-  try {
-    const results = await Promise.all(files.map((f) => uploadImage(f)))
-
-    callback(results.map(({ data }, i) => ({
-      url: data.data.url,
-      alt: files[i]?.name ?? '图片',
-      title: files[i]?.name ?? '',
-    })))
-  } catch (e) {
-    callback([])
-    notify('err', e instanceof Error ? e.message : '图片上传失败')
-  }
-}
+// ---------------- 工具 ----------------
 
 function fmtRate(row: CsFaqArticleRow): string {
   if (row.helpful_rate === null || row.helpful_count + row.unhelpful_count === 0) return '—'
@@ -247,181 +434,294 @@ function statusClass(status: string): string {
   return { draft: 'bg-slate-100 text-slate-500', published: 'bg-green-50 text-green-600', offline: 'bg-amber-50 text-amber-600' }[status] ?? 'bg-slate-100 text-slate-500'
 }
 
+// ---------------- 公告语境（CMS-204） ----------------
+
+/** 公告并入内容中心后寄存的栏目名（与后端迁移 000098、AnnouncementController 同一口径） */
+const ANNOUNCEMENT_CHANNEL_NAME = '公告'
+
+/**
+ * 「热门」标记的文案按栏目语境显示
+ *
+ * 公告栏目的「热门」在业务上就是「置顶」（公开接口把它映射回 `is_top`），
+ * 在公告栏目里显示「热门」会让运营无从判断这条公告会不会被顶到最前。
+ */
+function hotLabel(categoryId: number): string {
+  const node = allNodes.value.find((n) => n.id === categoryId)
+  return node?.name === ANNOUNCEMENT_CHANNEL_NAME ? '置顶' : '热门'
+}
+
+/** 文章表单里的标记文案（新建时看当前所选栏目，编辑时看文章所在栏目） */
+const formHotLabel = computed(() => hotLabel(articleEditor.value.form.category_id))
+
 onMounted(async () => {
   await loadCategories()
-  await loadArticles(1)
+  try {
+    const { data } = await getCsFaqPageTemplates()
+    templateOptions.value = data.data
+  } catch {
+    // 模板下拉失败不阻断页面（新增栏目仍可用，只是没有单页模板可选项）
+  }
 })
 </script>
 
 <template>
   <div class="rounded-lg bg-white p-5 shadow-sm" data-testid="cs-faq-view">
-    <!-- 标题 + Tab（Tab 位置与样式与营销管理页一致） -->
+    <!-- 标题 -->
     <div class="mb-4 flex items-center gap-3">
-      <h2 class="text-lg font-semibold text-slate-800">帮助中心管理</h2>
-      <div class="flex gap-1 rounded-lg bg-slate-100 p-1 text-sm" data-testid="cs-faq-tabs">
-        <button
-          v-for="t in tabs" :key="t.key"
-          class="rounded-md px-4 py-1.5 transition-colors"
-          :class="tab === t.key ? 'bg-white font-medium text-[#1677ff] shadow-sm' : 'text-slate-500 hover:text-slate-700'"
-          :data-testid="`cs-faq-tab-${t.key}`"
-          @click="tab = t.key"
-        >{{ t.label }}</button>
-      </div>
+      <h2 class="text-lg font-semibold text-slate-800">内容管理</h2>
+      <span class="text-xs text-slate-400">栏目树 / 文章 / 单页</span>
     </div>
 
     <p v-if="tip" class="mb-3 rounded-md px-3 py-2 text-xs" :class="tipType === 'ok' ? 'bg-green-50 text-green-600' : 'bg-red-50 text-red-500'" data-testid="cs-faq-tip">{{ tip }}</p>
 
-    <!-- 分类管理 -->
-    <section v-if="tab === 'categories'" data-testid="cs-faq-categories">
-      <div class="mb-3 flex items-center justify-between">
-        <p class="text-xs text-slate-400">可直接修改排序值，改完点「保存排序」提交</p>
-        <div class="flex gap-2">
-          <button v-if="canManage" class="rounded-md border border-slate-300 px-4 py-1.5 text-[13px] text-slate-600 hover:bg-slate-50" :disabled="sortSaving" data-testid="cs-cat-save-sort" @click="saveSort">保存排序</button>
-          <button v-if="canManage" class="flex items-center gap-1 rounded-md bg-[#1677ff] px-4 py-1.5 text-[13px] text-white hover:bg-[#4096ff]" data-testid="cs-cat-create" @click="openCatCreate"><Plus class="h-3.5 w-3.5" /> 新增分类</button>
+    <div class="flex gap-5">
+      <!-- 左：栏目树 -->
+      <aside class="w-64 shrink-0 border-r border-slate-100 pr-4" data-testid="cs-faq-category-tree">
+        <div class="mb-3 flex items-center justify-between">
+          <span class="text-[13px] font-medium text-slate-700">栏目树</span>
+          <div class="flex gap-2">
+            <button v-if="canManage" class="text-[13px] text-slate-500 hover:text-[#1677ff]" :disabled="sortSaving" data-testid="cs-cat-save-sort" @click="saveSort">保存排序</button>
+            <button v-if="canManage" class="flex items-center gap-0.5 text-[13px] text-[#1677ff] hover:underline" data-testid="cs-cat-create" @click="openCatCreate"><Plus class="h-3.5 w-3.5" /> 新增</button>
+          </div>
         </div>
-      </div>
 
-      <table class="w-full text-[13px]">
-        <thead>
-          <tr class="border-b border-slate-200 text-left text-slate-500">
-            <th class="px-3 py-1.5">排序</th>
-            <th class="px-3 py-1.5">名称</th>
-            <th class="px-3 py-1.5">文章数</th>
-            <th class="px-3 py-1.5">已发布</th>
-            <th class="px-3 py-1.5">状态</th>
-            <th class="px-3 py-1.5">操作</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-for="c in categories" :key="c.id" class="border-b border-slate-100 hover:bg-slate-50" :data-testid="`cs-faq-category-row-${c.id}`">
-            <td class="px-3 py-1.5">
-              <input v-model.number="c.sort" type="number" min="0" max="9999" :disabled="!canManage" class="w-16 rounded border border-slate-300 px-2 py-1 disabled:bg-slate-50" :data-testid="`cs-cat-sort-${c.id}`" />
-            </td>
-            <td class="px-3 py-1.5 text-black">{{ c.name }}</td>
-            <td class="px-3 py-1.5 text-black">{{ c.articles_count }}</td>
-            <td class="px-3 py-1.5 text-black">{{ c.published_count }}</td>
-            <td class="px-3 py-1.5">
-              <button class="rounded px-2 py-0.5 text-xs" :class="c.is_active ? 'bg-green-50 text-green-600' : 'bg-slate-100 text-slate-400'" :disabled="!canManage" :data-testid="`cs-cat-toggle-${c.id}`" @click="toggleCategory(c)">
-                {{ c.is_active ? '启用' : '停用' }}
+        <ul class="space-y-0.5">
+          <li v-for="row in flatCategories" :key="row.node.id">
+            <div
+              class="group flex items-center gap-1.5 rounded-md px-2 py-1.5 text-[13px]"
+              :class="row.node.id === selectedCategoryId ? 'bg-[#e6f4ff] text-[#1677ff]' : 'hover:bg-slate-50'"
+              :style="{ paddingLeft: `${8 + row.depth * 14}px` }"
+              :data-testid="`cs-faq-category-row-${row.node.id}`"
+              @click="selectCategory(row.node)"
+            >
+              <button class="flex-1 truncate text-left" :data-testid="`cs-cat-select-${row.node.id}`">
+                {{ row.node.name }}
               </button>
-            </td>
-            <td class="px-3 py-1.5">
-              <template v-if="canManage">
-                <button class="mr-3 text-[#1677ff] hover:underline" :data-testid="`cs-cat-edit-${c.id}`" @click="openCatEdit(c)">编辑</button>
-                <button class="text-[#ff4d4f] hover:underline" :data-testid="`cs-cat-delete-${c.id}`" @click="deleteCatTarget = c">删除</button>
-              </template>
-              <span v-else class="text-slate-300">只读</span>
-            </td>
-          </tr>
-          <tr v-if="catLoading">
-            <td colspan="6"><LoadingSpinner /></td>
-          </tr>
-          <tr v-if="!categories.length && !catLoading">
-            <td colspan="6" class="px-3 py-12 text-center text-slate-400" data-testid="cs-cat-empty">暂无分类</td>
-          </tr>
-        </tbody>
-      </table>
-    </section>
-
-    <!-- 文章管理 -->
-    <section v-else data-testid="cs-faq-articles">
-      <div class="mb-3 flex flex-wrap items-center gap-2 text-[13px]">
-        <select v-model.number="artFilters.category_id" class="rounded-md border border-slate-300 px-2 py-1.5 outline-none focus:border-[#1677ff]" data-testid="cs-article-category-filter" @change="loadArticles(1)">
-          <option :value="null">全部分类</option>
-          <option v-for="c in categories" :key="c.id" :value="c.id">{{ c.name }}</option>
-        </select>
-        <select v-model="artFilters.status" class="rounded-md border border-slate-300 px-2 py-1.5 outline-none focus:border-[#1677ff]" data-testid="cs-article-status-filter" @change="loadArticles(1)">
-          <option value="">全部状态</option>
-          <option value="draft">草稿</option>
-          <option value="published">已发布</option>
-          <option value="offline">已下架</option>
-        </select>
-        <input v-model="artFilters.keyword" type="text" placeholder="标题/正文关键词" class="rounded-md border border-slate-300 px-3 py-1.5 outline-none focus:border-[#1677ff]" data-testid="cs-article-keyword" @keyup.enter="loadArticles(1)" />
-        <button class="rounded-md border border-slate-300 px-4 py-1.5 text-slate-600 hover:bg-slate-50" data-testid="cs-article-search" @click="loadArticles(1)">查询</button>
-        <button v-if="canManage" class="ml-auto flex items-center gap-1 rounded-md bg-[#1677ff] px-4 py-1.5 text-white hover:bg-[#4096ff]" data-testid="cs-article-create" @click="openArtCreate"><Plus class="h-3.5 w-3.5" /> 新增文章</button>
-      </div>
-
-      <table class="w-full text-[13px]">
-        <thead>
-          <tr class="border-b border-slate-200 text-left text-slate-500">
-            <th class="px-3 py-1.5">标题</th>
-            <th class="px-3 py-1.5">分类</th>
-            <th class="px-3 py-1.5">状态</th>
-            <th class="px-3 py-1.5">浏览</th>
-            <th class="px-3 py-1.5">有帮助率</th>
-            <th class="px-3 py-1.5">操作</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-for="a in articles" :key="a.id" class="border-b border-slate-100 hover:bg-slate-50" :data-testid="`cs-faq-article-row-${a.id}`">
-            <td class="max-w-[240px] truncate px-3 py-1.5 text-black">
-              {{ a.title }}
-              <span v-if="a.is_hot" class="ml-1 rounded bg-[#fff1f0] px-1.5 py-0.5 text-[10px] text-[#ff4d4f]">热门</span>
-            </td>
-            <td class="px-3 py-1.5 text-black">{{ a.category?.name ?? '—' }}</td>
-            <td class="px-3 py-1.5">
-              <span class="rounded px-2 py-0.5 text-xs" :class="statusClass(a.status)" :data-testid="`cs-article-status-${a.id}`">{{ STATUS_LABELS[a.status] }}</span>
-            </td>
-            <td class="px-3 py-1.5 text-black">{{ a.view_count }}</td>
-            <td class="px-3 py-1.5 text-black" :data-testid="`cs-article-rate-${a.id}`">{{ fmtRate(a) }}</td>
-            <td class="px-3 py-1.5">
-              <div class="flex items-center gap-2">
+              <span class="shrink-0 rounded px-1 py-0.5 text-[10px]" :class="row.node.type === 'page' ? 'bg-purple-50 text-purple-500' : 'bg-slate-100 text-slate-500'">{{ categoryBadge(row.node) }}</span>
+              <span v-if="row.node.type !== 'page'" class="shrink-0 text-[11px] text-slate-400">{{ row.node.articles_count }}</span>
+              <span v-if="row.node.show_in_nav" class="shrink-0 text-[10px] text-[#1677ff]" title="显示在前台导航">导航</span>
+              <span v-if="!row.node.is_active" class="shrink-0 text-[10px] text-slate-400">停用</span>
+              <span class="hidden shrink-0 items-center gap-1 group-hover:flex">
                 <template v-if="canManage">
-                  <button class="text-[#1677ff] hover:underline" :data-testid="`cs-article-edit-${a.id}`" @click="openArtEdit(a)">编辑</button>
-                  <button v-if="a.status !== 'published'" class="text-green-600 hover:underline" :data-testid="`cs-article-publish-${a.id}`" @click="publishTarget = { article: a, action: 'publish' }">发布</button>
-                  <button v-else class="text-amber-600 hover:underline" :data-testid="`cs-article-offline-${a.id}`" @click="publishTarget = { article: a, action: 'offline' }">下架</button>
+                  <button class="text-slate-400 hover:text-[#1677ff]" :data-testid="`cs-cat-add-child-${row.node.id}`" title="新增子栏目" @click.stop="openCatCreateChild(row.node)"><Plus class="h-3 w-3" /></button>
+                  <button class="text-slate-400 hover:text-[#1677ff]" :data-testid="`cs-cat-edit-${row.node.id}`" title="编辑" @click.stop="openCatEdit(row.node)"><Pencil class="h-3 w-3" /></button>
+                  <button class="text-slate-400 hover:text-[#1677ff]" :data-testid="`cs-cat-toggle-${row.node.id}`" :title="row.node.is_active ? '停用' : '启用'" @click.stop="toggleCategory(row.node)">{{ row.node.is_active ? '停' : '启' }}</button>
+                  <button class="text-slate-400 hover:text-[#ff4d4f]" :data-testid="`cs-cat-delete-${row.node.id}`" title="删除" @click.stop="deleteCatTarget = row.node"><Trash2 class="h-3 w-3" /></button>
                 </template>
-                <button class="text-slate-500 hover:underline" :data-testid="`cs-article-preview-${a.id}`" @click="openPreview(a)"><Eye class="inline h-3.5 w-3.5" /> 预览</button>
-                <button v-if="canManage" class="text-[#ff4d4f] hover:underline" :data-testid="`cs-article-delete-${a.id}`" @click="deleteArtTarget = a">删除</button>
-              </div>
-            </td>
-          </tr>
-          <tr v-if="artLoading">
-            <td colspan="6"><LoadingSpinner /></td>
-          </tr>
-          <tr v-if="!articles.length && !artLoading">
-            <td colspan="6" class="px-3 py-12 text-center text-slate-400" data-testid="cs-article-empty">暂无文章</td>
-          </tr>
-        </tbody>
-      </table>
+                <span v-else class="text-slate-300">只读</span>
+              </span>
+            </div>
+          </li>
+        </ul>
 
-      <!-- 分页 -->
-      <div v-if="artPagination.total_pages > 1" class="mt-4 flex items-center justify-between text-[13px] text-slate-500">
-        <span>共 {{ artPagination.total }} 条记录 / 每页 {{ artPagination.page_size }} 条</span>
-        <div class="flex items-center gap-1">
-          <button
-            class="flex h-7 w-7 items-center justify-center rounded border border-slate-200 disabled:opacity-40"
-            :disabled="artPagination.page <= 1" @click="loadArticles(artPagination.page - 1)"
-          ><ChevronLeft class="h-4 w-4" /></button>
-          <button
-            v-for="page in artPagination.total_pages" :key="page"
-            class="h-7 min-w-7 rounded border px-1.5"
-            :class="page === artPagination.page ? 'border-[#1677ff] bg-[#1677ff] text-white' : 'border-slate-200 hover:border-[#1677ff]'"
-            @click="loadArticles(page)"
-          >{{ page }}</button>
-          <button
-            class="flex h-7 w-7 items-center justify-center rounded border border-slate-200 disabled:opacity-40"
-            :disabled="artPagination.page >= artPagination.total_pages" @click="loadArticles(artPagination.page + 1)"
-          ><ChevronRight class="h-4 w-4" /></button>
+        <div v-if="catLoading" class="py-4"><LoadingSpinner /></div>
+        <p v-if="!flatCategories.length && !catLoading" class="px-2 py-8 text-center text-xs text-slate-400" data-testid="cs-cat-empty">暂无栏目</p>
+      </aside>
+
+      <!-- 右：内容区 -->
+      <section class="min-w-0 flex-1">
+        <!-- 未选中 -->
+        <div v-if="!selectedCategory" class="py-16 text-center text-sm text-slate-400" data-testid="cs-faq-empty">请从左侧选择一个栏目</div>
+
+        <!-- 单页：字段表单 -->
+        <div v-else-if="selectedCategory.type === 'page'" data-testid="cs-faq-page">
+          <div class="mb-3 flex flex-wrap items-center gap-2">
+            <h3 class="text-[15px] font-medium text-slate-800">{{ selectedCategory.name }}</h3>
+            <span v-if="pageDetail" class="rounded bg-purple-50 px-1.5 py-0.5 text-[11px] text-purple-500">{{ pageDetail.template.label }}</span>
+            <a
+              v-if="selectedCategory.slug"
+              :href="`/p/${selectedCategory.slug}`"
+              target="_blank"
+              rel="noopener"
+              class="flex items-center gap-1 text-[13px] text-[#1677ff] hover:underline"
+              :data-testid="`cs-page-link-${selectedCategory.id}`"
+            >
+              /p/{{ selectedCategory.slug }} <ExternalLink class="h-3 w-3" />
+            </a>
+          </div>
+
+          <div v-if="pageLoading" class="py-12"><LoadingSpinner /></div>
+          <template v-else-if="pageDetail">
+            <!-- CMS-203：区块化模板走区块编辑器 -->
+            <PageBlockEditor
+              v-if="pageDetail.template.is_blocks"
+              v-model="pageBlocks"
+              :options="blockOptions"
+              :channels="channelOptions"
+              :disabled="!canManage"
+              @upload-error="(msg: string) => notify('err', msg)"
+            />
+            <PageFieldForm
+              v-else
+              :schema="pageDetail.template.fields"
+              v-model="pageValues"
+              :disabled="!canManage"
+              @upload-error="(msg: string) => notify('err', msg)"
+            />
+            <div v-if="canManage" class="mt-5 flex justify-end">
+              <button class="rounded-md bg-[#1677ff] px-4 py-1.5 text-[13px] text-white hover:bg-[#4096ff]" :disabled="pageSaving" data-testid="cs-page-save" @click="savePage">
+                {{ pageSaving ? '保存中…' : '保存单页' }}
+              </button>
+            </div>
+          </template>
+          <p v-else class="py-12 text-center text-sm text-slate-400" data-testid="cs-page-empty">单页内容加载失败或模板无效</p>
         </div>
-      </div>
-    </section>
 
-    <!-- 分类编辑弹窗 -->
+        <!-- 栏目：文章列表 -->
+        <div v-else data-testid="cs-faq-articles">
+          <div class="mb-3 flex flex-wrap items-center gap-2 text-[13px]">
+            <h3 class="text-[15px] font-medium text-slate-800">{{ selectedCategory.name }}</h3>
+            <select v-model="artFilters.status" class="rounded-md border border-slate-300 px-2 py-1.5 outline-none focus:border-[#1677ff]" data-testid="cs-article-status-filter" @change="loadArticles(1)">
+              <option value="">全部状态</option>
+              <option value="draft">草稿</option>
+              <option value="published">已发布</option>
+              <option value="offline">已下架</option>
+            </select>
+            <input v-model="artFilters.keyword" type="text" placeholder="标题/正文关键词" class="rounded-md border border-slate-300 px-3 py-1.5 outline-none focus:border-[#1677ff]" data-testid="cs-article-keyword" @keyup.enter="loadArticles(1)" />
+            <button class="rounded-md border border-slate-300 px-4 py-1.5 text-slate-600 hover:bg-slate-50" data-testid="cs-article-search" @click="loadArticles(1)">查询</button>
+            <button v-if="canManage" class="ml-auto flex items-center gap-1 rounded-md bg-[#1677ff] px-4 py-1.5 text-white hover:bg-[#4096ff]" data-testid="cs-article-create" @click="openArtCreate"><Plus class="h-3.5 w-3.5" /> 新增文章</button>
+          </div>
+
+          <table class="w-full text-[13px]">
+            <thead>
+              <tr class="border-b border-slate-200 text-left text-slate-500">
+                <th class="px-3 py-1.5">标题</th>
+                <th class="px-3 py-1.5">状态</th>
+                <th class="px-3 py-1.5">浏览</th>
+                <th class="px-3 py-1.5">有帮助率</th>
+                <th class="px-3 py-1.5">操作</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="a in articles" :key="a.id" class="border-b border-slate-100 hover:bg-slate-50" :data-testid="`cs-faq-article-row-${a.id}`">
+                <td class="max-w-[240px] truncate px-3 py-1.5 text-black">
+                  {{ a.title }}
+                  <span v-if="a.is_hot" class="ml-1 rounded bg-[#fff1f0] px-1.5 py-0.5 text-[10px] text-[#ff4d4f]" :data-testid="`cs-article-hot-${a.id}`">{{ hotLabel(a.category_id) }}</span>
+                </td>
+                <td class="px-3 py-1.5">
+                  <span class="rounded px-2 py-0.5 text-xs" :class="statusClass(a.status)" :data-testid="`cs-article-status-${a.id}`">{{ STATUS_LABELS[a.status] }}</span>
+                </td>
+                <td class="px-3 py-1.5 text-black">{{ a.view_count }}</td>
+                <td class="px-3 py-1.5 text-black" :data-testid="`cs-article-rate-${a.id}`">{{ fmtRate(a) }}</td>
+                <td class="px-3 py-1.5">
+                  <div class="flex items-center gap-2">
+                    <template v-if="canManage">
+                      <button class="text-[#1677ff] hover:underline" :data-testid="`cs-article-edit-${a.id}`" @click="openArtEdit(a)">编辑</button>
+                      <button v-if="a.status !== 'published'" class="text-green-600 hover:underline" :data-testid="`cs-article-publish-${a.id}`" @click="publishTarget = { article: a, action: 'publish' }">发布</button>
+                      <button v-else class="text-amber-600 hover:underline" :data-testid="`cs-article-offline-${a.id}`" @click="publishTarget = { article: a, action: 'offline' }">下架</button>
+                    </template>
+                    <button class="text-slate-500 hover:underline" :data-testid="`cs-article-preview-${a.id}`" @click="openPreview(a)"><Eye class="inline h-3.5 w-3.5" /> 预览</button>
+                    <button v-if="canManage" class="text-[#ff4d4f] hover:underline" :data-testid="`cs-article-delete-${a.id}`" @click="deleteArtTarget = a">删除</button>
+                  </div>
+                </td>
+              </tr>
+              <tr v-if="artLoading">
+                <td colspan="5"><LoadingSpinner /></td>
+              </tr>
+              <tr v-if="!articles.length && !artLoading">
+                <td colspan="5" class="px-3 py-12 text-center text-slate-400" data-testid="cs-article-empty">暂无文章</td>
+              </tr>
+            </tbody>
+          </table>
+
+          <!-- 分页 -->
+          <div v-if="artPagination.total_pages > 1" class="mt-4 flex items-center justify-between text-[13px] text-slate-500">
+            <span>共 {{ artPagination.total }} 条记录 / 每页 {{ artPagination.page_size }} 条</span>
+            <div class="flex items-center gap-1">
+              <button
+                class="flex h-7 w-7 items-center justify-center rounded border border-slate-200 disabled:opacity-40"
+                :disabled="artPagination.page <= 1" @click="loadArticles(artPagination.page - 1)"
+              ><ChevronLeft class="h-4 w-4" /></button>
+              <button
+                v-for="page in artPagination.total_pages" :key="page"
+                class="h-7 min-w-7 rounded border px-1.5"
+                :class="page === artPagination.page ? 'border-[#1677ff] bg-[#1677ff] text-white' : 'border-slate-200 hover:border-[#1677ff]'"
+                @click="loadArticles(page)"
+              >{{ page }}</button>
+              <button
+                class="flex h-7 w-7 items-center justify-center rounded border border-slate-200 disabled:opacity-40"
+                :disabled="artPagination.page >= artPagination.total_pages" @click="loadArticles(artPagination.page + 1)"
+              ><ChevronRight class="h-4 w-4" /></button>
+            </div>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <!-- 栏目编辑弹窗 -->
     <div v-if="catEditor.open" class="fixed inset-0 z-50 flex items-center justify-center bg-black/40" data-testid="cs-category-editor" @click.self="catEditor.open = false">
-      <div class="w-96 rounded-xl bg-white p-6">
-        <h3 class="mb-3 text-sm font-semibold text-slate-800">{{ catEditor.id === null ? '新增分类' : '编辑分类' }}</h3>
+      <div class="max-h-[85vh] w-[420px] overflow-y-auto rounded-xl bg-white p-6">
+        <h3 class="mb-3 text-sm font-semibold text-slate-800">{{ catEditor.id === null ? '新增栏目' : '编辑栏目' }}</h3>
+
         <label class="mb-2 block text-[13px]">
           <span class="mb-1 block text-slate-500">名称</span>
-          <input v-model="catEditor.name" type="text" maxlength="64" class="w-full rounded-md border border-slate-300 px-3 py-2" data-testid="cs-category-name" />
+          <input v-model="catEditor.name" type="text" maxlength="64" class="w-full rounded-md border border-slate-300 px-3 py-2 outline-none focus:border-[#1677ff]" data-testid="cs-category-name" />
         </label>
+
+        <label class="mb-2 block text-[13px]">
+          <span class="mb-1 block text-slate-500">类型</span>
+          <select v-model="catEditor.type" class="w-full rounded-md border border-slate-300 px-3 py-2 outline-none focus:border-[#1677ff]" data-testid="cs-category-type">
+            <option value="channel">栏目（挂文章列表）</option>
+            <option value="page">单页（关于我们 / 联系我们…）</option>
+          </select>
+        </label>
+
+        <label class="mb-2 block text-[13px]">
+          <span class="mb-1 block text-slate-500">上级栏目</span>
+          <select v-model.number="catEditor.parent_id" class="w-full rounded-md border border-slate-300 px-3 py-2 outline-none focus:border-[#1677ff]" data-testid="cs-category-parent">
+            <option :value="0">顶级栏目</option>
+            <option v-for="row in parentOptions" :key="row.node.id" :value="row.node.id">{{ '　'.repeat(row.depth) }}{{ row.node.name }}</option>
+          </select>
+        </label>
+
+        <!-- 单页专属 -->
+        <template v-if="catEditor.type === 'page'">
+          <label class="mb-2 block text-[13px]">
+            <span class="mb-1 block text-slate-500">模板</span>
+            <select v-model="catEditor.template" class="w-full rounded-md border border-slate-300 px-3 py-2 outline-none focus:border-[#1677ff]" data-testid="cs-category-template">
+              <option value="">请选择模板</option>
+              <option v-for="t in templateOptions" :key="t.key" :value="t.key">{{ t.label }}</option>
+            </select>
+          </label>
+          <label class="mb-2 block text-[13px]">
+            <span class="mb-1 block text-slate-500">slug（前台 /p/{slug} 访问）</span>
+            <input v-model="catEditor.slug" type="text" maxlength="64" placeholder="如 about" class="w-full rounded-md border border-slate-300 px-3 py-2 outline-none focus:border-[#1677ff]" data-testid="cs-category-slug" />
+          </label>
+
+          <!-- CMS-202：SEO（三项都可留空，前台按栏目名/正文回落） -->
+          <div class="mb-2 rounded-md bg-slate-50 p-3">
+            <p class="mb-2 text-[12px] text-slate-500">
+              搜索引擎优化（留空则前台自动回落：标题用栏目名、描述取正文首段）
+            </p>
+            <label class="mb-2 block text-[13px]">
+              <span class="mb-1 block text-slate-500">SEO 标题</span>
+              <input v-model="catEditor.seo_title" type="text" maxlength="128" placeholder="留空则用栏目名" class="w-full rounded-md border border-slate-300 px-3 py-2 outline-none focus:border-[#1677ff]" data-testid="cs-category-seo-title" />
+            </label>
+            <label class="mb-2 block text-[13px]">
+              <span class="mb-1 block text-slate-500">关键词（逗号分隔）</span>
+              <input v-model="catEditor.seo_keywords" type="text" maxlength="255" placeholder="电商,正品" class="w-full rounded-md border border-slate-300 px-3 py-2 outline-none focus:border-[#1677ff]" data-testid="cs-category-seo-keywords" />
+            </label>
+            <label class="block text-[13px]">
+              <span class="mb-1 block text-slate-500">页面描述</span>
+              <textarea v-model="catEditor.seo_description" rows="2" maxlength="255" placeholder="一句话说明这个页面" class="w-full rounded-md border border-slate-300 px-3 py-2 outline-none focus:border-[#1677ff]" data-testid="cs-category-seo-description" />
+            </label>
+          </div>
+        </template>
+
         <label class="mb-2 block text-[13px]">
           <span class="mb-1 block text-slate-500">排序</span>
-          <input v-model.number="catEditor.sort" type="number" min="0" class="w-full rounded-md border border-slate-300 px-3 py-2" data-testid="cs-category-sort" />
+          <input v-model.number="catEditor.sort" type="number" min="0" class="w-full rounded-md border border-slate-300 px-3 py-2 outline-none focus:border-[#1677ff]" data-testid="cs-category-sort" />
         </label>
-        <label class="mb-3 flex items-center gap-2 text-[13px] text-slate-600">
-          <input v-model="catEditor.is_active" type="checkbox" data-testid="cs-category-active" /> 启用
-        </label>
+
+        <div class="mb-3 space-y-1.5 text-[13px] text-slate-600">
+          <label class="flex items-center gap-2">
+            <input v-model="catEditor.is_active" type="checkbox" data-testid="cs-category-active" /> 启用
+          </label>
+          <label class="flex items-center gap-2">
+            <input v-model="catEditor.show_in_nav" type="checkbox" data-testid="cs-category-nav" /> 显示在前台导航
+          </label>
+        </div>
+
         <div class="flex justify-end gap-2">
           <button class="rounded-md border border-slate-200 px-4 py-1.5 text-[13px] text-slate-500" @click="catEditor.open = false">取消</button>
           <button class="rounded-md bg-[#1677ff] px-4 py-1.5 text-[13px] text-white" data-testid="cs-category-save" @click="saveCategory">保存</button>
@@ -438,28 +738,25 @@ onMounted(async () => {
         </div>
         <label class="mb-3 block text-[13px]">
           <span class="mb-1 block text-slate-500">分类</span>
-          <select v-model.number="articleEditor.form.category_id" class="w-full rounded-md border border-slate-300 px-3 py-2" data-testid="cs-article-form-category">
+          <select v-model.number="articleEditor.form.category_id" class="w-full rounded-md border border-slate-300 px-3 py-2 outline-none focus:border-[#1677ff]" data-testid="cs-article-form-category">
             <option :value="0" disabled>请选择分类</option>
-            <option v-for="c in categories" :key="c.id" :value="c.id">{{ c.name }}</option>
+            <option v-for="n in allNodes.filter((x) => x.type !== 'page')" :key="n.id" :value="n.id">{{ n.name }}</option>
           </select>
         </label>
         <label class="mb-3 block text-[13px]">
           <span class="mb-1 block text-slate-500">标题</span>
-          <input v-model="articleEditor.form.title" type="text" maxlength="191" class="w-full rounded-md border border-slate-300 px-3 py-2" data-testid="cs-article-form-title" />
+          <input v-model="articleEditor.form.title" type="text" maxlength="191" class="w-full rounded-md border border-slate-300 px-3 py-2 outline-none focus:border-[#1677ff]" data-testid="cs-article-form-title" />
         </label>
         <label class="mb-3 block text-[13px]">
           <span class="mb-1 block text-slate-500">摘要</span>
-          <input v-model="articleEditor.form.summary" type="text" maxlength="255" class="w-full rounded-md border border-slate-300 px-3 py-2" data-testid="cs-article-form-summary" />
+          <input v-model="articleEditor.form.summary" type="text" maxlength="255" class="w-full rounded-md border border-slate-300 px-3 py-2 outline-none focus:border-[#1677ff]" data-testid="cs-article-form-summary" />
         </label>
         <div class="mb-3 text-[13px]">
           <span class="mb-1 block text-slate-500">正文（Markdown）</span>
-          <MdEditor
+          <MarkdownEditor
             v-model="articleEditor.form.content_md"
-            language="zh-CN"
-            :toolbars-exclude="['github', 'save']"
-            :style="{ height: '420px' }"
-            :on-upload-img="onUploadImg"
             data-testid="cs-article-form-content"
+            @upload-error="(msg: string) => notify('err', msg)"
           />
           <span class="mt-1 block text-xs text-slate-400">
             支持标题、段落、列表、表格、图片与链接。工具栏的图片按钮会走后台统一上传接口；
@@ -469,8 +766,8 @@ onMounted(async () => {
           </span>
         </div>
         <div class="mb-4 flex items-center gap-4 text-[13px] text-slate-600">
-          <label class="flex items-center gap-2"><input v-model="articleEditor.form.is_hot" type="checkbox" data-testid="cs-article-form-hot" /> 热门</label>
-          <label class="flex items-center gap-2">排序 <input v-model.number="articleEditor.form.sort" type="number" min="0" class="w-20 rounded border border-slate-300 px-2 py-1" data-testid="cs-article-form-sort" /></label>
+          <label class="flex items-center gap-2"><input v-model="articleEditor.form.is_hot" type="checkbox" data-testid="cs-article-form-hot" /> {{ formHotLabel }}</label>
+          <label class="flex items-center gap-2">排序 <input v-model.number="articleEditor.form.sort" type="number" min="0" class="w-20 rounded border border-slate-300 px-2 py-1 outline-none focus:border-[#1677ff]" data-testid="cs-article-form-sort" /></label>
         </div>
         <div class="mt-auto flex justify-end gap-2">
           <button class="rounded-md border border-slate-200 px-4 py-1.5 text-[13px] text-slate-500" @click="articleEditor.open = false">取消</button>
@@ -492,7 +789,7 @@ onMounted(async () => {
       </div>
     </div>
 
-    <ConfirmDialog :open="!!deleteCatTarget" title="删除分类" message="确认删除该分类？" confirm-text="删除" danger @confirm="doDeleteCategory" @cancel="deleteCatTarget = null" />
+    <ConfirmDialog :open="!!deleteCatTarget" title="删除栏目" message="确认删除该栏目？单页将连同内容一并删除。" confirm-text="删除" danger @confirm="doDeleteCategory" @cancel="deleteCatTarget = null" />
     <ConfirmDialog :open="!!deleteArtTarget" title="删除文章" message="确认删除该文章？" confirm-text="删除" danger @confirm="doDeleteArticle" @cancel="deleteArtTarget = null" />
     <ConfirmDialog
       :open="!!publishTarget"

@@ -194,12 +194,9 @@ const router = createRouter({
           component: () => import('@/views/operation/MarketingView.vue'),
           meta: { title: '营销管理', menu: true, icon: 'Ticket', permission: 'marketing.manage' },
         },
-        {
-          path: 'announcements',
-          name: 'announcements',
-          component: () => import('@/views/operation/AnnouncementListView.vue'),
-          meta: { title: '公告管理', menu: true, icon: 'Megaphone', permission: 'announcement.manage' },
-        },
+        // CMS-204：公告已并入内容中心（内容管理 → 「公告」栏目），独立公告管理页摘除。
+        // AnnouncementListView.vue 与后端 /api/admin/announcements 一并保留一个版本，
+        // 只是不再有入口 —— 直接访问 /announcements 会落到 404 兜底。
         {
           path: 'home-banners',
           name: 'home-banners',
@@ -264,7 +261,7 @@ const router = createRouter({
           path: 'cs/faq',
           name: 'cs-faq',
           component: () => import('@/views/cs/CsFaqView.vue'),
-          meta: { title: '帮助中心', menu: true, icon: 'BookOpen', permission: 'cs.faq.manage' },
+          meta: { title: '内容管理', menu: true, icon: 'BookOpen', permission: 'cs.faq.manage' },
         },
         {
           path: 'cs/quick-replies',
