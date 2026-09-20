@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ArrowLeft, ChevronRight, Save, X } from 'lucide-vue-next'
+import { ArrowLeft, Check, ChevronRight, Save, X } from 'lucide-vue-next'
 import MarkdownEditor from '@/components/MarkdownEditor.vue'
 import LoadingSpinner from '@/components/LoadingSpinner.vue'
 import {
@@ -86,11 +86,53 @@ const selectedProducts = ref<Array<{ id: number; title: string }>>([])
 const productPicker = ref<{ keyword: string; loading: boolean; results: Array<{ id: number; title: string }> }>(
   { keyword: '', loading: false, results: [] },
 )
+/** 结果面板开合态：搜索后展开，点外部 / 取消按钮 / Esc 收起 */
+const productPickerOpen = ref(false)
+/** 搜索行 + 结果面板容器，用于「点击外部关闭」的范围判断 */
+const productPickerRef = ref<HTMLElement | null>(null)
+
+/** 该商品是否已关联（结果行右侧「已选」绿标用） */
+function isProductSelected(id: number): boolean {
+  return (form.value.product_ids ?? []).includes(id)
+}
+
+/** 收起结果面板（点外部 / 取消按钮 / Esc 共用同一出口） */
+function closeProductPicker() {
+  productPickerOpen.value = false
+}
+
+/**
+ * 点击面板外部时收起
+ *
+ * 用 mousedown 而不是 click：click 要等 mouseup 才触发，
+ * 在「点外部的同时又点到别的按钮」时会先执行那个按钮的动作，面板一闪才关，体验很怪。
+ */
+function onProductPickerMousedown(e: MouseEvent) {
+  if (!productPickerOpen.value) return
+  if (productPickerRef.value && !productPickerRef.value.contains(e.target as Node)) {
+    closeProductPicker()
+  }
+}
+
+function onProductPickerKeydown(e: KeyboardEvent) {
+  if (e.key === 'Escape') closeProductPicker()
+}
+
+onMounted(() => {
+  document.addEventListener('mousedown', onProductPickerMousedown)
+  document.addEventListener('keydown', onProductPickerKeydown)
+})
+onBeforeUnmount(() => {
+  document.removeEventListener('mousedown', onProductPickerMousedown)
+  document.removeEventListener('keydown', onProductPickerKeydown)
+})
 
 async function searchProducts() {
   const keyword = productPicker.value.keyword.trim()
-  if (!keyword) { productPicker.value.results = []; return }
+  if (!keyword) { productPicker.value.results = []; closeProductPicker(); return }
   productPicker.value.loading = true
+  // 先展开：让「搜索中…」与「没有匹配的商品」都在面板里给出反馈，而不是静默无反应
+  productPickerOpen.value = true
   try {
     const { data } = await getProducts({ keyword, page_size: 10 })
     productPicker.value.results = data.data.list.map((p) => ({ id: p.id, title: p.title }))
@@ -372,25 +414,39 @@ onMounted(load)
             </span>
             <span v-if="!selectedProducts.length" class="text-xs text-slate-400">尚未关联商品</span>
           </div>
-          <div class="flex gap-2">
-            <input
-              v-model="productPicker.keyword" type="text" placeholder="搜索商品标题"
-              class="w-full rounded-md border border-slate-300 px-3 py-1.5 outline-none focus:border-[#1677ff]"
-              data-testid="cs-article-form-product-search"
-              @keyup.enter="searchProducts"
-            />
-            <button type="button" class="shrink-0 rounded-md border border-slate-300 px-3 py-1.5 text-slate-600 hover:bg-slate-50" data-testid="cs-article-form-product-search-btn" @click="searchProducts">搜索</button>
-          </div>
-          <div v-if="productPicker.results.length" class="mt-2 max-h-40 overflow-y-auto rounded-md border border-slate-100">
-            <button
-              v-for="p in productPicker.results" :key="p.id" type="button"
-              class="flex w-full items-center justify-between px-3 py-1.5 text-left text-xs hover:bg-slate-50"
-              :data-testid="`cs-article-form-product-option-${p.id}`"
-              @click="toggleProduct(p)"
-            >
-              <span class="truncate text-slate-600">{{ p.title }}</span>
-              <span class="shrink-0 text-[#1677ff]">{{ (form.product_ids ?? []).includes(p.id) ? '已选' : '添加' }}</span>
-            </button>
+          <div ref="productPickerRef">
+            <div class="flex gap-2">
+              <input
+                v-model="productPicker.keyword" type="text" placeholder="搜索商品标题"
+                class="w-full rounded-md border border-slate-300 px-3 py-1.5 outline-none focus:border-[#1677ff]"
+                data-testid="cs-article-form-product-search"
+                @keyup.enter="searchProducts"
+              />
+              <button type="button" class="shrink-0 rounded-md border border-slate-300 px-3 py-1.5 text-slate-600 hover:bg-slate-50" data-testid="cs-article-form-product-search-btn" @click="searchProducts">搜索</button>
+            </div>
+
+            <!-- 搜索结果面板：点外部 / 面板内「取消」/ Esc 都能收起 -->
+            <div v-if="productPickerOpen" class="mt-2 rounded-md border border-slate-200 bg-white shadow-sm" data-testid="cs-article-form-product-picker">
+              <div class="flex items-center justify-between border-b border-slate-100 px-3 py-1.5">
+                <span class="text-xs text-slate-400">{{ productPicker.loading ? '搜索中…' : `共 ${productPicker.results.length} 个结果` }}</span>
+                <button type="button" class="text-xs text-slate-400 hover:text-[#1677ff]" data-testid="cs-article-form-product-picker-cancel" @click="closeProductPicker">取消</button>
+              </div>
+              <div class="max-h-40 overflow-y-auto">
+                <button
+                  v-for="p in productPicker.results" :key="p.id" type="button"
+                  class="flex w-full items-center justify-between gap-2 px-3 py-1.5 text-left text-xs hover:bg-slate-50"
+                  :data-testid="`cs-article-form-product-option-${p.id}`"
+                  @click="toggleProduct(p)"
+                >
+                  <span class="truncate" :class="isProductSelected(p.id) ? 'text-green-700' : 'text-slate-600'">{{ p.title }}</span>
+                  <span v-if="isProductSelected(p.id)" class="inline-flex shrink-0 items-center gap-1 text-green-600" :data-testid="`cs-article-form-product-selected-${p.id}`">
+                    已选 <Check class="h-3.5 w-3.5" />
+                  </span>
+                  <span v-else class="shrink-0 text-[#1677ff]">添加</span>
+                </button>
+                <p v-if="!productPicker.loading && !productPicker.results.length" class="px-3 py-3 text-center text-xs text-slate-400" data-testid="cs-article-form-product-picker-empty">没有匹配的商品</p>
+              </div>
+            </div>
           </div>
         </div>
       </div>

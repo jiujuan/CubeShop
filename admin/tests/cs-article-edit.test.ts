@@ -301,6 +301,92 @@ describe('文章独立编辑页（CsFaqArticleEditView）', () => {
     expect(updateCsFaqArticleMock).toHaveBeenCalledWith(1, expect.objectContaining({ product_ids: [5] }))
   })
 
+  it('商品搜索结果行：未选中显示「添加」，选中后「已选」变绿并带勾', async () => {
+    getProductsMock.mockResolvedValue({ data: { data: { list: [{ id: 5, title: '种草商品' }], pagination: { page: 1, page_size: 10, total: 1, total_pages: 1 } } } })
+    const { wrapper } = await mountPage('/cs/faq/articles/1/edit')
+
+    await wrapper.find('[data-testid="cs-article-form-product-search"]').setValue('种草')
+    await wrapper.find('[data-testid="cs-article-form-product-search-btn"]').trigger('click')
+    await flushPromises()
+
+    const option = wrapper.find('[data-testid="cs-article-form-product-option-5"]')
+    expect(option.text()).toContain('添加')
+    expect(wrapper.find('[data-testid="cs-article-form-product-selected-5"]').exists()).toBe(false)
+
+    await option.trigger('click')
+    await flushPromises()
+
+    // 「已选」绿标 + 勾图标同处一个标记，且不再出现「添加」
+    const mark = wrapper.find('[data-testid="cs-article-form-product-selected-5"]')
+    expect(mark.exists()).toBe(true)
+    expect(mark.text()).toBe('已选')
+    expect(mark.classes()).toContain('text-green-600')
+    expect(mark.find('svg').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="cs-article-form-product-option-5"]').text()).not.toContain('添加')
+  })
+
+  it('商品搜索面板：面板内点击不关闭，点击外部即收起', async () => {
+    getProductsMock.mockResolvedValue({ data: { data: { list: [{ id: 5, title: '种草商品' }], pagination: { page: 1, page_size: 10, total: 1, total_pages: 1 } } } })
+    const { wrapper } = await mountPage('/cs/faq/articles/1/edit')
+
+    // 搜索前没有面板
+    expect(wrapper.find('[data-testid="cs-article-form-product-picker"]').exists()).toBe(false)
+
+    await wrapper.find('[data-testid="cs-article-form-product-search"]').setValue('种草')
+    await wrapper.find('[data-testid="cs-article-form-product-search-btn"]').trigger('click')
+    await flushPromises()
+
+    const picker = '[data-testid="cs-article-form-product-picker"]'
+    expect(wrapper.find(picker).exists()).toBe(true)
+    expect(wrapper.find(picker).text()).toContain('共 1 个结果')
+
+    // 面板内部按下（搜索框）不该收起
+    wrapper.find('[data-testid="cs-article-form-product-search"]').element.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))
+    await flushPromises()
+    expect(wrapper.find(picker).exists()).toBe(true)
+
+    // 面板外部按下 → 收起
+    document.body.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))
+    await flushPromises()
+    expect(wrapper.find(picker).exists()).toBe(false)
+  })
+
+  it('商品搜索面板：面板内「取消」按钮与 Esc 都能收起', async () => {
+    getProductsMock.mockResolvedValue({ data: { data: { list: [{ id: 5, title: '种草商品' }], pagination: { page: 1, page_size: 10, total: 1, total_pages: 1 } } } })
+    const { wrapper } = await mountPage('/cs/faq/articles/1/edit')
+    const picker = '[data-testid="cs-article-form-product-picker"]'
+
+    const search = async () => {
+      await wrapper.find('[data-testid="cs-article-form-product-search"]').setValue('种草')
+      await wrapper.find('[data-testid="cs-article-form-product-search-btn"]').trigger('click')
+      await flushPromises()
+    }
+
+    await search()
+    await wrapper.find('[data-testid="cs-article-form-product-picker-cancel"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.find(picker).exists()).toBe(false)
+
+    // 再搜一次 → 面板回来 → Esc 收起
+    await search()
+    expect(wrapper.find(picker).exists()).toBe(true)
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+    await flushPromises()
+    expect(wrapper.find(picker).exists()).toBe(false)
+  })
+
+  it('商品搜索无结果时面板给出空态并提供取消', async () => {
+    getProductsMock.mockResolvedValue({ data: { data: { list: [], pagination: { page: 1, page_size: 10, total: 0, total_pages: 0 } } } })
+    const { wrapper } = await mountPage('/cs/faq/articles/1/edit')
+
+    await wrapper.find('[data-testid="cs-article-form-product-search"]').setValue('不存在')
+    await wrapper.find('[data-testid="cs-article-form-product-search-btn"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="cs-article-form-product-picker-empty"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="cs-article-form-product-picker-cancel"]').exists()).toBe(true)
+  })
+
   it('正文图片上传走后台统一上传接口，并回填 url 给编辑器', async () => {
     uploadImageMock.mockResolvedValue({ data: { data: { url: '/storage/uploads/a.png' } } })
     const { wrapper } = await mountPage('/cs/faq/articles/new')
