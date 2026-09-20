@@ -116,7 +116,7 @@ describe('文章独立编辑页（CsFaqArticleEditView）', () => {
     // 浮层会带 fixed inset-0；独立页不该有
     expect(wrapper.find('div.fixed').exists()).toBe(false)
 
-    // 「所属栏目」「标题」「slug」「摘要」同处一个 md:grid-cols-2 容器 ⇒ 两列成行
+    // 「所属栏目」「标题」「slug」「摘要」「状态」同处一个 md:grid-cols-2 容器 ⇒ 两列成行
     const grid = wrapper.find('[data-testid="cs-article-form-grid"]')
     expect(grid.exists()).toBe(true)
     expect(grid.classes()).toContain('md:grid-cols-2')
@@ -124,6 +124,57 @@ describe('文章独立编辑页（CsFaqArticleEditView）', () => {
     expect(grid.find('[data-testid="cs-article-form-title"]').exists()).toBe(true)
     expect(grid.find('[data-testid="cs-article-form-slug"]').exists()).toBe(true)
     expect(grid.find('[data-testid="cs-article-form-summary"]').exists()).toBe(true)
+    expect(grid.find('[data-testid="cs-article-form-status"]').exists()).toBe(true)
+    expect(grid.find('[data-testid="cs-article-form-sort"]').exists()).toBe(true)
+    expect(grid.find('[data-testid="cs-article-form-hot"]').exists()).toBe(true)
+  })
+
+  it('新增：状态下拉默认「草稿」，三个选项都带前台可见性提示', async () => {
+    const { wrapper } = await mountPage('/cs/faq/articles/new')
+
+    const sel = wrapper.find('[data-testid="cs-article-form-status"]')
+    expect((sel.element as HTMLSelectElement).value).toBe('draft')
+
+    // 选项文案必须写明前台可不可见（运营最容易存了草稿以为已上线）
+    expect(sel.findAll('option').map((o) => o.text())).toEqual([
+      '草稿（前台不可见）',
+      '已发布（前台立即可见）',
+      '已下架（前台不可见）',
+    ])
+  })
+
+  it('新增：状态选「已发布」后随保存提交 status=published', async () => {
+    const { wrapper } = await mountPage('/cs/faq/articles/new')
+
+    await wrapper.find('[data-testid="cs-article-form-title"]').setValue('新品发布')
+    await wrapper.find('[data-testid="cs-article-form-content"]').setValue('正文')
+    await wrapper.find('[data-testid="cs-article-form-status"]').setValue('published')
+    await wrapper.find('[data-testid="cs-article-save"]').trigger('click')
+    await flushPromises()
+
+    expect(createCsFaqArticleMock).toHaveBeenCalledWith(expect.objectContaining({ status: 'published' }))
+  })
+
+  it('编辑：按后端 status 回显（已发布不会被悄悄改回草稿）', async () => {
+    getCsFaqArticleMock.mockResolvedValue({ data: { data: articleDetail({ status: 'published' }) } })
+    const { wrapper } = await mountPage('/cs/faq/articles/1/edit')
+
+    expect((wrapper.find('[data-testid="cs-article-form-status"]').element as HTMLSelectElement).value).toBe('published')
+
+    await wrapper.find('[data-testid="cs-article-save"]').trigger('click')
+    await flushPromises()
+    expect(updateCsFaqArticleMock).toHaveBeenCalledWith(1, expect.objectContaining({ status: 'published' }))
+  })
+
+  it('编辑：改成「已下架」后提交 status=offline', async () => {
+    getCsFaqArticleMock.mockResolvedValue({ data: { data: articleDetail({ status: 'published' }) } })
+    const { wrapper } = await mountPage('/cs/faq/articles/1/edit')
+
+    await wrapper.find('[data-testid="cs-article-form-status"]').setValue('offline')
+    await wrapper.find('[data-testid="cs-article-save"]').trigger('click')
+    await flushPromises()
+
+    expect(updateCsFaqArticleMock).toHaveBeenCalledWith(1, expect.objectContaining({ status: 'offline' }))
   })
 
   it('新增时接收列表页传来的 ?category_id= 预选栏目', async () => {

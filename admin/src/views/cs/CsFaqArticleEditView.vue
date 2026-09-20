@@ -9,7 +9,7 @@ import {
   type CsFaqArticlePayload, type CsFaqCategoryRow,
 } from '@/api/cs'
 import { getProducts } from '@/api/product'
-import { hotLabelFor } from '@/utils/csArticle'
+import { ARTICLE_STATUS_OPTIONS, hotLabelFor } from '@/utils/csArticle'
 
 /**
  * 内容中心 CMS · 文章新增/编辑（独立页面）
@@ -280,15 +280,22 @@ onMounted(load)
           <input v-model="form.tags" type="text" placeholder="如 新品, 促销" class="w-full rounded-md border border-slate-300 px-3 py-2 outline-none focus:border-[#1677ff]" data-testid="cs-article-form-tags" />
         </label>
 
-        <div class="flex items-end gap-4">
-          <label class="w-24 shrink-0">
-            <span class="mb-1 block text-slate-500">排序</span>
-            <input v-model.number="form.sort" type="number" min="0" class="w-full rounded-md border border-slate-300 px-3 py-2 outline-none focus:border-[#1677ff]" data-testid="cs-article-form-sort" />
-          </label>
-          <label class="flex items-center gap-2 pb-2.5 text-slate-600">
-            <input v-model="form.is_hot" type="checkbox" data-testid="cs-article-form-hot" /> {{ hotLabel }}
-          </label>
-        </div>
+        <!-- 状态：前台可见与否只看这一项，选项文案直接写明可见性（运营最容易漏发布） -->
+        <label class="block">
+          <span class="mb-1 block text-slate-500">状态</span>
+          <select v-model="form.status" class="w-full rounded-md border border-slate-300 px-3 py-2 outline-none focus:border-[#1677ff]" data-testid="cs-article-form-status">
+            <option v-for="o in ARTICLE_STATUS_OPTIONS" :key="o.value" :value="o.value">{{ o.label }}（{{ o.hint }}）</option>
+          </select>
+        </label>
+
+        <label class="block">
+          <span class="mb-1 block text-slate-500">排序</span>
+          <input v-model.number="form.sort" type="number" min="0" class="w-32 rounded-md border border-slate-300 px-3 py-2 outline-none focus:border-[#1677ff]" data-testid="cs-article-form-sort" />
+        </label>
+
+        <label class="flex items-center gap-2 self-end pb-2.5 text-slate-600">
+          <input v-model="form.is_hot" type="checkbox" data-testid="cs-article-form-hot" /> {{ hotLabel }}
+        </label>
       </div>
 
       <!-- 封面图（压成一行：缩略图 + 操作按钮并排） -->

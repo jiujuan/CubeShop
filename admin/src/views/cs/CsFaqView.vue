@@ -17,7 +17,7 @@ import {
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import LoadingSpinner from '@/components/LoadingSpinner.vue'
 import { useAuthStore } from '@/stores/auth'
-import { hotLabelFor } from '@/utils/csArticle'
+import { ARTICLE_STATUS_LABELS as STATUS_LABELS, hotLabelFor } from '@/utils/csArticle'
 
 /**
  * 内容中心 CMS 后台管理页（原 CS-115 帮助中心 → CMS-109 内容管理）
@@ -40,7 +40,7 @@ const router = useRouter()
 const route = useRoute()
 const canManage = computed(() => auth.hasPermission('cs.faq.manage'))
 
-const STATUS_LABELS: Record<string, string> = { draft: '草稿', published: '已发布', offline: '已下架' }
+// STATUS_LABELS 来自 @/utils/csArticle（与文章编辑页的状态下拉同源，避免两处标签漂移）
 
 const tip = ref('')
 const tipType = ref<'ok' | 'err'>('ok')
