@@ -21,3 +21,100 @@ label:has(input[type="radio"]),
 summary {
   cursor: pointer;
 }
+
+/*
+ * CMS 单页正文排版（markdown 字段的渲染产物，已由后端净化）。
+ * 净化器不放行 style/class，段落间距、列表符号、表格边框必须由这里补齐
+ * （Tailwind Preflight 会清掉默认的列表符号与标题字号）。
+ * 与 FaqDetailView 的 .faq-body 口径一致，供单页模板复用。
+ */
+.cms-prose p {
+  margin: 0 0 0.75em;
+}
+.cms-prose p:last-child {
+  margin-bottom: 0;
+}
+.cms-prose h1,
+.cms-prose h2,
+.cms-prose h3,
+.cms-prose h4,
+.cms-prose h5,
+.cms-prose h6 {
+  margin: 1.25em 0 0.5em;
+  font-weight: 600;
+  color: #1e293b;
+  line-height: 1.4;
+}
+.cms-prose h1 { font-size: 1.15rem; }
+.cms-prose h2 { font-size: 1.05rem; }
+.cms-prose h3,
+.cms-prose h4,
+.cms-prose h5,
+.cms-prose h6 { font-size: 0.9375rem; }
+.cms-prose ul,
+.cms-prose ol {
+  margin: 0.5em 0 0.75em;
+  padding-left: 1.375rem;
+}
+.cms-prose ul { list-style: disc; }
+.cms-prose ol { list-style: decimal; }
+.cms-prose li { margin: 0.25em 0; }
+.cms-prose a {
+  color: #1677ff;
+  text-decoration: underline;
+  word-break: break-all;
+}
+.cms-prose img {
+  max-width: 100%;
+  height: auto;
+  margin: 0.5em 0;
+  border-radius: 0.5rem;
+}
+.cms-prose table {
+  width: 100%;
+  margin: 0.75em 0;
+  border-collapse: collapse;
+  font-size: 0.8125rem;
+}
+.cms-prose th,
+.cms-prose td {
+  padding: 0.5rem 0.625rem;
+  border: 1px solid #e2e8f0;
+  text-align: left;
+  vertical-align: top;
+}
+.cms-prose th {
+  background: #f8fafc;
+  font-weight: 600;
+  color: #334155;
+}
+.cms-prose blockquote {
+  margin: 0.75em 0;
+  padding-left: 0.75rem;
+  border-left: 3px solid #cbd5e1;
+  color: #64748b;
+}
+.cms-prose code {
+  padding: 0.1rem 0.3rem;
+  border-radius: 0.25rem;
+  background: #f1f5f9;
+  font-size: 0.8125rem;
+}
+.cms-prose pre {
+  margin: 0.75em 0;
+  padding: 0.75rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 0.5rem;
+  background: #f8fafc;
+  overflow-x: auto;
+}
+.cms-prose pre code {
+  padding: 0;
+  background: transparent;
+}
+.cms-prose hr {
+  margin: 1em 0;
+  border: 0;
+  border-top: 1px solid #e2e8f0;
+}
+

@@ -8,6 +8,10 @@ export interface FaqCategory {
   name: string
   sort: number
   published_count: number
+  /** CMS-201：栏目已支持父子化，level=1 为根 */
+  level: number
+  parent_id: number
+  children: FaqCategory[]
 }
 
 export interface FaqArticle {

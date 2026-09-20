@@ -1,16 +1,17 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import {
   ChevronRight, HelpCircle, LifeBuoy, RotateCcw, Search, Truck,
 } from 'lucide-vue-next'
 import {
-  getFaqArticles, getFaqCategories, getTickets,
-  type FaqArticle, type FaqCategory, type TicketListItem,
+  getFaqArticles, getTickets,
+  type FaqArticle, type TicketListItem,
 } from '@/api/cs'
 import LoadingSpinner from '@/components/LoadingSpinner.vue'
 import ShopFooter from '@/components/ShopFooter.vue'
 import ShopHeader from '@/components/ShopHeader.vue'
+import { useFaqStore } from '@/stores/faq'
 
 /**
  * 服务中心首页（CS-111）
@@ -24,10 +25,16 @@ const loading = ref(true)
 const searchKeyword = ref('')
 
 const hotFaq = ref<FaqArticle[]>([])
-const categories = ref<FaqCategory[]>([])
 const tickets = ref<TicketListItem[]>([])
 const faqError = ref(false)
 const ticketError = ref(false)
+
+/**
+ * 分类区读取共享的栏目树（CMS-201）
+ * 与分类页/列表页共用同一个 store，用户从服务中心点进帮助中心不会重复拉一次分类。
+ */
+const faqStore = useFaqStore()
+const categories = computed(() => faqStore.tree)
 
 /** 快捷工具：查物流 / 申请退换货 / 联系客服 */
 const quickTools = [
@@ -48,8 +55,7 @@ async function loadHot() {
 
 async function loadCategories() {
   try {
-    const { data } = await getFaqCategories()
-    categories.value = data.data
+    await faqStore.loadTree()
   } catch {
     /* 分类失败不阻断，分类区留空 */
   }

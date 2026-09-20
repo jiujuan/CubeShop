@@ -1,30 +1,30 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ChevronRight, HelpCircle, Search } from 'lucide-vue-next'
-import { getFaqCategories, type FaqCategory } from '@/api/cs'
+import FaqBreadcrumb from '@/components/FaqBreadcrumb.vue'
 import LoadingSpinner from '@/components/LoadingSpinner.vue'
 import ShopFooter from '@/components/ShopFooter.vue'
 import ShopHeader from '@/components/ShopHeader.vue'
+import { useFaqStore } from '@/stores/faq'
 
 /**
- * 帮助中心 · 分类页（CS-112）
+ * 帮助中心 · 分类页（CS-112 / CMS-201）
  *
- * 一级分类 + 每类已发布文章数；顶部搜索框进入列表页搜索。
+ * CMS-201：栏目已支持父子化，本页渲染**两级** —— 一级栏目卡 + 其下子栏目的 pill。
+ * 三级及以上不在这里展开（会撑爆首页），进列表页后可看完整侧栏栏目树。
+ *
+ * 数据来自 `useFaqStore`（树的单一真源），本页不再自己发请求。
  */
 const router = useRouter()
-const loading = ref(true)
+const faq = useFaqStore()
 const keyword = ref('')
-const categories = ref<FaqCategory[]>([])
 
-async function load() {
-  loading.value = true
-  try {
-    const { data } = await getFaqCategories()
-    categories.value = data.data
-  } finally {
-    loading.value = false
-  }
+const loading = computed(() => faq.loading && !faq.loaded)
+const categories = computed(() => faq.tree)
+
+function goList(categoryId: number) {
+  router.push({ path: '/service-center/faq/list', query: { category_id: categoryId } })
 }
 
 function goSearch() {
@@ -32,7 +32,7 @@ function goSearch() {
   router.push({ path: '/service-center/faq/list', query: kw ? { keyword: kw } : {} })
 }
 
-onMounted(load)
+onMounted(() => faq.loadTree())
 </script>
 
 <template>
@@ -40,12 +40,7 @@ onMounted(load)
     <ShopHeader />
 
     <main class="mx-auto w-full max-w-3xl flex-1 px-4 py-6 sm:px-6" data-testid="faq-category">
-      <!-- 面包屑 -->
-      <nav class="mb-4 flex items-center gap-1 text-xs text-slate-400">
-        <button class="hover:text-[#1677ff]" @click="router.push('/service-center')">服务中心</button>
-        <ChevronRight class="h-3 w-3" />
-        <span class="text-slate-600">帮助中心</span>
-      </nav>
+      <FaqBreadcrumb />
 
       <div class="mb-4 flex items-center gap-2 rounded-full bg-white p-1 pl-4">
         <Search class="h-4 w-4 shrink-0 text-slate-400" />
@@ -67,21 +62,35 @@ onMounted(load)
       </div>
 
       <div v-else class="space-y-3">
-        <button
+        <div
           v-for="c in categories" :key="c.id"
-          class="flex w-full items-center gap-3 rounded-xl bg-white px-4 py-4 text-left transition-shadow hover:shadow-sm"
+          class="rounded-xl bg-white p-4"
           :data-testid="`category-item-${c.id}`"
-          @click="router.push({ path: '/service-center/faq/list', query: { category_id: c.id } })"
         >
-          <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#e6f4ff] text-[#1677ff]">
-            <HelpCircle class="h-5 w-5" />
-          </span>
-          <span class="min-w-0 flex-1">
-            <span class="block text-sm font-medium text-slate-700">{{ c.name }}</span>
-            <span class="mt-0.5 block text-xs text-slate-400">{{ c.published_count }} 篇文章</span>
-          </span>
-          <ChevronRight class="h-4 w-4 shrink-0 text-slate-300" />
-        </button>
+          <button class="flex w-full items-center gap-3 text-left" @click="goList(c.id)">
+            <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#e6f4ff] text-[#1677ff]">
+              <HelpCircle class="h-5 w-5" />
+            </span>
+            <span class="min-w-0 flex-1">
+              <span class="block text-sm font-medium text-slate-700">{{ c.name }}</span>
+              <span class="mt-0.5 block text-xs text-slate-400">{{ c.published_count }} 篇文章</span>
+            </span>
+            <ChevronRight class="h-4 w-4 shrink-0 text-slate-300" />
+          </button>
+
+          <!-- 二级栏目：pill 直达，省一层跳转 -->
+          <div v-if="c.children?.length" class="mt-3 flex flex-wrap gap-2 border-t border-slate-100 pt-3">
+            <button
+              v-for="child in c.children" :key="child.id"
+              class="rounded-full bg-slate-50 px-3 py-1.5 text-xs text-slate-600 transition-colors hover:bg-[#e6f4ff] hover:text-[#1677ff]"
+              :data-testid="`category-child-${child.id}`"
+              @click="goList(child.id)"
+            >
+              {{ child.name }}
+              <span class="ml-1 text-slate-400">{{ child.published_count }}</span>
+            </button>
+          </div>
+        </div>
       </div>
     </main>
 

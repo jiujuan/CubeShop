@@ -77,8 +77,13 @@ beforeEach(() => {
   getCartCountMock.mockResolvedValue({ data: { data: { count: 0 } } })
   getUnreadCountMock.mockResolvedValue({ data: { data: { count: 0 } } })
   getFaqCategoriesMock.mockResolvedValue({ data: { data: [
-    { id: 1, name: '购物指南', sort: 1, published_count: 2 },
-    { id: 2, name: '物流配送', sort: 2, published_count: 5 },
+    {
+      id: 1, name: '购物指南', sort: 1, published_count: 2, level: 1, parent_id: 0,
+      children: [
+        { id: 3, name: '下单流程', sort: 1, published_count: 1, level: 2, parent_id: 1, children: [] },
+      ],
+    },
+    { id: 2, name: '物流配送', sort: 2, published_count: 5, level: 1, parent_id: 0, children: [] },
   ] } })
   getFaqArticlesMock.mockResolvedValue({ data: { data: { list: [article(1), article(2)], pagination: { page: 1, page_size: 10, total: 2, total_pages: 1 } } } })
   getFaqArticleMock.mockResolvedValue({ data: { data: { article: article(5, { content: '正文内容', helpful_count: 3, unhelpful_count: 1 }), related: [article(6), article(7)] } } })
@@ -189,5 +194,61 @@ describe('帮助中心（CS-112）', () => {
     await waitFor(() => expect(screen.getByTestId('faq-content')).toBeTruthy())
 
     expect(screen.getByTestId('faq-content').querySelectorAll('br')).toHaveLength(1)
+  })
+})
+
+describe('帮助中心栏目树（CMS-201）', () => {
+  it('分类页把子栏目渲染为二级入口', async () => {
+    await renderAt(FaqCategoryView, '/service-center/faq')
+    await waitFor(() => expect(screen.getByTestId('category-child-3')).toBeTruthy())
+
+    expect(screen.getByTestId('category-child-3').textContent).toContain('下单流程')
+    // 二级入口挂在父栏目卡内，不另起一张卡
+    expect(screen.getByTestId('category-item-1').textContent).toContain('下单流程')
+  })
+
+  it('列表页侧栏按 level 渲染整棵树（含子栏目）', async () => {
+    await renderAt(FaqListView, '/service-center/faq/list')
+    await waitFor(() => expect(screen.getByTestId('faq-tree-1')).toBeTruthy())
+
+    expect(screen.getByTestId('faq-tree-all')).toBeTruthy()
+    expect(screen.getByTestId('faq-tree-2')).toBeTruthy()
+    // 子栏目也进侧栏（分类页只展示两级，侧栏是完整树）
+    expect(screen.getByTestId('faq-tree-3').textContent).toContain('下单流程')
+  })
+
+  it('点击侧栏子栏目按 category_id 重新拉取列表', async () => {
+    await renderAt(FaqListView, '/service-center/faq/list')
+    await waitFor(() => expect(screen.getByTestId('faq-tree-3')).toBeTruthy())
+    getFaqArticlesMock.mockClear()
+
+    await fireEvent.click(screen.getByTestId('faq-tree-3'))
+    await flushPromises()
+    await waitFor(() => expect(getFaqArticlesMock).toHaveBeenCalled())
+
+    expect(getFaqArticlesMock.mock.calls.at(-1)?.[0]).toMatchObject({ category_id: 3, page: 1 })
+  })
+
+  it('详情页面包屑展示所在栏目链路', async () => {
+    getFaqArticleMock.mockResolvedValue({ data: { data: {
+      article: article(5, { category_id: 3, category: { id: 3, name: '下单流程' } }),
+      related: [],
+    } } })
+    await renderAt(FaqDetailView, '/service-center/faq/5')
+    await waitFor(() => expect(screen.getByTestId('faq-breadcrumb')).toBeTruthy())
+
+    // 链路应为 服务中心 > 帮助中心 > 购物指南 > 下单流程，末级是文章标题
+    expect(screen.getByTestId('breadcrumb-category-1').textContent).toContain('购物指南')
+    expect(screen.getByTestId('breadcrumb-leaf').textContent).toContain('文章 5')
+  })
+
+  it('栏目树拉取失败时不落到「已完成」缓存，后续仍可重试', async () => {
+    getFaqCategoriesMock.mockRejectedValueOnce(new Error('boom'))
+    await renderAt(FaqCategoryView, '/service-center/faq')
+    await flushPromises()
+
+    // 失败 → 走空态而不是把空树当天花板
+    expect(screen.getByTestId('category-empty')).toBeTruthy()
+    expect(getFaqCategoriesMock).toHaveBeenCalledTimes(1)
   })
 })

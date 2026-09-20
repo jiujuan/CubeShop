@@ -3,9 +3,11 @@ import { onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ChevronRight, Eye, ThumbsDown, ThumbsUp } from 'lucide-vue-next'
 import { getFaqArticle, postFaqFeedback, type FaqArticle } from '@/api/cs'
+import FaqBreadcrumb from '@/components/FaqBreadcrumb.vue'
 import LoadingSpinner from '@/components/LoadingSpinner.vue'
 import ShopFooter from '@/components/ShopFooter.vue'
 import ShopHeader from '@/components/ShopHeader.vue'
+import { applySeo } from '@/composables/useSeo'
 
 /**
  * 帮助中心 · 文章详情（CS-112）
@@ -38,6 +40,8 @@ async function load() {
     article.value = data.data.article
     // 相关推荐剔除当前文章（后端已排除，前端兜底一次）
     related.value = data.data.related.filter((r) => String(r.id) !== String(id))
+    // CMS-202：文章标题 + 摘要作为页面 SEO（摘要为空则只写标题）
+    applySeo({ title: data.data.article.title, description: data.data.article.summary ?? '' })
   } catch {
     notFound.value = true
   } finally {
@@ -75,14 +79,8 @@ onMounted(load)
     <ShopHeader />
 
     <main class="mx-auto w-full max-w-3xl flex-1 px-4 py-6 sm:px-6" data-testid="faq-detail">
-      <!-- 面包屑 -->
-      <nav class="mb-4 flex items-center gap-1 text-xs text-slate-400">
-        <button class="hover:text-[#1677ff]" @click="router.push('/service-center')">服务中心</button>
-        <ChevronRight class="h-3 w-3" />
-        <button class="hover:text-[#1677ff]" @click="router.push('/service-center/faq')">帮助中心</button>
-        <ChevronRight class="h-3 w-3" />
-        <span class="text-slate-600">详情</span>
-      </nav>
+      <!-- 面包屑：按栏目链路渲染（CMS-201） -->
+      <FaqBreadcrumb :category-id="article?.category_id ?? null" :leaf="article?.title ?? '详情'" />
 
       <LoadingSpinner v-if="loading" />
 

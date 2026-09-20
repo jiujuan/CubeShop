@@ -66,6 +66,16 @@ export function setTitleBase(metaTitle?: string) {
   renderTitle()
 }
 
+/**
+ * 当前站点名（模块级镜像的只读出口）
+ *
+ * 供需要拼标题但**可能没有 pinia 上下文**的场景使用（如单测直接调用 SEO 工具函数）；
+ * 组件内仍应优先用 `useSiteStore().name`。
+ */
+export function currentSiteName(): string {
+  return currentName
+}
+
 export const useSiteStore = defineStore('web-site', () => {
   const cached = readCache()
   const name = ref(cached.name)

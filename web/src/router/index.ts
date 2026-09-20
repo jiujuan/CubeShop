@@ -1,4 +1,5 @@
 import { createRouter, createWebHistory } from 'vue-router'
+import { resetSeo } from '@/composables/useSeo'
 import { useAuthStore } from '@/stores/auth'
 import { setTitleBase } from '@/stores/site'
 
@@ -159,19 +160,20 @@ const router = createRouter({
       path: '/service-center/faq',
       name: 'faq-category',
       component: () => import('@/views/FaqCategoryView.vue'),
-      meta: { title: '帮助中心 · CubeShop', requiresAuth: true },
+      // 决策 D4：帮助中心解除登录（公开内容，与 /cms/* 接口一致）
+      meta: { title: '帮助中心 · CubeShop' },
     },
     {
       path: '/service-center/faq/list',
       name: 'faq-list',
       component: () => import('@/views/FaqListView.vue'),
-      meta: { title: '帮助中心 · CubeShop', requiresAuth: true },
+      meta: { title: '帮助中心 · CubeShop' },
     },
     {
       path: '/service-center/faq/:id',
       name: 'faq-detail',
       component: () => import('@/views/FaqDetailView.vue'),
-      meta: { title: '帮助中心 · CubeShop', requiresAuth: true },
+      meta: { title: '帮助中心 · CubeShop' },
     },
     {
       path: '/service-center/tickets',
@@ -190,6 +192,14 @@ const router = createRouter({
       name: 'ticket-detail',
       component: () => import('@/views/TicketDetailView.vue'),
       meta: { title: '工单详情 · CubeShop', requiresAuth: true },
+    },
+    {
+      // CMS 站点单页（关于我们 / 联系我们…），模板由后端 CmsPageTemplate 决定；
+      // 公开可访问（决策 D4），必须放在 catch-all 之前。标题在页面加载后按页面名重设。
+      path: '/p/:slug',
+      name: 'page',
+      component: () => import('@/views/PageView.vue'),
+      meta: { title: '页面 · CubeShop' },
     },
     {
       path: '/:pathMatch(.*)*',
@@ -216,6 +226,9 @@ router.beforeEach((to) => {
 router.afterEach((to) => {
   // meta.title 里的品牌名统一写作占位符 CubeShop，运行时按后台配置的站点名替换
   setTitleBase((to.meta.title as string) ?? undefined)
+  // CMS-202：清掉上一页写的 meta，避免 description/keywords 残留在新页面上；
+  // 页面拿到自己的数据后会用 applySeo() 写入（见 composables/useSeo.ts）
+  resetSeo()
 })
 
 export default router
