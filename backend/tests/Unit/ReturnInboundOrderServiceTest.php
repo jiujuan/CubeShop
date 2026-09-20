@@ -153,12 +153,14 @@ test('P4U-05 manual 映射缺编码 → 入库单落 exception 并写明原因�
 test('P4U-06 状态机非法流转 → 409（pending_push 直达 received）', function () {
     Bus::fake();
     $config = p4uConfig();
-    [$refund] = p4uRefund($config);
+    [$refund, $sku] = p4uRefund($config);
     $svc = app(ReturnInboundOrderService::class);
 
     $pending = $svc->markPendingPush($svc->createForRefund($refund));
 
-    expect(fn () => $svc->markReceived($pending, [['sku_id' => 1, 'quantity' => 1]]))
+    // ⚠️ 必须用真实 sku_id：PG 共享库序列不回退，硬编码 id=1 匹配不到入库单行，
+    // 会走「未知货品 → markException」分支正常返回，掩盖本例要验证的状态机 409。
+    expect(fn () => $svc->markReceived($pending, [['sku_id' => $sku->id, 'quantity' => 1]]))
         ->toThrow(\App\Exceptions\BusinessException::class);
 });
 
