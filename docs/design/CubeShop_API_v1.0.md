@@ -450,6 +450,30 @@
 
 ---
 
+### 4.3.1 顶部导航
+`GET /nav`
+
+后台「导航管理」编排的导航项，公开无需登录。后端已按 `sort` 倒序聚合并展开为最终渲染列表，前端拿到即渲染。
+
+**成功响应**
+```json
+{
+  "code": 0,
+  "message": "ok",
+  "data": [
+    {"id": 2, "type": "custom", "title": "热销推荐", "url": "/search?sort=sales_desc", "target": "_self"},
+    {"id": 3, "type": "category", "title": "运动户外", "url": "/category/01H…", "target": "_self", "category_public_id": "01H…"}
+  ]
+}
+```
+
+- `type=category`：**引用**商品分类，标题与链接由分类当场派生（改名自动跟随）；
+  分类被软删 / 停用时该条**静默跳过**（不返回空壳），恢复启用后自动回来。
+- `type=custom`：后台填的任意地址。站内路径由前端 `router.push`，站外（`http` 开头）按 `target` 打开。
+- 导航不含「首页」（固定硬编码在第一位）与「全部商品分类」下拉（走 4.3 分类树）。
+
+---
+
 ### 4.4 首页推荐 / 热销
 `GET /products/hot`
 
@@ -813,6 +837,29 @@
 `DELETE /admin/categories/{id}`
 
 **权限**：`category.manage`
+
+> 分类的删除是**软删除**。新建一级分类会自动登记到导航末尾（见 8.2.1）。
+
+---
+
+### 8.2.1 导航管理
+
+`GET    /admin/nav-items`  
+`POST   /admin/nav-items`  
+`PUT    /admin/nav-items/{id}`  
+`DELETE /admin/nav-items/{id}`
+
+**权限**：`nav.manage`
+
+编排前台顶部导航（首页之后的横排项），位置由 `sort` 决定（越大越靠前）。两类条目：
+
+| type | 字段 | 说明 |
+|---|---|---|
+| `category` | `category_id` 必填 | 引用商品分类，标题与链接由分类派生；同一分类只能登记一次；软删分类不可引用 |
+| `custom` | `title` / `url` 必填，`target` 可选 | 任意地址（站内 `/news` 或站外 `https://…`）；`_blank` 新窗口 |
+
+- 提交体只应带该类型该有的字段，另一类字段由后端清空（类型切换时自动处理）。
+- 删除条目只删**编排**，不影响分类本身。
 
 ---
 

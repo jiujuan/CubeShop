@@ -11,6 +11,7 @@ use App\Http\Controllers\Admin\AccountController as AdminAccountController;
 use App\Http\Controllers\Admin\AnnouncementController as AdminAnnouncementController;
 use App\Http\Controllers\Admin\ConfigController;
 use App\Http\Controllers\Admin\HomeBannerController as AdminHomeBannerController;
+use App\Http\Controllers\Admin\NavItemController;
 use App\Http\Controllers\Admin\CouponController as AdminCouponController;
 use App\Http\Controllers\Admin\DashboardController;
 use App\Http\Controllers\Admin\OperationLogController;
@@ -55,6 +56,7 @@ use App\Http\Controllers\ReviewController;
 use App\Http\Controllers\Storefront\AttributeController as StorefrontAttributeController;
 use App\Http\Controllers\Storefront\CouponController as StorefrontCouponController;
 use App\Http\Controllers\Storefront\PromotionController as StorefrontPromotionController;
+use App\Http\Controllers\Storefront\NavController as StorefrontNavController;
 use App\Http\Controllers\Storefront\ProductController as StorefrontProductController;
 use App\Http\Controllers\Storefront\SiteController as StorefrontSiteController;
 use App\Http\Controllers\Wms\WmsCallbackController;
@@ -78,6 +80,9 @@ Route::prefix('products')->group(function () {
     Route::get('/{id}/reviews', [ReviewController::class, 'productReviews']);
     Route::get('/{id}', [StorefrontProductController::class, 'show']);
 });
+
+// 前台顶部导航（后台「导航管理」编排，公开无需登录）
+Route::get('/nav', [StorefrontNavController::class, 'index']);
 
 // 前台品牌与属性（V1.1 E01 / T-008，无需登录）
 Route::get('/attributes', [StorefrontAttributeController::class, 'index']);
@@ -263,6 +268,12 @@ Route::middleware(['auth:sanctum', 'account.active'])->group(function () {
         Route::post('/categories', [CategoryController::class, 'store'])->middleware('permission:category.manage');
         Route::put('/categories/{id}', [CategoryController::class, 'update'])->middleware('permission:category.manage');
         Route::delete('/categories/{id}', [CategoryController::class, 'destroy'])->middleware('permission:category.manage');
+
+        // 前台导航管理 nav.manage
+        Route::get('/nav-items', [NavItemController::class, 'index'])->middleware('permission:nav.manage');
+        Route::post('/nav-items', [NavItemController::class, 'store'])->middleware('permission:nav.manage');
+        Route::put('/nav-items/{id}', [NavItemController::class, 'update'])->middleware('permission:nav.manage');
+        Route::delete('/nav-items/{id}', [NavItemController::class, 'destroy'])->middleware('permission:nav.manage');
 
         // 商品管理 product.*（API 文档 8.1）
         Route::get('/products', [ProductController::class, 'index'])->middleware('permission:product.view');

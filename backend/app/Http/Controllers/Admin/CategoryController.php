@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Models\Category;
+use App\Models\NavItem;
 use App\Services\Common\OperationLogService;
 use App\Support\ApiResponse;
 use Illuminate\Http\JsonResponse;
@@ -58,6 +59,19 @@ class CategoryController extends Controller
             'sort' => $data['sort'] ?? 0,
             'status' => $data['status'] ?? 1,
         ]);
+
+        // 决策 D3：新建的**一级**分类自动追加到导航末尾（保持现状行为，零回归）
+        // ⚠️ 只登记一级（parent_id=0）；分类被软删/停用时**不动**导航条目，
+        //    由公开接口聚合时跳过 —— 恢复启用后运营排的位置还在。
+        if ($parentId === 0) {
+            NavItem::create([
+                'type' => NavItem::TYPE_CATEGORY,
+                'category_id' => $category->id,
+                'sort' => ((int) (NavItem::query()->min('sort') ?? 0)) - 10,
+                'target' => '_self',
+                'is_active' => true,
+            ]);
+        }
 
         $this->opLog->record($request->user()?->id, 'category', 'create', 'Category', $category->id);
 
