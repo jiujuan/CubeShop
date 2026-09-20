@@ -14,6 +14,8 @@ vi.mock('@/api/auth', () => ({
   getCaptcha: getCaptchaMock,
   register: registerMock,
   getMe: getMeMock,
+  // ⚠️ 常量也要一并导出：mock 工厂漏掉它，页面里的位数校验会拿到 undefined 而永远拦截提交
+  CAPTCHA_LENGTH: 5,
 }))
 
 import RegisterView from '@/views/RegisterView.vue'
@@ -35,6 +37,9 @@ function fail422(errors: Record<string, string[]>) {
 }
 
 const captcha = { captcha_id: 'cap-1', image: 'data:image/svg+xml;base64,AAA', expires_in: 300 }
+
+/** 合法位数的验证码样本（位数与后端 CaptchaService::LENGTH / 前端 CAPTCHA_LENGTH 对齐） */
+const VALID_CODE = 'AB12C'
 
 beforeEach(() => {
   setActivePinia(createPinia())
@@ -61,7 +66,7 @@ async function mountFilled(password: string, confirm = password) {
   await fireEvent.update(usernameEl, 'newuser001')
   await fireEvent.update(passwordEl, password)
   await fireEvent.update(confirmEl, confirm)
-  await fireEvent.update(codeEl, 'AB12')
+  await fireEvent.update(codeEl, VALID_CODE)
 
   return { usernameEl, passwordEl, confirmEl, codeEl }
 }
@@ -97,7 +102,7 @@ describe('注册页校验提示（422「参数校验失败」定位）', () => {
     await waitFor(() => expect(registerMock).toHaveBeenCalled())
     const payload = registerMock.mock.calls[0][0]
     expect(payload.username).toBe('newuser001')
-    expect(payload.code).toBe('AB12')
+    expect(payload.code).toBe(VALID_CODE)
     expect(payload.captcha_id).toBe('cap-1')
   })
 
@@ -136,10 +141,26 @@ describe('注册页校验提示（422「参数校验失败」定位）', () => {
     await fireEvent.update(screen.getByPlaceholderText(/用户名/), 'someone')
     await fireEvent.update(screen.getByPlaceholderText(/^密码/), 'Test@1234')
     await fireEvent.update(screen.getByPlaceholderText(/确认密码/), 'Test@1234')
-    await fireEvent.update(screen.getByPlaceholderText(/验证码/), 'AB12')
+    await fireEvent.update(screen.getByPlaceholderText(/验证码/), VALID_CODE)
     await clickSubmit()
 
     expect(registerMock).not.toHaveBeenCalled()
     expect(screen.getByTestId('register-error').textContent).toContain('验证码未加载成功')
+  })
+
+  it('TC-REG-07 验证码不足 5 位时本地拦截，不发请求且提示位数', async () => {
+    await mountFilled('Test@1234')
+
+    await fireEvent.update(screen.getByPlaceholderText(/验证码/), 'AB12')
+    await clickSubmit()
+
+    expect(registerMock).not.toHaveBeenCalled()
+    expect(screen.getByTestId('register-error').textContent).toContain('请输入 5 位验证码')
+
+    // 补足 5 位后可正常提交（校验只看位数，不校验字符是否与图片一致）
+    await fireEvent.update(screen.getByPlaceholderText(/验证码/), VALID_CODE)
+    await clickSubmit()
+
+    await waitFor(() => expect(registerMock).toHaveBeenCalled())
   })
 })

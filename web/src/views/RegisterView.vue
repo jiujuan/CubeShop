@@ -2,7 +2,7 @@
 import { onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { Package } from 'lucide-vue-next'
-import { getCaptcha, register, type Captcha } from '@/api/auth'
+import { CAPTCHA_LENGTH, getCaptcha, register, type Captcha } from '@/api/auth'
 import { ApiBusinessError } from '@/api/request'
 import { useAuthStore } from '@/stores/auth'
 import { useSiteStore } from '@/stores/site'
@@ -67,6 +67,10 @@ async function submit() {
   }
   if (!PASSWORD_RULE.test(password.value)) {
     errorMsg.value = '密码至少 8 位，且需同时包含字母和数字'
+    return
+  }
+  if (captchaCode.value.trim().length !== CAPTCHA_LENGTH) {
+    errorMsg.value = `请输入 ${CAPTCHA_LENGTH} 位验证码`
     return
   }
   if (!captcha.value) {
@@ -138,10 +142,10 @@ async function submit() {
         />
         <div class="flex gap-2">
           <input
-            v-model="captchaCode" type="text" maxlength="4" placeholder="验证码"
+            v-model="captchaCode" type="text" maxlength="5" placeholder="验证码"
             class="h-11 w-36 rounded-lg border border-slate-200 px-3 text-center tracking-widest outline-none focus:border-[#1677ff]"
           />
-          <button class="flex h-11 w-[120px] shrink-0 items-center justify-center overflow-hidden rounded-lg bg-slate-50 hover:opacity-80" @click="refreshCaptcha">
+          <button class="flex h-11 w-[140px] shrink-0 items-center justify-center overflow-hidden rounded-lg bg-slate-50 hover:opacity-80" @click="refreshCaptcha">
             <img v-if="captcha" :src="captcha.image" alt="验证码" class="h-full w-auto" />
             <span v-else class="text-xs text-slate-400">加载中...</span>
           </button>

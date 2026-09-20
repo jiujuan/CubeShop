@@ -2,7 +2,7 @@
 import { onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { Eye, EyeOff, Lock, Package, UserRound } from 'lucide-vue-next'
-import { getCaptcha, login, type Captcha } from '@/api/auth'
+import { CAPTCHA_LENGTH, getCaptcha, login, type Captcha } from '@/api/auth'
 import { ApiBusinessError } from '@/api/request'
 import { useAuthStore } from '@/stores/auth'
 import { useSiteStore } from '@/stores/site'
@@ -40,6 +40,10 @@ onMounted(refreshCaptcha)
 async function submit() {
   if (!username.value.trim() || !password.value || !captchaCode.value) {
     errorMsg.value = '请填写完整登录信息'
+    return
+  }
+  if (captchaCode.value.trim().length !== CAPTCHA_LENGTH) {
+    errorMsg.value = `请输入 ${CAPTCHA_LENGTH} 位验证码`
     return
   }
   if (!captcha.value) {
@@ -113,12 +117,12 @@ async function submit() {
         </div>
         <div class="flex gap-2">
           <input
-            v-model="captchaCode" type="text" maxlength="4" placeholder="验证码"
+            v-model="captchaCode" type="text" maxlength="5" placeholder="验证码"
             class="h-11 w-36 rounded-lg border border-slate-200 px-3 text-center tracking-widest outline-none focus:border-[#1677ff]"
             @keyup.enter="submit"
           />
           <button
-            class="flex h-11 w-[120px] shrink-0 items-center justify-center overflow-hidden rounded-lg bg-slate-50 hover:opacity-80"
+            class="flex h-11 w-[140px] shrink-0 items-center justify-center overflow-hidden rounded-lg bg-slate-50 hover:opacity-80"
             title="点击刷新验证码"
             @click="refreshCaptcha"
           >
