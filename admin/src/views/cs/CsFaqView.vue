@@ -1,37 +1,43 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { ChevronLeft, ChevronRight, Eye, ExternalLink, Pencil, Plus, Trash2, X } from 'lucide-vue-next'
-import MarkdownEditor from '@/components/MarkdownEditor.vue'
 import PageBlockEditor from '@/components/PageBlockEditor.vue'
 import PageFieldForm from '@/components/PageFieldForm.vue'
 import {
-  createCsFaqArticle, createCsFaqCategory, deleteCsFaqArticle, deleteCsFaqCategory,
+  createCsFaqCategory, deleteCsFaqArticle, deleteCsFaqCategory,
   getCsFaqArticles, getCsFaqCategories, getCsFaqPage, getCsFaqPageBlocks, getCsFaqPageTemplates,
   moveCsFaqCategory, offlineCsFaqArticle, previewCsFaqArticle,
   publishCsFaqArticle, saveCsFaqPage, saveCsFaqPageBlocks, sortCsFaqCategories,
-  updateCsFaqArticle, updateCsFaqCategory, uploadCmsImage,
+  updateCsFaqCategory,
   type CmsPageBlockOption, type CmsPageBlockPayload, type CmsPageDetail, type CmsPageTemplateOption,
-  type CsChannelOption, type CsFaqArticlePayload, type CsFaqArticleRow,
+  type CsChannelOption, type CsFaqArticleRow,
   type CsFaqCategoryPayload, type CsFaqCategoryRow,
 } from '@/api/cs'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import LoadingSpinner from '@/components/LoadingSpinner.vue'
-import { getProducts } from '@/api/product'
 import { useAuthStore } from '@/stores/auth'
+import { hotLabelFor } from '@/utils/csArticle'
 
 /**
  * 内容中心 CMS 后台管理页（原 CS-115 帮助中心 → CMS-109 内容管理）
  *
  * 布局：**左栏目树 + 右内容区**。右侧按选中栏目的 `type` 自动切换：
- * - `type=channel` → 文章列表（筛选 / 分页 / 增删改 / 发布 / 下架 / 预览）
+ * - `type=channel` → 文章列表（筛选 / 分页 / 发布 / 下架 / 预览）
  * - `type=page`    → 单页内容：固定模板用字段表单（PageFieldForm），
  *                    `template=blocks` 用区块编辑器（PageBlockEditor，CMS-203）
+ *
+ * ⚠️ 文章的新增/编辑**不在这里**：字段太多（正文 + SEO + 关联商品），侧边弹层
+ * 放不下，已拆成独立路由 `/cs/faq/articles/new` 与 `/cs/faq/articles/:id/edit`
+ * （见 CsFaqArticleEditView）。本页只负责列表与跳转。
  *
  * 栏目支持无限父子（后端 CmsCategoryService 维护 level/path，本页只做展示与转发）。
  * 正文用 Markdown 编辑（源存 content_md），HTML 产物由后端渲染派生。
  * 无 cs.faq.manage 时页面只读，不渲染任何写操作入口。
  */
 const auth = useAuthStore()
+const router = useRouter()
+const route = useRoute()
 const canManage = computed(() => auth.hasPermission('cs.faq.manage'))
 
 const STATUS_LABELS: Record<string, string> = { draft: '草稿', published: '已发布', offline: '已下架' }
@@ -129,9 +135,12 @@ async function loadCategories() {
     const nodes = allNodes.value
     const stillExists = nodes.some((n) => n.id === selectedCategoryId.value)
     if (!stillExists) {
-      // 优先落到第一个非单页栏目（列表为主场景）；否则第一个节点
-      const fallback = nodes.find((n) => n.type !== 'page') ?? nodes[0] ?? null
-      await selectCategory(fallback)
+      // 从独立编辑页返回时会带 ?category_id=（回到刚编辑的那一栏），优先采纳
+      const fromQuery = Number(route.query.category_id ?? 0)
+      const picked = nodes.find((n) => n.id === fromQuery && n.type !== 'page')
+        // 兜底：优先落到第一个非单页栏目（列表为主场景）；否则第一个节点
+        ?? nodes.find((n) => n.type !== 'page') ?? nodes[0] ?? null
+      await selectCategory(picked)
     } else {
       // 选中项仍在：刷新右侧（如改名后需要同步）
       await selectCategory(selectedCategory.value)
@@ -340,87 +349,9 @@ const artLoading = ref(false)
 const artPagination = ref({ page: 1, page_size: 15, total: 0, total_pages: 1 })
 const artFilters = ref<{ category_id: number | null; status: string; keyword: string }>({ category_id: null, status: '', keyword: '' })
 
-function emptyForm(): CsFaqArticlePayload {
-  return {
-    category_id: 0, title: '', slug: '', summary: '', cover_image: null, content_md: '',
-    seo_title: '', seo_keywords: '', seo_description: '', tags: '', product_ids: [],
-    sort: 0, is_hot: false, status: 'draft',
-  }
-}
-const articleEditor = ref<{ open: boolean; id: number | null; form: CsFaqArticlePayload }>(
-  { open: false, id: null, form: emptyForm() },
-)
 const deleteArtTarget = ref<CsFaqArticleRow | null>(null)
 const publishTarget = ref<{ article: CsFaqArticleRow; action: 'publish' | 'offline' } | null>(null)
 const previewData = ref<{ title: string; content: string; category_name: string | null; status: string } | null>(null)
-/** CMS 新闻中心：封面图上传中状态 */
-const coverUploading = ref(false)
-
-// ---- 后期增强：关联种草商品多选 ----
-/** 已选商品（chips 展示用；id + 标题） */
-const selectedProducts = ref<Array<{ id: number; title: string }>>([])
-/** 商品搜索框状态 */
-const productPicker = ref<{ keyword: string; loading: boolean; results: Array<{ id: number; title: string }> }>(
-  { keyword: '', loading: false, results: [] },
-)
-/** 文章编辑器 SEO 折叠区展开态 */
-const showSeo = ref(false)
-
-/** 搜索商品（按标题；用于种草关联多选） */
-async function searchProducts() {
-  const keyword = productPicker.value.keyword.trim()
-  if (!keyword) { productPicker.value.results = []; return }
-  productPicker.value.loading = true
-  try {
-    const { data } = await getProducts({ keyword, page_size: 10 })
-    productPicker.value.results = data.data.list.map((p) => ({ id: p.id, title: p.title }))
-  } catch {
-    productPicker.value.results = []
-  } finally {
-    productPicker.value.loading = false
-  }
-}
-
-/** 勾选/取消一件种草商品 */
-function toggleProduct(p: { id: number; title: string }) {
-  const ids = articleEditor.value.form.product_ids ?? []
-  const idx = ids.indexOf(p.id)
-  if (idx >= 0) {
-    ids.splice(idx, 1)
-    selectedProducts.value = selectedProducts.value.filter((s) => s.id !== p.id)
-  } else {
-    ids.push(p.id)
-    if (!selectedProducts.value.some((s) => s.id === p.id)) selectedProducts.value.push({ id: p.id, title: p.title })
-  }
-  articleEditor.value.form.product_ids = [...ids]
-}
-
-function removeProduct(id: number) {
-  articleEditor.value.form.product_ids = (articleEditor.value.form.product_ids ?? []).filter((x) => x !== id)
-  selectedProducts.value = selectedProducts.value.filter((s) => s.id !== id)
-}
-
-/** 封面图上传（复用 CMS 统一上传接口 /admin/cs/faq/upload） */
-async function uploadCover(ev: Event) {
-  const input = ev.target as HTMLInputElement
-  const file = input.files?.[0]
-  if (!file) return
-  coverUploading.value = true
-  try {
-    const { data } = await uploadCmsImage(file)
-    articleEditor.value.form.cover_image = data.data.url
-    notify('ok', '封面上传成功')
-  } catch (e) {
-    notify('err', e instanceof Error ? e.message : '封面上传失败')
-  } finally {
-    coverUploading.value = false
-    input.value = ''
-  }
-}
-
-function removeCover() {
-  articleEditor.value.form.cover_image = null
-}
 
 async function loadArticles(page = 1) {
   artLoading.value = true
@@ -445,59 +376,23 @@ function onArticleCategoryFilter() {
   loadArticles(1)
 }
 
+/**
+ * 新增文章 → 独立页面（带上当前选中的栏目，编辑页预选它）
+ *
+ * 之所以不在本页开弹层：表单含正文 + SEO + 关联商品，抽屉里一屏放不下、
+ * 两列排布也摆不开。跳页后返回时再靠 `?category_id=` 回到这一栏。
+ */
 function openArtCreate() {
-  const form = emptyForm()
   const channel = selectedCategory.value
-  form.category_id = channel && channel.type !== 'page' ? channel.id : (allNodes.value.find((n) => n.type !== 'page')?.id ?? 0)
-  articleEditor.value = { open: true, id: null, form }
-  resetArticlePickers()
-}
-function openArtEdit(a: CsFaqArticleRow) {
-  articleEditor.value = {
-    open: true, id: a.id,
-    // 存量未迁移的行没有 markdown 源：退回 HTML 产物兜底（作者可另存为 markdown 或直接重写）
-    form: {
-      category_id: a.category_id, title: a.title, slug: a.slug ?? '', summary: a.summary ?? '',
-      cover_image: a.cover_image ?? null,
-      content_md: a.content_md ?? a.content ?? '', sort: a.sort, is_hot: a.is_hot, status: a.status,
-      seo_title: a.seo_title ?? '', seo_keywords: a.seo_keywords ?? '', seo_description: a.seo_description ?? '',
-      tags: (a.tags ?? []).join(', '),
-      product_ids: [...(a.product_ids ?? [])],
-    },
-  }
-  resetArticlePickers()
-  // 已关联商品先用 id 占位，再从 preview 拉标题回填 chips（避免无标题的裸 id）
-  selectedProducts.value = (a.product_ids ?? []).map((id) => ({ id, title: `#${id}` }))
-  if (a.product_ids?.length) {
-    previewCsFaqArticle(a.id).then(({ data: res }) => {
-      if (res.data.products?.length) {
-        selectedProducts.value = res.data.products.map((p) => ({ id: p.id, title: p.title }))
-      }
-    }).catch(() => {})
-  }
+  const categoryId = channel && channel.type !== 'page' ? channel.id : (allNodes.value.find((n) => n.type !== 'page')?.id ?? 0)
+  router.push({ name: 'cs-faq-article-create', query: categoryId ? { category_id: String(categoryId) } : {} })
 }
 
-/** 重置文章编辑器的商品搜索与已选（切换新建/编辑时避免串味） */
-function resetArticlePickers() {
-  productPicker.value = { keyword: '', loading: false, results: [] }
-  selectedProducts.value = []
-  showSeo.value = false
+/** 编辑文章 → 独立页面（按 id 回源，刷新/直达都不依赖列表内存数据） */
+function openArtEdit(a: CsFaqArticleRow) {
+  router.push({ name: 'cs-faq-article-edit', params: { id: a.id } })
 }
-async function saveArticle() {
-  const f = articleEditor.value.form
-  if (!f.category_id) { notify('err', '请选择分类'); return }
-  if (!f.title.trim()) { notify('err', '请填写标题'); return }
-  if (!f.content_md.trim()) { notify('err', '请填写正文'); return }
-  try {
-    if (articleEditor.value.id === null) await createCsFaqArticle(f)
-    else await updateCsFaqArticle(articleEditor.value.id, f)
-    articleEditor.value.open = false
-    notify('ok', '已保存')
-    await loadArticles(artPagination.value.page)
-  } catch (e) {
-    notify('err', e instanceof Error ? e.message : '保存失败')
-  }
-}
+
 async function confirmPublish() {
   const target = publishTarget.value
   publishTarget.value = null
@@ -545,22 +440,15 @@ function statusClass(status: string): string {
 
 // ---------------- 公告语境（CMS-204） ----------------
 
-/** 公告并入内容中心后寄存的栏目名（与后端迁移 000098、AnnouncementController 同一口径） */
-const ANNOUNCEMENT_CHANNEL_NAME = '公告'
-
 /**
- * 「热门」标记的文案按栏目语境显示
+ * 「热门」标记的文案按栏目语境显示（口径真源见 `@/utils/csArticle`，与文章编辑页共用）
  *
- * 公告栏目的「热门」在业务上就是「置顶」（公开接口把它映射回 `is_top`），
- * 在公告栏目里显示「热门」会让运营无从判断这条公告会不会被顶到最前。
+ * 公告栏目里的「热门」在业务上就是「置顶」，显示成「热门」会让运营
+ * 无从判断这条公告会不会被顶到最前。
  */
 function hotLabel(categoryId: number): string {
-  const node = allNodes.value.find((n) => n.id === categoryId)
-  return node?.name === ANNOUNCEMENT_CHANNEL_NAME ? '置顶' : '热门'
+  return hotLabelFor(allNodes.value.find((n) => n.id === categoryId)?.name)
 }
-
-/** 文章表单里的标记文案（新建时看当前所选栏目，编辑时看文章所在栏目） */
-const formHotLabel = computed(() => hotLabel(articleEditor.value.form.category_id))
 
 onMounted(async () => {
   await loadCategories()
@@ -850,134 +738,7 @@ onMounted(async () => {
       </div>
     </div>
 
-    <!-- 文章编辑弹窗 -->
-    <div v-if="articleEditor.open" class="fixed inset-0 z-50 flex justify-end bg-black/40" data-testid="cs-article-editor" @click.self="articleEditor.open = false">
-      <div class="flex h-full w-full max-w-xl flex-col overflow-y-auto bg-white p-5">
-        <div class="mb-4 flex items-center justify-between">
-          <h3 class="text-sm font-semibold text-slate-800">{{ articleEditor.id === null ? '新增文章' : '编辑文章' }}</h3>
-          <button class="text-slate-400" @click="articleEditor.open = false"><X class="h-4 w-4" /></button>
-        </div>
-        <label class="mb-3 block text-[13px]">
-          <span class="mb-1 block text-slate-500">分类</span>
-          <select v-model.number="articleEditor.form.category_id" class="w-full rounded-md border border-slate-300 px-3 py-2 outline-none focus:border-[#1677ff]" data-testid="cs-article-form-category">
-            <option :value="0" disabled>请选择分类</option>
-            <option v-for="n in allNodes.filter((x) => x.type !== 'page')" :key="n.id" :value="n.id">{{ n.name }}</option>
-          </select>
-        </label>
-        <label class="mb-3 block text-[13px]">
-          <span class="mb-1 block text-slate-500">标题</span>
-          <input v-model="articleEditor.form.title" type="text" maxlength="191" class="w-full rounded-md border border-slate-300 px-3 py-2 outline-none focus:border-[#1677ff]" data-testid="cs-article-form-title" />
-        </label>
-        <label class="mb-3 block text-[13px]">
-          <span class="mb-1 block text-slate-500">URL 别名 slug（前台 /news/{slug}；留空按标题自动生成，编辑时留空不改）</span>
-          <input v-model="articleEditor.form.slug" type="text" maxlength="191" placeholder="如 how-to-refund" class="w-full rounded-md border border-slate-300 px-3 py-2 outline-none focus:border-[#1677ff]" data-testid="cs-article-form-slug" />
-        </label>
-        <label class="mb-3 block text-[13px]">
-          <span class="mb-1 block text-slate-500">摘要</span>
-          <input v-model="articleEditor.form.summary" type="text" maxlength="255" class="w-full rounded-md border border-slate-300 px-3 py-2 outline-none focus:border-[#1677ff]" data-testid="cs-article-form-summary" />
-        </label>
-        <label class="mb-3 block text-[13px]">
-          <span class="mb-1 block text-slate-500">标签（逗号分隔，用于专题聚合）</span>
-          <input v-model="articleEditor.form.tags" type="text" placeholder="如 新品, 促销" class="w-full rounded-md border border-slate-300 px-3 py-2 outline-none focus:border-[#1677ff]" data-testid="cs-article-form-tags" />
-        </label>
-        <div class="mb-3 text-[13px]">
-          <span class="mb-1 block text-slate-500">封面图（图文卡片新闻用；列表行新闻可不填）</span>
-          <div class="flex items-center gap-3">
-            <img
-              v-if="articleEditor.form.cover_image"
-              :src="articleEditor.form.cover_image"
-              alt="封面预览"
-              class="h-20 w-20 rounded-md border border-slate-200 object-cover"
-              data-testid="cs-article-form-cover-preview"
-            />
-            <div class="flex flex-col gap-2">
-              <label class="inline-flex cursor-pointer items-center gap-1 rounded-md border border-slate-300 px-3 py-1.5 text-[13px] text-slate-600 hover:bg-slate-50" data-testid="cs-article-form-cover-upload">
-                <input type="file" accept="image/*" class="hidden" :disabled="coverUploading" @change="uploadCover" />
-                {{ coverUploading ? '上传中…' : '上传封面' }}
-              </label>
-              <button v-if="articleEditor.form.cover_image" type="button" class="inline-flex items-center gap-1 text-[13px] text-[#ff4d4f] hover:underline" data-testid="cs-article-form-cover-remove" @click="removeCover">移除封面</button>
-            </div>
-          </div>
-        </div>
-        <div class="mb-3 text-[13px]">
-          <span class="mb-1 block text-slate-500">正文（Markdown）</span>
-          <MarkdownEditor
-            v-model="articleEditor.form.content_md"
-            data-testid="cs-article-form-content"
-            @upload-error="(msg: string) => notify('err', msg)"
-          />
-          <span class="mt-1 block text-xs text-slate-400">
-            支持标题、段落、列表、表格、图片与链接。工具栏的图片按钮会走后台统一上传接口；
-            链接锚点可用标题生成的 id（如 <code>#content-小节标题</code>）。
-            保存时后端会渲染并按白名单净化（脚本、内联样式等会被剥离）；
-            以「预览」按钮看到的效果为准（与用户端同一份内容）。
-          </span>
-        </div>
-        <!-- 后期增强：文章级 SEO 折叠区（留空则前台回落栏目/标题摘要） -->
-        <div class="mb-3 rounded-md border border-slate-200 text-[13px]">
-          <button type="button" class="flex w-full items-center justify-between px-3 py-2 text-slate-600 hover:bg-slate-50" data-testid="cs-article-form-seo-toggle" @click="showSeo = !showSeo">
-            <span>SEO 设置（可选）</span>
-            <ChevronRight class="h-3.5 w-3.5 transition-transform" :class="showSeo ? 'rotate-90' : ''" />
-          </button>
-          <div v-if="showSeo" class="space-y-2 border-t border-slate-100 px-3 py-3">
-            <label class="block">
-              <span class="mb-1 block text-slate-500">SEO 标题</span>
-              <input v-model="articleEditor.form.seo_title" type="text" maxlength="128" class="w-full rounded-md border border-slate-300 px-3 py-2 outline-none focus:border-[#1677ff]" data-testid="cs-article-form-seo-title" />
-            </label>
-            <label class="block">
-              <span class="mb-1 block text-slate-500">SEO 关键词</span>
-              <input v-model="articleEditor.form.seo_keywords" type="text" maxlength="255" class="w-full rounded-md border border-slate-300 px-3 py-2 outline-none focus:border-[#1677ff]" data-testid="cs-article-form-seo-keywords" />
-            </label>
-            <label class="block">
-              <span class="mb-1 block text-slate-500">SEO 描述</span>
-              <input v-model="articleEditor.form.seo_description" type="text" maxlength="255" class="w-full rounded-md border border-slate-300 px-3 py-2 outline-none focus:border-[#1677ff]" data-testid="cs-article-form-seo-description" />
-            </label>
-          </div>
-        </div>
-        <!-- 后期增强：关联种草商品（前台详情页展示，商品详情页反查相关资讯） -->
-        <div class="mb-3 rounded-md border border-slate-200 px-3 py-3 text-[13px]">
-          <span class="mb-2 block text-slate-500">关联种草商品（可选）</span>
-          <div class="mb-2 flex flex-wrap gap-1.5" data-testid="cs-article-form-products">
-            <span
-              v-for="p in selectedProducts" :key="p.id"
-              class="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-600"
-            >
-              {{ p.title }}
-              <button type="button" class="text-slate-400 hover:text-[#ff4d4f]" :data-testid="`cs-article-form-product-remove-${p.id}`" @click="removeProduct(p.id)"><X class="h-3 w-3" /></button>
-            </span>
-            <span v-if="!selectedProducts.length" class="text-xs text-slate-400">尚未关联商品</span>
-          </div>
-          <div class="flex gap-2">
-            <input
-              v-model="productPicker.keyword" type="text" placeholder="搜索商品标题"
-              class="w-full rounded-md border border-slate-300 px-3 py-1.5 outline-none focus:border-[#1677ff]"
-              data-testid="cs-article-form-product-search"
-              @keyup.enter="searchProducts"
-            />
-            <button type="button" class="shrink-0 rounded-md border border-slate-300 px-3 py-1.5 text-slate-600 hover:bg-slate-50" data-testid="cs-article-form-product-search-btn" @click="searchProducts">搜索</button>
-          </div>
-          <div v-if="productPicker.results.length" class="mt-2 max-h-40 overflow-y-auto rounded-md border border-slate-100">
-            <button
-              v-for="p in productPicker.results" :key="p.id" type="button"
-              class="flex w-full items-center justify-between px-3 py-1.5 text-left text-xs hover:bg-slate-50"
-              :data-testid="`cs-article-form-product-option-${p.id}`"
-              @click="toggleProduct(p)"
-            >
-              <span class="truncate text-slate-600">{{ p.title }}</span>
-              <span class="shrink-0 text-[#1677ff]">{{ (articleEditor.form.product_ids ?? []).includes(p.id) ? '已选' : '添加' }}</span>
-            </button>
-          </div>
-        </div>
-        <div class="mb-4 flex items-center gap-4 text-[13px] text-slate-600">
-          <label class="flex items-center gap-2"><input v-model="articleEditor.form.is_hot" type="checkbox" data-testid="cs-article-form-hot" /> {{ formHotLabel }}</label>
-          <label class="flex items-center gap-2">排序 <input v-model.number="articleEditor.form.sort" type="number" min="0" class="w-20 rounded border border-slate-300 px-2 py-1 outline-none focus:border-[#1677ff]" data-testid="cs-article-form-sort" /></label>
-        </div>
-        <div class="mt-auto flex justify-end gap-2">
-          <button class="rounded-md border border-slate-200 px-4 py-1.5 text-[13px] text-slate-500" @click="articleEditor.open = false">取消</button>
-          <button class="rounded-md bg-[#1677ff] px-4 py-1.5 text-[13px] text-white" data-testid="cs-article-save" @click="saveArticle">保存草稿</button>
-        </div>
-      </div>
-    </div>
+    <!-- 文章的新增/编辑已拆成独立页面（CsFaqArticleEditView）：字段多，侧边弹层放不下 -->
 
     <!-- 预览弹窗 -->
     <div v-if="previewData" class="fixed inset-0 z-50 flex items-center justify-center bg-black/40" data-testid="cs-article-preview" @click.self="previewData = null">

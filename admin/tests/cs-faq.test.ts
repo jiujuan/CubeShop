@@ -97,7 +97,13 @@ function freshPinia(permissions: string[] = ['cs.faq.manage']) {
 function makeRouter() {
   return createRouter({
     history: createMemoryHistory(),
-    routes: [{ path: '/', component: { template: '<div />' } }, { path: '/cs/faq', component: CsFaqView }],
+    routes: [
+      { path: '/', component: { template: '<div />' } },
+      { path: '/cs/faq', name: 'cs-faq', component: CsFaqView },
+      // 文章表单已拆成独立页：这里用占位组件承接跳转目标（表单用例见 cs-article-edit.test.ts）
+      { path: '/cs/faq/articles/new', name: 'cs-faq-article-create', component: { template: '<div />' } },
+      { path: '/cs/faq/articles/:id/edit', name: 'cs-faq-article-edit', component: { template: '<div />' } },
+    ],
   })
 }
 
@@ -155,6 +161,20 @@ async function mountView(permissions?: string[]) {
   const wrapper = mount(CsFaqView, { global: globalCfg(freshPinia(permissions)) })
   await flushPromises()
   return wrapper
+}
+
+/**
+ * 需要断言跳转的用例用这个：把 router 交出来
+ *
+ * 独立页按路由取 id，必须先 push + isReady 再 mount，否则 params 为空。
+ */
+async function mountViewWithRouter(path = '/cs/faq') {
+  const router = makeRouter()
+  await router.push(path)
+  await router.isReady()
+  const wrapper = mount(CsFaqView, { global: { plugins: [freshPinia(), router], directives: { permission } } })
+  await flushPromises()
+  return { wrapper, router }
 }
 
 describe('内容管理页 CsFaqView（CMS-109）', () => {
@@ -268,101 +288,43 @@ describe('内容管理页 CsFaqView（CMS-109）', () => {
     expect(body.text()).not.toContain('<p>')
   })
 
-  // ---------- markdown 编辑器（缺陷 #1 改造） ----------
+  // ---------- 文章表单已拆成独立页面 ----------
+  // 表单用例（markdown 回显、封面上传、SEO/标签、关联商品）见
+  // `tests/cs-article-edit.test.ts`；本页只保留「点按钮 → 跳独立页」的断言。
 
-  it('正文编辑器是 markdown 编辑器，且绑定 content_md（不再是 HTML textarea + 标签工具条）', async () => {
-    const wrapper = await mountView()
+  it('点「新增文章」跳到独立编辑页，并带上当前栏目', async () => {
+    const { wrapper, router } = await mountViewWithRouter()
+
     await wrapper.find('[data-testid="cs-article-create"]').trigger('click')
     await flushPromises()
 
-    // 旧实现的两个标志物都不应再出现
-    expect(wrapper.find('[data-testid="cs-article-toolbar"]').exists()).toBe(false)
-    expect(wrapper.find('[data-testid="cs-article-tb-段落"]').exists()).toBe(false)
-
-    // markdown 编辑器已在位（真实组件；测试环境里用同契约的桩替代）
-    expect(wrapper.findComponent({ name: 'MdEditor' }).exists()).toBe(true)
-
-    // 编辑器已在位，且输入会写进表单的 content_md
-    const editor = wrapper.find('[data-testid="cs-article-form-content"]')
-    expect(editor.exists()).toBe(true)
-    await editor.setValue('## 小节标题')
-    await flushPromises()
-
-    createCsFaqArticleMock.mockResolvedValue({ data: { data: article() } })
-    await wrapper.find('[data-testid="cs-article-form-title"]').setValue('新文章')
-    await wrapper.find('[data-testid="cs-article-save"]').trigger('click')
-    await flushPromises()
-
-    expect(createCsFaqArticleMock).toHaveBeenCalledWith(
-      expect.objectContaining({ title: '新文章', content_md: '## 小节标题' }),
-    )
-    // 不再发送 content（HTML 由后端渲染派生）
-    expect(createCsFaqArticleMock.mock.calls[0][0]).not.toHaveProperty('content')
+    expect(router.currentRoute.value.name).toBe('cs-faq-article-create')
+    expect(router.currentRoute.value.query.category_id).toBe('1')
   })
 
-  it('打开已有文章时用 content_md 回显（markdown 源，不是 HTML 产物）', async () => {
-    mockArticles([article({ id: 1, content_md: '## 退货步骤', content: '<h2>退货步骤</h2>' })])
-    const wrapper = await mountView()
+  it('点「编辑」跳到独立编辑页（按 id 回源），不再原地开浮层', async () => {
+    const { wrapper, router } = await mountViewWithRouter()
 
     await wrapper.find('[data-testid="cs-article-edit-1"]').trigger('click')
     await flushPromises()
 
-    const editor = wrapper.find('[data-testid="cs-article-form-content"]')
-    expect((editor.element as HTMLTextAreaElement).value).toBe('## 退货步骤')
-
-    updateCsFaqArticleMock.mockResolvedValue({ data: { data: article() } })
-    await wrapper.find('[data-testid="cs-article-save"]').trigger('click')
-    await flushPromises()
-
-    expect(updateCsFaqArticleMock).toHaveBeenCalledWith(1, expect.objectContaining({ content_md: '## 退货步骤' }))
+    expect(router.currentRoute.value.name).toBe('cs-faq-article-edit')
+    expect(router.currentRoute.value.params.id).toBe('1')
+    // 列表页不再渲染任何文章表单元素
+    expect(wrapper.find('[data-testid="cs-article-form-title"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="cs-article-editor"]').exists()).toBe(false)
   })
 
-  it('存量未迁移的行（content_md 为空）退回 HTML 产物兜底，不至于打开就是空白', async () => {
-    mockArticles([article({ id: 1, content_md: null, content: '<p>历史正文</p>' })])
-    const wrapper = await mountView()
+  it('带 ?category_id= 打开列表页时选中对应栏目（从编辑页返回的落点）', async () => {
+    getCsFaqCategoriesMock.mockResolvedValue({ data: { data: [
+      category({ id: 1, name: '图文新闻' }),
+      category({ id: 2, name: '列表新闻' }),
+    ] } })
+    mockArticles([article({ id: 1, category_id: 2, title: '列表新闻稿' })])
+    const { wrapper } = await mountViewWithRouter('/cs/faq?category_id=2')
 
-    await wrapper.find('[data-testid="cs-article-edit-1"]').trigger('click')
-    await flushPromises()
-
-    const editor = wrapper.find('[data-testid="cs-article-form-content"]')
-    expect((editor.element as HTMLTextAreaElement).value).toBe('<p>历史正文</p>')
-  })
-
-  it('图片上传走后台统一上传接口，并回填 url 给编辑器', async () => {
-    uploadImageMock.mockResolvedValue({ data: { data: { url: '/storage/uploads/a.png' } } })
-    const wrapper = await mountView()
-    await wrapper.find('[data-testid="cs-article-create"]').trigger('click')
-    await flushPromises()
-
-    const handler = wrapper.findComponent({ name: 'MdEditor' }).props('onUploadImg') as
-      (files: File[], cb: (urls: Array<{ url: string; alt: string; title: string }>) => void) => Promise<void>
-
-    const callback = vi.fn()
-    const file = new File(['x'], 'a.png', { type: 'image/png' })
-    await handler([file], callback)
-    await flushPromises()
-
-    expect(uploadImageMock).toHaveBeenCalledWith(file)
-    expect(callback).toHaveBeenCalledWith([
-      { url: '/storage/uploads/a.png', alt: 'a.png', title: 'a.png' },
-    ])
-  })
-
-  it('图片上传失败时回调空数组并提示，不打断编辑', async () => {
-    uploadImageMock.mockRejectedValue(new Error('文件过大'))
-    const wrapper = await mountView()
-    await wrapper.find('[data-testid="cs-article-create"]').trigger('click')
-    await flushPromises()
-
-    const handler = wrapper.findComponent({ name: 'MdEditor' }).props('onUploadImg') as
-      (files: File[], cb: (urls: Array<{ url: string; alt: string; title: string }>) => void) => Promise<void>
-
-    const callback = vi.fn()
-    await handler([new File(['x'], 'big.png', { type: 'image/png' })], callback)
-    await flushPromises()
-
-    expect(callback).toHaveBeenCalledWith([])
-    expect(wrapper.find('[data-testid="cs-faq-tip"]').text()).toContain('文件过大')
+    expect((wrapper.find('[data-testid="cs-article-category-filter"]').element as HTMLSelectElement).value).toBe('2')
+    expect(getCsFaqArticlesMock).toHaveBeenCalledWith(expect.objectContaining({ category_id: 2 }))
   })
 
   // ---------- 左右联动（CMS-109 新增） ----------
@@ -525,16 +487,5 @@ describe('公告并入内容中心（CMS-204）', () => {
     expect(wrapper.find('[data-testid="cs-article-hot-2"]').text()).toBe('热门')
   })
 
-  it('在公告栏目下打开文章表单时，标记文案同步为「置顶」', async () => {
-    getCsFaqCategoriesMock.mockResolvedValue({ data: { data: [category({ id: 30, name: '公告', type: 'channel' })] } })
-    mockArticles([article({ id: 1, category_id: 30, title: '系统维护通知' })])
-
-    const wrapper = await mountView()
-    await wrapper.find('[data-testid="cs-article-edit-1"]').trigger('click')
-    await flushPromises()
-
-    const label = wrapper.find('[data-testid="cs-article-form-hot"]').element.parentElement
-    expect(label?.textContent).toContain('置顶')
-    expect(label?.textContent).not.toContain('热门')
-  })
+  // 文章表单里同一文案（「置顶」而不是「热门」）的用例随表单迁到 cs-article-edit.test.ts
 })

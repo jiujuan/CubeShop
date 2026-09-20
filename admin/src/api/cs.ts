@@ -338,6 +338,20 @@ export function getCsFaqArticles(params: { category_id?: number; status?: string
   return request.get<ApiResult<{ list: CsFaqArticleRow[]; pagination: Pagination }>>('/admin/cs/faq/articles', { params })
 }
 
+/**
+ * 单篇文章详情（后台独立编辑页回源用）
+ *
+ * 编辑页是独立路由，刷新/直达时拿不到列表页内存里的行数据，必须按 id 回查。
+ */
+export interface CsFaqArticleDetail extends CsFaqArticleRow {
+  /** 已关联种草商品的标题（编辑页 chips 直接展示，免二次请求） */
+  products: Array<{ id: number; title: string }>
+}
+
+export function getCsFaqArticle(id: number) {
+  return request.get<ApiResult<CsFaqArticleDetail>>(`/admin/cs/faq/articles/${id}`)
+}
+
 export function createCsFaqArticle(data: CsFaqArticlePayload) {
   return request.post<ApiResult<CsFaqArticleRow>>('/admin/cs/faq/articles', data)
 }

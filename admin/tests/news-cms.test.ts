@@ -190,32 +190,6 @@ describe('CMS 新闻中心：后台栏目形态 + 文章封面（news-cms）', (
     expect(createCsFaqCategoryMock).toHaveBeenCalledWith(expect.objectContaining({ list_style: 'list' }))
   })
 
-  it('文章编辑弹窗上传封面图后随保存提交 cover_image', async () => {
-    uploadCmsImageMock.mockResolvedValue({ data: { data: { url: 'http://x/cover.png' } } })
-    const wrapper = await mountView()
-
-    await wrapper.find('[data-testid="cs-article-edit-1"]').trigger('click')
-    await flushPromises()
-
-    // 封面预览初始不存在
-    expect(wrapper.find('[data-testid="cs-article-form-cover-preview"]').exists()).toBe(false)
-
-    const file = new File(['img'], 'cover.png', { type: 'image/png' })
-    const input = wrapper.find('input[type="file"]')
-    Object.defineProperty(input.element, 'files', { value: [file], configurable: true })
-    await input.trigger('change')
-    await flushPromises()
-
-    // 上传成功后预览出现
-    expect(uploadCmsImageMock).toHaveBeenCalledWith(file)
-    expect(wrapper.find('[data-testid="cs-article-form-cover-preview"]').exists()).toBe(true)
-
-    await wrapper.find('[data-testid="cs-article-save"]').trigger('click')
-    await flushPromises()
-
-    expect(updateCsFaqArticleMock).toHaveBeenCalledWith(1, expect.objectContaining({ cover_image: 'http://x/cover.png' }))
-  })
-
   it('文章列表提供「所属栏目」筛选下拉', async () => {
     getCsFaqCategoriesMock.mockResolvedValue({ data: { data: [
       category({ id: 1, name: '图文新闻' }),
@@ -228,61 +202,7 @@ describe('CMS 新闻中心：后台栏目形态 + 文章封面（news-cms）', (
     expect(sel.findAll('option').map((o) => o.text())).toEqual(['图文新闻', '列表新闻'])
   })
 
-  // ---- 后期增强：slug / SEO / 标签 / 种草商品 ----
-
-  it('新增文章提交 slug、SEO 与标签', async () => {
-    const wrapper = await mountView()
-    await wrapper.find('[data-testid="cs-article-create"]').trigger('click')
-    await flushPromises()
-
-    await wrapper.find('[data-testid="cs-article-form-title"]').setValue('新品发布')
-    await wrapper.find('[data-testid="cs-article-form-content"]').setValue('正文')
-    await wrapper.find('[data-testid="cs-article-form-slug"]').setValue('new-arrival')
-    await wrapper.find('[data-testid="cs-article-form-tags"]').setValue('新品, 促销')
-
-    // SEO 折叠区默认收起 → 展开后填写
-    await wrapper.find('[data-testid="cs-article-form-seo-toggle"]').trigger('click')
-    await wrapper.find('[data-testid="cs-article-form-seo-title"]').setValue('新品 SEO 标题')
-
-    await wrapper.find('[data-testid="cs-article-save"]').trigger('click')
-    await flushPromises()
-
-    expect(createCsFaqArticleMock).toHaveBeenCalledWith(expect.objectContaining({
-      slug: 'new-arrival', tags: '新品, 促销', seo_title: '新品 SEO 标题',
-    }))
-  })
-
-  it('编辑文章回填 slug 与标签', async () => {
-    mockArticles([article({ slug: 'how-to-refund', tags: ['售后', '退款'] })])
-    const wrapper = await mountView()
-    await wrapper.find('[data-testid="cs-article-edit-1"]').trigger('click')
-    await flushPromises()
-
-    expect((wrapper.find('[data-testid="cs-article-form-slug"]').element as HTMLInputElement).value).toBe('how-to-refund')
-    expect((wrapper.find('[data-testid="cs-article-form-tags"]').element as HTMLInputElement).value).toBe('售后, 退款')
-  })
-
-  it('搜索并关联种草商品后随保存提交 product_ids', async () => {
-    getProductsMock.mockResolvedValue({ data: { data: { list: [{ id: 5, title: '种草商品' }], pagination: { page: 1, page_size: 10, total: 1, total_pages: 1 } } } })
-    const wrapper = await mountView()
-
-    await wrapper.find('[data-testid="cs-article-edit-1"]').trigger('click')
-    await flushPromises()
-
-    await wrapper.find('[data-testid="cs-article-form-product-search"]').setValue('种草')
-    await wrapper.find('[data-testid="cs-article-form-product-search-btn"]').trigger('click')
-    await flushPromises()
-
-    expect(getProductsMock).toHaveBeenCalledWith(expect.objectContaining({ keyword: '种草' }))
-    await wrapper.find('[data-testid="cs-article-form-product-option-5"]').trigger('click')
-    await flushPromises()
-
-    // 已选 chip 出现
-    expect(wrapper.find('[data-testid="cs-article-form-product-remove-5"]').exists()).toBe(true)
-
-    await wrapper.find('[data-testid="cs-article-save"]').trigger('click')
-    await flushPromises()
-
-    expect(updateCsFaqArticleMock).toHaveBeenCalledWith(1, expect.objectContaining({ product_ids: [5] }))
-  })
+  // ---- 文章表单（封面 / slug / SEO / 标签 / 种草商品）已迁至独立编辑页 ----
+  // 表单用例见 `tests/cs-article-edit.test.ts`：原侧边弹层已拆成
+  // `/cs/faq/articles/new` 与 `/cs/faq/articles/:id/edit` 两条独立路由。
 })

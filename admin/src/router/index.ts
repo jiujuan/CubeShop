@@ -271,6 +271,20 @@ const router = createRouter({
           meta: { title: '内容管理', menu: true, icon: 'BookOpen', permission: 'cs.faq.manage' },
         },
         {
+          // 文章新增/编辑是独立页面（不再是列表页侧边弹层）：
+          // 字段多（正文 + SEO + 关联商品），抽屉放不下，独立页才能两列排布
+          path: 'cs/faq/articles/new',
+          name: 'cs-faq-article-create',
+          component: () => import('@/views/cs/CsFaqArticleEditView.vue'),
+          meta: { title: '内容管理 / 新增文章', permission: 'cs.faq.manage' },
+        },
+        {
+          path: 'cs/faq/articles/:id/edit',
+          name: 'cs-faq-article-edit',
+          component: () => import('@/views/cs/CsFaqArticleEditView.vue'),
+          meta: { title: '内容管理 / 编辑文章', permission: 'cs.faq.manage' },
+        },
+        {
           path: 'cs/quick-replies',
           name: 'cs-quick-replies',
           component: () => import('@/views/cs/CsQuickReplyView.vue'),

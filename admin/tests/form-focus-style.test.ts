@@ -11,6 +11,8 @@ import { resolve } from 'path'
  */
 const TARGETS = [
   'src/views/cs/CsFaqView.vue',
+  // 文章的新增/编辑已从列表页侧边弹层拆成独立页，表单控件随之搬迁
+  'src/views/cs/CsFaqArticleEditView.vue',
   'src/components/PageFieldForm.vue',
   'src/components/PageBlockEditor.vue',
 ]
