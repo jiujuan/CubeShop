@@ -10,7 +10,7 @@ const {
   deleteCsFaqCategoryMock, sortCsFaqCategoriesMock, moveCsFaqCategoryMock, createCsFaqArticleMock,
   updateCsFaqArticleMock, deleteCsFaqArticleMock, publishCsFaqArticleMock, offlineCsFaqArticleMock,
   previewCsFaqArticleMock, getCsFaqPageMock, saveCsFaqPageMock, getCsFaqPageTemplatesMock,
-  uploadCmsImageMock, uploadImageMock,
+  uploadCmsImageMock, uploadImageMock, getProductsMock,
 } = vi.hoisted(() => ({
   getCsFaqCategoriesMock: vi.fn(),
   getCsFaqArticlesMock: vi.fn(),
@@ -30,6 +30,7 @@ const {
   getCsFaqPageTemplatesMock: vi.fn(),
   uploadCmsImageMock: vi.fn(),
   uploadImageMock: vi.fn(),
+  getProductsMock: vi.fn(),
 }))
 
 vi.mock('@/api/cs', () => ({
@@ -55,7 +56,7 @@ vi.mock('@/api/cs', () => ({
   uploadCmsImage: uploadCmsImageMock,
 }))
 
-vi.mock('@/api/product', () => ({ uploadImage: uploadImageMock }))
+vi.mock('@/api/product', () => ({ uploadImage: uploadImageMock, getProducts: getProductsMock }))
 
 // md-editor-v3 内部是 CodeMirror 6，jsdom 下跑不起来 → 用轻量桩替换
 vi.mock('md-editor-v3', async () => {
@@ -110,6 +111,7 @@ const category = (o: Record<string, unknown> = {}) => ({
 })
 const article = (o: Record<string, unknown> = {}) => ({
   id: 1, category_id: 1, category: { id: 1, name: '售后政策' }, title: '如何退货', summary: '',
+  slug: null, seo_title: null, seo_keywords: null, seo_description: null, tags: null, product_ids: [],
   cover_image: null, content_md: '正文', content: '<p>正文</p>', status: 'draft', sort: 0, is_hot: false,
   view_count: 0, helpful_count: 0, unhelpful_count: 0, helpful_rate: null, created_at: '2026-09-17 10:00:00', ...o,
 })
@@ -224,5 +226,63 @@ describe('CMS 新闻中心：后台栏目形态 + 文章封面（news-cms）', (
     const sel = wrapper.find('[data-testid="cs-article-category-filter"]')
     expect(sel.exists()).toBe(true)
     expect(sel.findAll('option').map((o) => o.text())).toEqual(['图文新闻', '列表新闻'])
+  })
+
+  // ---- 后期增强：slug / SEO / 标签 / 种草商品 ----
+
+  it('新增文章提交 slug、SEO 与标签', async () => {
+    const wrapper = await mountView()
+    await wrapper.find('[data-testid="cs-article-create"]').trigger('click')
+    await flushPromises()
+
+    await wrapper.find('[data-testid="cs-article-form-title"]').setValue('新品发布')
+    await wrapper.find('[data-testid="cs-article-form-content"]').setValue('正文')
+    await wrapper.find('[data-testid="cs-article-form-slug"]').setValue('new-arrival')
+    await wrapper.find('[data-testid="cs-article-form-tags"]').setValue('新品, 促销')
+
+    // SEO 折叠区默认收起 → 展开后填写
+    await wrapper.find('[data-testid="cs-article-form-seo-toggle"]').trigger('click')
+    await wrapper.find('[data-testid="cs-article-form-seo-title"]').setValue('新品 SEO 标题')
+
+    await wrapper.find('[data-testid="cs-article-save"]').trigger('click')
+    await flushPromises()
+
+    expect(createCsFaqArticleMock).toHaveBeenCalledWith(expect.objectContaining({
+      slug: 'new-arrival', tags: '新品, 促销', seo_title: '新品 SEO 标题',
+    }))
+  })
+
+  it('编辑文章回填 slug 与标签', async () => {
+    mockArticles([article({ slug: 'how-to-refund', tags: ['售后', '退款'] })])
+    const wrapper = await mountView()
+    await wrapper.find('[data-testid="cs-article-edit-1"]').trigger('click')
+    await flushPromises()
+
+    expect((wrapper.find('[data-testid="cs-article-form-slug"]').element as HTMLInputElement).value).toBe('how-to-refund')
+    expect((wrapper.find('[data-testid="cs-article-form-tags"]').element as HTMLInputElement).value).toBe('售后, 退款')
+  })
+
+  it('搜索并关联种草商品后随保存提交 product_ids', async () => {
+    getProductsMock.mockResolvedValue({ data: { data: { list: [{ id: 5, title: '种草商品' }], pagination: { page: 1, page_size: 10, total: 1, total_pages: 1 } } } })
+    const wrapper = await mountView()
+
+    await wrapper.find('[data-testid="cs-article-edit-1"]').trigger('click')
+    await flushPromises()
+
+    await wrapper.find('[data-testid="cs-article-form-product-search"]').setValue('种草')
+    await wrapper.find('[data-testid="cs-article-form-product-search-btn"]').trigger('click')
+    await flushPromises()
+
+    expect(getProductsMock).toHaveBeenCalledWith(expect.objectContaining({ keyword: '种草' }))
+    await wrapper.find('[data-testid="cs-article-form-product-option-5"]').trigger('click')
+    await flushPromises()
+
+    // 已选 chip 出现
+    expect(wrapper.find('[data-testid="cs-article-form-product-remove-5"]').exists()).toBe(true)
+
+    await wrapper.find('[data-testid="cs-article-save"]').trigger('click')
+    await flushPromises()
+
+    expect(updateCsFaqArticleMock).toHaveBeenCalledWith(1, expect.objectContaining({ product_ids: [5] }))
   })
 })

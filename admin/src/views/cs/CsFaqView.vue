@@ -16,6 +16,7 @@ import {
 } from '@/api/cs'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import LoadingSpinner from '@/components/LoadingSpinner.vue'
+import { getProducts } from '@/api/product'
 import { useAuthStore } from '@/stores/auth'
 
 /**
@@ -340,7 +341,11 @@ const artPagination = ref({ page: 1, page_size: 15, total: 0, total_pages: 1 })
 const artFilters = ref<{ category_id: number | null; status: string; keyword: string }>({ category_id: null, status: '', keyword: '' })
 
 function emptyForm(): CsFaqArticlePayload {
-  return { category_id: 0, title: '', summary: '', cover_image: null, content_md: '', sort: 0, is_hot: false, status: 'draft' }
+  return {
+    category_id: 0, title: '', slug: '', summary: '', cover_image: null, content_md: '',
+    seo_title: '', seo_keywords: '', seo_description: '', tags: '', product_ids: [],
+    sort: 0, is_hot: false, status: 'draft',
+  }
 }
 const articleEditor = ref<{ open: boolean; id: number | null; form: CsFaqArticlePayload }>(
   { open: false, id: null, form: emptyForm() },
@@ -350,6 +355,50 @@ const publishTarget = ref<{ article: CsFaqArticleRow; action: 'publish' | 'offli
 const previewData = ref<{ title: string; content: string; category_name: string | null; status: string } | null>(null)
 /** CMS 新闻中心：封面图上传中状态 */
 const coverUploading = ref(false)
+
+// ---- 后期增强：关联种草商品多选 ----
+/** 已选商品（chips 展示用；id + 标题） */
+const selectedProducts = ref<Array<{ id: number; title: string }>>([])
+/** 商品搜索框状态 */
+const productPicker = ref<{ keyword: string; loading: boolean; results: Array<{ id: number; title: string }> }>(
+  { keyword: '', loading: false, results: [] },
+)
+/** 文章编辑器 SEO 折叠区展开态 */
+const showSeo = ref(false)
+
+/** 搜索商品（按标题；用于种草关联多选） */
+async function searchProducts() {
+  const keyword = productPicker.value.keyword.trim()
+  if (!keyword) { productPicker.value.results = []; return }
+  productPicker.value.loading = true
+  try {
+    const { data } = await getProducts({ keyword, page_size: 10 })
+    productPicker.value.results = data.data.list.map((p) => ({ id: p.id, title: p.title }))
+  } catch {
+    productPicker.value.results = []
+  } finally {
+    productPicker.value.loading = false
+  }
+}
+
+/** 勾选/取消一件种草商品 */
+function toggleProduct(p: { id: number; title: string }) {
+  const ids = articleEditor.value.form.product_ids ?? []
+  const idx = ids.indexOf(p.id)
+  if (idx >= 0) {
+    ids.splice(idx, 1)
+    selectedProducts.value = selectedProducts.value.filter((s) => s.id !== p.id)
+  } else {
+    ids.push(p.id)
+    if (!selectedProducts.value.some((s) => s.id === p.id)) selectedProducts.value.push({ id: p.id, title: p.title })
+  }
+  articleEditor.value.form.product_ids = [...ids]
+}
+
+function removeProduct(id: number) {
+  articleEditor.value.form.product_ids = (articleEditor.value.form.product_ids ?? []).filter((x) => x !== id)
+  selectedProducts.value = selectedProducts.value.filter((s) => s.id !== id)
+}
 
 /** 封面图上传（复用 CMS 统一上传接口 /admin/cs/faq/upload） */
 async function uploadCover(ev: Event) {
@@ -401,17 +450,38 @@ function openArtCreate() {
   const channel = selectedCategory.value
   form.category_id = channel && channel.type !== 'page' ? channel.id : (allNodes.value.find((n) => n.type !== 'page')?.id ?? 0)
   articleEditor.value = { open: true, id: null, form }
+  resetArticlePickers()
 }
 function openArtEdit(a: CsFaqArticleRow) {
   articleEditor.value = {
     open: true, id: a.id,
     // 存量未迁移的行没有 markdown 源：退回 HTML 产物兜底（作者可另存为 markdown 或直接重写）
     form: {
-      category_id: a.category_id, title: a.title, summary: a.summary ?? '',
+      category_id: a.category_id, title: a.title, slug: a.slug ?? '', summary: a.summary ?? '',
       cover_image: a.cover_image ?? null,
       content_md: a.content_md ?? a.content ?? '', sort: a.sort, is_hot: a.is_hot, status: a.status,
+      seo_title: a.seo_title ?? '', seo_keywords: a.seo_keywords ?? '', seo_description: a.seo_description ?? '',
+      tags: (a.tags ?? []).join(', '),
+      product_ids: [...(a.product_ids ?? [])],
     },
   }
+  resetArticlePickers()
+  // 已关联商品先用 id 占位，再从 preview 拉标题回填 chips（避免无标题的裸 id）
+  selectedProducts.value = (a.product_ids ?? []).map((id) => ({ id, title: `#${id}` }))
+  if (a.product_ids?.length) {
+    previewCsFaqArticle(a.id).then(({ data: res }) => {
+      if (res.data.products?.length) {
+        selectedProducts.value = res.data.products.map((p) => ({ id: p.id, title: p.title }))
+      }
+    }).catch(() => {})
+  }
+}
+
+/** 重置文章编辑器的商品搜索与已选（切换新建/编辑时避免串味） */
+function resetArticlePickers() {
+  productPicker.value = { keyword: '', loading: false, results: [] }
+  selectedProducts.value = []
+  showSeo.value = false
 }
 async function saveArticle() {
   const f = articleEditor.value.form
@@ -799,8 +869,16 @@ onMounted(async () => {
           <input v-model="articleEditor.form.title" type="text" maxlength="191" class="w-full rounded-md border border-slate-300 px-3 py-2 outline-none focus:border-[#1677ff]" data-testid="cs-article-form-title" />
         </label>
         <label class="mb-3 block text-[13px]">
+          <span class="mb-1 block text-slate-500">URL 别名 slug（前台 /news/{slug}；留空按标题自动生成，编辑时留空不改）</span>
+          <input v-model="articleEditor.form.slug" type="text" maxlength="191" placeholder="如 how-to-refund" class="w-full rounded-md border border-slate-300 px-3 py-2 outline-none focus:border-[#1677ff]" data-testid="cs-article-form-slug" />
+        </label>
+        <label class="mb-3 block text-[13px]">
           <span class="mb-1 block text-slate-500">摘要</span>
           <input v-model="articleEditor.form.summary" type="text" maxlength="255" class="w-full rounded-md border border-slate-300 px-3 py-2 outline-none focus:border-[#1677ff]" data-testid="cs-article-form-summary" />
+        </label>
+        <label class="mb-3 block text-[13px]">
+          <span class="mb-1 block text-slate-500">标签（逗号分隔，用于专题聚合）</span>
+          <input v-model="articleEditor.form.tags" type="text" placeholder="如 新品, 促销" class="w-full rounded-md border border-slate-300 px-3 py-2 outline-none focus:border-[#1677ff]" data-testid="cs-article-form-tags" />
         </label>
         <div class="mb-3 text-[13px]">
           <span class="mb-1 block text-slate-500">封面图（图文卡片新闻用；列表行新闻可不填）</span>
@@ -834,6 +912,61 @@ onMounted(async () => {
             保存时后端会渲染并按白名单净化（脚本、内联样式等会被剥离）；
             以「预览」按钮看到的效果为准（与用户端同一份内容）。
           </span>
+        </div>
+        <!-- 后期增强：文章级 SEO 折叠区（留空则前台回落栏目/标题摘要） -->
+        <div class="mb-3 rounded-md border border-slate-200 text-[13px]">
+          <button type="button" class="flex w-full items-center justify-between px-3 py-2 text-slate-600 hover:bg-slate-50" data-testid="cs-article-form-seo-toggle" @click="showSeo = !showSeo">
+            <span>SEO 设置（可选）</span>
+            <ChevronRight class="h-3.5 w-3.5 transition-transform" :class="showSeo ? 'rotate-90' : ''" />
+          </button>
+          <div v-if="showSeo" class="space-y-2 border-t border-slate-100 px-3 py-3">
+            <label class="block">
+              <span class="mb-1 block text-slate-500">SEO 标题</span>
+              <input v-model="articleEditor.form.seo_title" type="text" maxlength="128" class="w-full rounded-md border border-slate-300 px-3 py-2 outline-none focus:border-[#1677ff]" data-testid="cs-article-form-seo-title" />
+            </label>
+            <label class="block">
+              <span class="mb-1 block text-slate-500">SEO 关键词</span>
+              <input v-model="articleEditor.form.seo_keywords" type="text" maxlength="255" class="w-full rounded-md border border-slate-300 px-3 py-2 outline-none focus:border-[#1677ff]" data-testid="cs-article-form-seo-keywords" />
+            </label>
+            <label class="block">
+              <span class="mb-1 block text-slate-500">SEO 描述</span>
+              <input v-model="articleEditor.form.seo_description" type="text" maxlength="255" class="w-full rounded-md border border-slate-300 px-3 py-2 outline-none focus:border-[#1677ff]" data-testid="cs-article-form-seo-description" />
+            </label>
+          </div>
+        </div>
+        <!-- 后期增强：关联种草商品（前台详情页展示，商品详情页反查相关资讯） -->
+        <div class="mb-3 rounded-md border border-slate-200 px-3 py-3 text-[13px]">
+          <span class="mb-2 block text-slate-500">关联种草商品（可选）</span>
+          <div class="mb-2 flex flex-wrap gap-1.5" data-testid="cs-article-form-products">
+            <span
+              v-for="p in selectedProducts" :key="p.id"
+              class="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-600"
+            >
+              {{ p.title }}
+              <button type="button" class="text-slate-400 hover:text-[#ff4d4f]" :data-testid="`cs-article-form-product-remove-${p.id}`" @click="removeProduct(p.id)"><X class="h-3 w-3" /></button>
+            </span>
+            <span v-if="!selectedProducts.length" class="text-xs text-slate-400">尚未关联商品</span>
+          </div>
+          <div class="flex gap-2">
+            <input
+              v-model="productPicker.keyword" type="text" placeholder="搜索商品标题"
+              class="w-full rounded-md border border-slate-300 px-3 py-1.5 outline-none focus:border-[#1677ff]"
+              data-testid="cs-article-form-product-search"
+              @keyup.enter="searchProducts"
+            />
+            <button type="button" class="shrink-0 rounded-md border border-slate-300 px-3 py-1.5 text-slate-600 hover:bg-slate-50" data-testid="cs-article-form-product-search-btn" @click="searchProducts">搜索</button>
+          </div>
+          <div v-if="productPicker.results.length" class="mt-2 max-h-40 overflow-y-auto rounded-md border border-slate-100">
+            <button
+              v-for="p in productPicker.results" :key="p.id" type="button"
+              class="flex w-full items-center justify-between px-3 py-1.5 text-left text-xs hover:bg-slate-50"
+              :data-testid="`cs-article-form-product-option-${p.id}`"
+              @click="toggleProduct(p)"
+            >
+              <span class="truncate text-slate-600">{{ p.title }}</span>
+              <span class="shrink-0 text-[#1677ff]">{{ (articleEditor.form.product_ids ?? []).includes(p.id) ? '已选' : '添加' }}</span>
+            </button>
+          </div>
         </div>
         <div class="mb-4 flex items-center gap-4 text-[13px] text-slate-600">
           <label class="flex items-center gap-2"><input v-model="articleEditor.form.is_hot" type="checkbox" data-testid="cs-article-form-hot" /> {{ formHotLabel }}</label>

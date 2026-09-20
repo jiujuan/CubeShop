@@ -238,7 +238,15 @@ export interface CsFaqArticleRow {
   category_id: number
   category?: { id: number; name: string } | null
   title: string
+  /** 后期增强：语义化 URL 标识（前台 /news/{slug}；空则用 id） */
+  slug: string | null
   summary: string | null
+  /** 后期增强：文章级 SEO 三列（可空，详情页回落栏目/标题摘要） */
+  seo_title: string | null
+  seo_keywords: string | null
+  seo_description: string | null
+  /** 后期增强：标签（字符串数组，用于专题聚合） */
+  tags: string[] | null
   /** CMS 新闻中心：封面图（图文卡片用；存上传返回的 URL/相对路径） */
   cover_image: string | null
   /** 正文 markdown 源（编辑器回显用）；未迁移的存量行可能为 null */
@@ -252,13 +260,23 @@ export interface CsFaqArticleRow {
   helpful_count: number
   unhelpful_count: number
   helpful_rate: number | null
+  /** 后期增强：已关联的种草商品 id（编辑器多选回填） */
+  product_ids?: number[]
   created_at: string
 }
 
 export interface CsFaqArticlePayload {
   category_id: number
   title: string
+  /** 后期增强：留空则由后端按标题自动生成 slug（编辑时留空不覆盖既有 slug） */
+  slug?: string | null
   summary?: string | null
+  /** 后期增强：文章级 SEO 三列（空串表示清空） */
+  seo_title?: string | null
+  seo_keywords?: string | null
+  seo_description?: string | null
+  /** 后期增强：标签（逗号分隔字符串或数组，后端归一） */
+  tags?: string | null
   /** CMS 新闻中心：封面图（图文新闻卡片用；存上传返回的 URL/相对路径） */
   cover_image?: string | null
   /** 正文 markdown 源；HTML 产物由后端渲染 + 净化派生，不由客户端提供 */
@@ -266,6 +284,8 @@ export interface CsFaqArticlePayload {
   sort?: number
   is_hot?: boolean
   status?: 'draft' | 'published' | 'offline'
+  /** 后期增强：关联种草商品 id 列表（不传表示不改关联） */
+  product_ids?: number[]
 }
 
 export function getCsFaqCategories() {
@@ -342,6 +362,8 @@ export function previewCsFaqArticle(id: number) {
   return request.get<ApiResult<{
     id: number; title: string; summary: string | null; content: string; category_name: string | null
     is_hot: boolean; status: string; view_count: number; helpful_count: number; unhelpful_count: number; helpful_rate: number
+    /** 后期增强：关联种草商品（编辑器回填 chips 标题用） */
+    products?: Array<{ id: number; title: string; main_image: string | null; price: string }>
   }>>(`/admin/cs/faq/articles/${id}/preview`)
 }
 
