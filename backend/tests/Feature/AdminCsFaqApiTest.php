@@ -1,7 +1,9 @@
 <?php
 
+use App\Models\Category;
 use App\Models\CsFaqArticle;
 use App\Models\CsFaqCategory;
+use App\Models\Product;
 use App\Services\Common\CaptchaService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
@@ -160,4 +162,90 @@ it('文章预览返回有帮助率', function () {
 
     expect($res->json('data.helpful_rate'))->toBe(0.75)
         ->and($res->json('data.category_name'))->toBe('基础问题');
+});
+
+// ---------- 新闻中心后期增强（§7）：slug / SEO / 标签 / 种草商品 ----------
+
+it('创建文章自动生成 slug 并保存 SEO 与标签（标签去重去空）', function () {
+    $res = $this->withHeaders($this->adminAuth)->postJson('/api/admin/cs/faq/articles', [
+        'category_id' => $this->category->id,
+        'title' => 'How to refund 退款',
+        'content_md' => '正文',
+        'seo_title' => '退款指南 SEO',
+        'seo_keywords' => '退款,指南',
+        'seo_description' => '退款说明描述',
+        'tags' => '退款, 指南, 退款 , ', // 含重复与空项
+    ]);
+    $res->assertCreated();
+
+    $article = CsFaqArticle::find($res->json('data.id'));
+    expect($article->slug)->toBe('how-to-refund-退款')
+        ->and($article->seo_title)->toBe('退款指南 SEO')
+        ->and($article->seo_keywords)->toBe('退款,指南')
+        ->and($article->tagList())->toBe(['退款', '指南']);
+});
+
+it('显式 slug 冲突返回 422', function () {
+    $payload = [
+        'category_id' => $this->category->id, 'title' => 'Alpha', 'content_md' => 'x', 'slug' => 'dup-slug',
+    ];
+    $this->withHeaders($this->adminAuth)->postJson('/api/admin/cs/faq/articles', $payload)->assertCreated();
+    $this->withHeaders($this->adminAuth)->postJson('/api/admin/cs/faq/articles', array_merge($payload, ['title' => 'Beta']))
+        ->assertStatus(422);
+});
+
+it('更新文章传空 slug 不破坏既有 URL，且可清空 SEO 与标签', function () {
+    $article = CsFaqArticle::create([
+        'category_id' => $this->category->id, 'title' => '原标题', 'content' => 'x',
+        'slug' => 'keep-me', 'seo_title' => '旧 SEO', 'tags' => ['旧标签'],
+    ]);
+
+    $this->withHeaders($this->adminAuth)->putJson('/api/admin/cs/faq/articles/'.$article->id, [
+        'slug' => '', 'title' => '新标题', 'seo_title' => '', 'tags' => '',
+    ])->assertOk();
+
+    $fresh = $article->fresh();
+    expect($fresh->slug)->toBe('keep-me')          // slug 保持稳定
+        ->and($fresh->title)->toBe('新标题')
+        ->and($fresh->seo_title)->toBeNull()       // 可清空
+        ->and($fresh->tagList())->toBe([]);        // 可清空
+});
+
+it('文章可关联种草商品并回填 product_ids', function () {
+    $category = Category::create(['name' => '种草分类', 'sort' => 1, 'status' => 1]);
+    $product = Product::create([
+        'category_id' => $category->id, 'title' => '种草商品', 'main_image' => '/storage/p/x.png',
+        'price' => 10, 'status' => 1,
+    ]);
+
+    $res = $this->withHeaders($this->adminAuth)->postJson('/api/admin/cs/faq/articles', [
+        'category_id' => $this->category->id, 'title' => '种草文', 'content_md' => 'x',
+        'product_ids' => [$product->id],
+    ]);
+    $res->assertCreated();
+    $id = $res->json('data.id');
+
+    expect(CsFaqArticle::find($id)->products()->pluck('products.id')->all())->toBe([$product->id]);
+
+    // 列表回填 product_ids（编辑器据此预选）
+    $row = collect($this->withHeaders($this->adminAuth)->getJson('/api/admin/cs/faq/articles')->json('data.list'))
+        ->firstWhere('id', $id);
+    expect($row['product_ids'])->toBe([$product->id]);
+});
+
+it('只改标题不会清空已关联商品', function () {
+    $category = Category::create(['name' => '保留分类', 'sort' => 1, 'status' => 1]);
+    $product = Product::create(['category_id' => $category->id, 'title' => '保留商品', 'price' => 10, 'status' => 1]);
+
+    $article = CsFaqArticle::create([
+        'category_id' => $this->category->id, 'title' => '关联文', 'content' => 'x',
+        'status' => CsFaqArticle::STATUS_PUBLISHED,
+    ]);
+    $article->products()->sync([$product->id]);
+
+    $this->withHeaders($this->adminAuth)->putJson('/api/admin/cs/faq/articles/'.$article->id, [
+        'title' => '改个标题',
+    ])->assertOk();
+
+    expect($article->fresh()->products()->pluck('products.id')->all())->toBe([$product->id]);
 });

@@ -1,7 +1,9 @@
 <?php
 
+use App\Models\Category;
 use App\Models\CsFaqArticle;
 use App\Models\CsFaqCategory;
+use App\Models\Product;
 use App\Support\CmsListStyle;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
@@ -116,4 +118,91 @@ it('sitemap 新闻文章走 /news/{id} 且不与帮助中心重复', function ()
         ->and($body)->toContain('<loc>'.$site.'/news/'.$this->newsA->id.'</loc>')
         ->and($body)->not->toContain('<loc>'.$site.'/service-center/faq/'.$this->newsA->id.'</loc>')
         ->and($body)->toContain('<loc>'.$site.'/service-center/faq/'.$this->faqArt->id.'</loc>'); // 帮助中心文常收录
+});
+
+// ---------- 后期增强（§7）：slug / 标签 / 热门 / 商品种草 ----------
+
+it('detail 支持 slug 语义化 URL（id 仍可用）', function () {
+    $a = CsFaqArticle::create([
+        'category_id' => $this->graphic->id, 'title' => 'Slug 新闻', 'slug' => 'slug-news',
+        'content' => '正文', 'status' => CsFaqArticle::STATUS_PUBLISHED,
+    ]);
+
+    $this->getJson('/api/news/articles/slug-news')->assertOk()
+        ->assertJsonPath('data.article.id', $a->id);
+    $this->getJson('/api/news/articles/'.$a->id)->assertOk()
+        ->assertJsonPath('data.article.slug', 'slug-news');
+});
+
+it('sitemap 新闻文章有 slug 时用 slug URL', function () {
+    $site = (string) config('cms.site_url');
+    CsFaqArticle::create([
+        'category_id' => $this->graphic->id, 'title' => 'Slug 入库', 'slug' => 'slug-in-sitemap',
+        'content' => '正文', 'status' => CsFaqArticle::STATUS_PUBLISHED,
+    ]);
+
+    $body = $this->get('/sitemap.xml')->getContent();
+    expect($body)->toContain('<loc>'.$site.'/news/slug-in-sitemap</loc>');
+});
+
+it('articles 支持按标签过滤', function () {
+    CsFaqArticle::create([
+        'category_id' => $this->list->id, 'title' => '带标签', 'content' => 'x',
+        'status' => CsFaqArticle::STATUS_PUBLISHED, 'tags' => ['促销'],
+    ]);
+
+    $res = $this->getJson('/api/news/articles?tag='.urlencode('促销'))->assertOk();
+    $titles = collect($res->json('data.list'))->pluck('title')->all();
+
+    expect($titles)->toContain('带标签')
+        ->and($titles)->not->toContain('行业动态');
+});
+
+it('tags 接口聚合标签与出现次数', function () {
+    CsFaqArticle::create(['category_id' => $this->list->id, 'title' => 'A', 'content' => 'x', 'status' => CsFaqArticle::STATUS_PUBLISHED, 'tags' => ['促销', '新品']]);
+    CsFaqArticle::create(['category_id' => $this->list->id, 'title' => 'B', 'content' => 'x', 'status' => CsFaqArticle::STATUS_PUBLISHED, 'tags' => ['促销']]);
+
+    $res = $this->getJson('/api/news/tags')->assertOk();
+    $byTag = collect($res->json('data'))->keyBy('tag');
+
+    expect($byTag['促销']['count'])->toBe(2)
+        ->and($byTag['新品']['count'])->toBe(1);
+});
+
+it('hot 接口按浏览量倒序取前 N', function () {
+    $this->newsA->update(['view_count' => 100]);
+    $this->newsA2->update(['view_count' => 50]);
+    $this->newsB->update(['view_count' => 10]);
+
+    $res = $this->getJson('/api/news/hot?limit=2')->assertOk();
+    $titles = collect($res->json('data'))->pluck('title')->all();
+
+    expect($titles)->toBe(['新品上市', '种草实测']);
+});
+
+it('detail 带出关联种草商品（id 为 public_id）', function () {
+    $category = Category::create(['name' => '种草分类', 'sort' => 1, 'status' => 1]);
+    $product = Product::create(['category_id' => $category->id, 'title' => '种草商品', 'main_image' => '/storage/p/x.png', 'price' => 10, 'status' => 1]);
+    $this->newsA->products()->sync([$product->id]);
+
+    $res = $this->getJson('/api/news/articles/'.$this->newsA->id)->assertOk();
+
+    expect($res->json('data.products'))->toHaveCount(1)
+        ->and($res->json('data.products.0.id'))->toBe($product->public_id)
+        ->and($res->json('data.products.0.title'))->toBe('种草商品');
+});
+
+it('by-product 反查商品关联的新闻（商品详情页种草位）', function () {
+    $category = Category::create(['name' => '商品分类', 'sort' => 1, 'status' => 1]);
+    $product = Product::create(['category_id' => $category->id, 'title' => '商品 X', 'price' => 10, 'status' => 1]);
+    $this->newsA->products()->sync([$product->id]);
+
+    $res = $this->getJson('/api/news/by-product/'.$product->public_id)->assertOk();
+    $titles = collect($res->json('data'))->pluck('title')->all();
+
+    expect($titles)->toContain('新品上市');
+});
+
+it('by-product 对未知商品返回空列表而非 404', function () {
+    $this->getJson('/api/news/by-product/999999')->assertOk()->assertJsonPath('data', []);
 });

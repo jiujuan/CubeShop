@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use App\Models\Traits\HasPublicId;
@@ -78,6 +79,21 @@ class Product extends Model
     public function category(): BelongsTo
     {
         return $this->belongsTo(Category::class);
+    }
+
+    /**
+     * 关联的种草新闻（反向多对多，经 cs_faq_article_product）
+     *
+     * 只取**已发布**的新闻，按文章发布时间倒序；用于商品详情页的「相关资讯/种草」区块。
+     */
+    public function news(): BelongsToMany
+    {
+        return $this->belongsToMany(CsFaqArticle::class, 'cs_faq_article_product', 'product_id', 'article_id')
+            ->where('status', CsFaqArticle::STATUS_PUBLISHED)
+            ->withPivot('sort')
+            ->orderBy('cs_faq_article_product.sort')
+            ->orderByDesc('cs_faq_article.published_at')
+            ->orderByDesc('cs_faq_article.id');
     }
 
     /** 品牌（V1.1 E01） */

@@ -7,6 +7,7 @@ use App\Models\CsFaqArticle;
 use App\Models\CsFaqCategory;
 use App\Services\Cms\CmsCategoryService;
 use App\Services\Common\FileUploadService;
+use App\Services\Cs\NewsService;
 use App\Support\ApiResponse;
 use App\Support\CmsBlock;
 use App\Support\CmsListStyle;
@@ -34,6 +35,7 @@ class CsFaqController extends Controller
     public function __construct(
         private readonly CmsCategoryService $categoryService,
         private readonly FileUploadService $uploader,
+        private readonly NewsService $news,
     ) {}
 
     // ---------- 栏目 ----------
@@ -188,7 +190,7 @@ class CsFaqController extends Controller
         ]);
 
         $query = CsFaqArticle::query()
-            ->with('category')
+            ->with(['category', 'products:id'])
             // 单页的内容行由单页编辑器维护，不进文章列表（避免"多出一篇同名文章"）
             ->whereHas('category', fn ($q) => $q->where('type', '!=', CsFaqCategory::TYPE_PAGE))
             ->when(! empty($data['category_id']), fn ($q) => $q->where('category_id', $data['category_id']))
@@ -203,6 +205,8 @@ class CsFaqController extends Controller
 
         $list = collect($paginator->items())->map(fn (CsFaqArticle $a) => array_merge($a->toArray(), [
             'helpful_rate' => $a->helpfulRate(),
+            // 后期增强：编辑器回填「关联商品」多选需要 id 列表（tags 已在 toArray 里，无需另加）
+            'product_ids' => $a->products->pluck('id')->all(),
         ]))->all();
 
         return $this->success([
@@ -222,7 +226,15 @@ class CsFaqController extends Controller
         $data = $request->validate([
             'category_id' => ['required', 'integer', 'exists:cs_faq_category,id'],
             'title' => ['required', 'string', 'max:191'],
+            // 后期增强：slug（留空按标题自动生成）
+            'slug' => ['nullable', 'string', 'max:191', Rule::unique('cs_faq_article', 'slug')],
             'summary' => ['nullable', 'string', 'max:255'],
+            // 后期增强：文章级 SEO 三列（nullable ⇒ 可清空）
+            'seo_title' => ['nullable', 'string', 'max:128'],
+            'seo_keywords' => ['nullable', 'string', 'max:255'],
+            'seo_description' => ['nullable', 'string', 'max:255'],
+            // 后期增强：标签（逗号分隔字符串或数组，后端归一）
+            'tags' => ['nullable'],
             // 正文的源是 markdown（后台 md-editor-v3 编辑），HTML 产物由模型写入器渲染派生；
             // 刻意不再接受 content 入参 —— 两套正文写法只会制造分叉（见 CS-117 缺陷 #3 的教训）
             'content_md' => ['required', 'string'],
@@ -231,12 +243,29 @@ class CsFaqController extends Controller
             'status' => ['nullable', 'string', 'in:draft,published,offline'],
             // CMS 新闻中心：封面图（图文新闻卡片用；存上传返回的 URL/相对路径，长度宽松）
             'cover_image' => ['nullable', 'string', 'max:512'],
+            // 后期增强：关联种草商品
+            'product_ids' => ['nullable', 'array'],
+            'product_ids.*' => ['integer', 'exists:products,id'],
         ]);
+
+        $productIds = $data['product_ids'] ?? [];
+        unset($data['product_ids']);
+
+        $data['tags'] = CsFaqArticle::normalizeTags($data['tags'] ?? null);
+        $data['slug'] = ! empty($data['slug']) ? $data['slug'] : $this->news->uniqueSlug($data['title']);
 
         $data['status'] ??= CsFaqArticle::STATUS_DRAFT;
         $data['published_at'] = $data['status'] === CsFaqArticle::STATUS_PUBLISHED ? now() : null;
 
-        $article = CsFaqArticle::create($data);
+        $article = DB::transaction(function () use ($data, $productIds) {
+            $article = CsFaqArticle::create($data);
+            if ($productIds !== []) {
+                $article->products()->sync($productIds);
+            }
+
+            return $article;
+        });
+
         $this->log($request, 'cs_faq_article_create', 'cs_faq_article', $article->id, '创建文章 '.$article->title);
 
         return $this->success($article, '已创建', 201);
@@ -250,7 +279,12 @@ class CsFaqController extends Controller
         $data = $request->validate([
             'category_id' => ['sometimes', 'integer', 'exists:cs_faq_category,id'],
             'title' => ['sometimes', 'string', 'max:191'],
+            'slug' => ['nullable', 'string', 'max:191', Rule::unique('cs_faq_article', 'slug')->ignore($id)],
             'summary' => ['nullable', 'string', 'max:255'],
+            'seo_title' => ['nullable', 'string', 'max:128'],
+            'seo_keywords' => ['nullable', 'string', 'max:255'],
+            'seo_description' => ['nullable', 'string', 'max:255'],
+            'tags' => ['nullable'],
             // 允许空串（作者清空正文）；用 sometimes 表示「不传即不改」
             'content_md' => ['sometimes', 'string'],
             'sort' => ['nullable', 'integer', 'min:0'],
@@ -258,7 +292,32 @@ class CsFaqController extends Controller
             'status' => ['nullable', 'string', 'in:draft,published,offline'],
             // CMS 新闻中心：封面图（图文新闻卡片用；存上传返回的 URL/相对路径）
             'cover_image' => ['nullable', 'string', 'max:512'],
+            // 后期增强：关联种草商品
+            'product_ids' => ['nullable', 'array'],
+            'product_ids.*' => ['integer', 'exists:products,id'],
         ]);
+
+        // product_ids：仅当入参带该键时才同步（避免「只改标题」把关联清空）
+        $syncProducts = $request->has('product_ids');
+        $productIds = $data['product_ids'] ?? [];
+        unset($data['product_ids']);
+
+        if (array_key_exists('tags', $data)) {
+            $data['tags'] = CsFaqArticle::normalizeTags($data['tags']);
+        }
+
+        if (array_key_exists('slug', $data)) {
+            $slug = trim((string) ($data['slug'] ?? ''));
+            if ($slug === '') {
+                // 空 slug 不破坏既有 URL：保留原 slug；原本就无 slug 才按标题生成
+                unset($data['slug']);
+                if (empty($article->slug)) {
+                    $data['slug'] = $this->news->uniqueSlug((string) ($data['title'] ?? $article->title), $id);
+                }
+            } else {
+                $data['slug'] = $slug;
+            }
+        }
 
         if (! empty($data['status'])) {
             $data['published_at'] = $data['status'] === CsFaqArticle::STATUS_PUBLISHED
@@ -266,10 +325,26 @@ class CsFaqController extends Controller
                 : null;
         }
 
-        $article->update(array_filter($data, fn ($v) => $v !== null));
+        // 可清空列：显式传 null 时如实写 null（其余列过滤掉 null，避免误清非空列）
+        $clearable = ['summary', 'cover_image', 'slug', 'seo_title', 'seo_keywords', 'seo_description', 'tags', 'published_at'];
+        $payload = [];
+        foreach ($data as $key => $value) {
+            if ($value === null && ! in_array($key, $clearable, true)) {
+                continue;
+            }
+            $payload[$key] = $value;
+        }
+
+        DB::transaction(function () use ($article, $payload, $syncProducts, $productIds) {
+            $article->update($payload);
+            if ($syncProducts) {
+                $article->products()->sync($productIds);
+            }
+        });
+
         $this->log($request, 'cs_faq_article_update', 'cs_faq_article', $id, '编辑文章 '.$article->title);
 
-        return $this->success($article, '已更新');
+        return $this->success($article->fresh(), '已更新');
     }
 
     /** DELETE /api/admin/cs/faq/articles/{id} */
@@ -306,12 +381,17 @@ class CsFaqController extends Controller
     /** GET /api/admin/cs/faq/articles/{id}/preview */
     public function previewArticle(int $id): JsonResponse
     {
-        $article = CsFaqArticle::with('category')->findOrFail($id);
+        $article = CsFaqArticle::with(['category', 'products:id,title,main_image,price'])->findOrFail($id);
 
         return $this->success([
             'id' => $article->id,
             'title' => $article->title,
+            'slug' => $article->slug,
             'summary' => $article->summary,
+            'seo_title' => $article->seo_title,
+            'seo_keywords' => $article->seo_keywords,
+            'seo_description' => $article->seo_description,
+            'tags' => $article->tagList(),
             // content_md 供编辑器回显（markdown 源），content 是渲染产物供预览 v-html
             'content_md' => $article->content_md,
             'content' => $article->content,
@@ -322,6 +402,9 @@ class CsFaqController extends Controller
             'helpful_count' => $article->helpful_count,
             'unhelpful_count' => $article->unhelpful_count,
             'helpful_rate' => $article->helpfulRate(),
+            'products' => $article->products->map(fn ($p) => [
+                'id' => $p->id, 'title' => $p->title, 'main_image' => $p->main_image, 'price' => (string) $p->price,
+            ])->all(),
         ]);
     }
 

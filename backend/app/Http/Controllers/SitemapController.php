@@ -63,17 +63,18 @@ class SitemapController extends Controller
             ];
         }
 
-        // 新闻文章：只出 /news/{id}（与帮助中心分流，避免同一文章两个 URL）
+        // 新闻文章：只出 /news/{slug|id}（与帮助中心分流，避免同一文章两个 URL）
+        // 后期增强：有 slug 用 slug（语义化 URL），无 slug 回落 int id（向后兼容）
         if ($newsRootId !== null) {
             $newsArticles = CsFaqArticle::query()
                 ->published()
                 ->whereIn('category_id', CsFaqCategory::subtreeIds($newsRootId))
                 ->orderByDesc('updated_at')
-                ->get(['id', 'updated_at']);
+                ->get(['id', 'slug', 'updated_at']);
 
             foreach ($newsArticles as $article) {
                 $urls[] = [
-                    'loc' => $siteUrl.'/news/'.$article->id,
+                    'loc' => $siteUrl.'/news/'.($article->slug ?: $article->id),
                     'lastmod' => $article->updated_at?->toAtomString(),
                 ];
             }

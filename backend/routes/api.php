@@ -140,12 +140,16 @@ Route::prefix('cms')->group(function () {
     Route::get('/pages/{slug}', [CmsController::class, 'page']);
 });
 
-// 新闻中心（CMS 新闻中心，一期，公开无需登录：前台 /news 消费，且需被搜索引擎抓取）
+// 新闻中心（CMS 新闻中心，公开无需登录：前台 /news 消费，且需被搜索引擎抓取）
 Route::prefix('news')->group(function () {
     Route::get('/channels', [StorefrontNewsController::class, 'channels']);
     Route::get('/articles', [StorefrontNewsController::class, 'articles']);
-    // 详情必须注册在列表之后，避免 /articles/{id} 抢走 /articles
-    Route::get('/articles/{id}', [StorefrontNewsController::class, 'detail']);
+    // 后期增强：标签聚合 / 热门排行 / 商品种草反查（静态路径都排在 /articles/{key} 之前以免被吞）
+    Route::get('/tags', [StorefrontNewsController::class, 'tags']);
+    Route::get('/hot', [StorefrontNewsController::class, 'hot']);
+    Route::get('/by-product/{id}', [StorefrontNewsController::class, 'byProduct']);
+    // 详情必须注册在列表之后，避免 /articles/{key} 抢走 /articles；{key} 为 slug 或 id
+    Route::get('/articles/{key}', [StorefrontNewsController::class, 'detail']);
 });
 
 /*

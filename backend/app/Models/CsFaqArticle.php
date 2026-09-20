@@ -2,10 +2,12 @@
 
 namespace App\Models;
 
+use App\Models\Product;
 use App\Support\HtmlSanitizer;
 use App\Support\MarkdownRenderer;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 
 /**
  * 帮助中心文章（CS-101 / CS-102）
@@ -39,7 +41,8 @@ class CsFaqArticle extends Model
     protected $table = 'cs_faq_article';
 
     protected $fillable = [
-        'category_id', 'title', 'summary', 'content_md', 'content', 'sort',
+        'category_id', 'title', 'slug', 'summary', 'seo_title', 'seo_keywords', 'seo_description',
+        'tags', 'content_md', 'content', 'sort',
         'is_hot', 'status', 'view_count', 'helpful_count', 'unhelpful_count', 'published_at',
         'page_fields', 'cover_image', 'blocks',
     ];
@@ -53,11 +56,75 @@ class CsFaqArticle extends Model
         'published_at' => 'datetime',
         'page_fields' => 'array',
         'blocks' => 'array',
+        'tags' => 'array',
     ];
 
     public function category(): BelongsTo
     {
         return $this->belongsTo(CsFaqCategory::class, 'category_id');
+    }
+
+    /**
+     * 关联的种草商品（多对多，经 cs_faq_article_product 中间表）
+     *
+     * 仅取上架商品，按关联 sort 排序；用作新闻详情页的「相关商品」与商品详情页的「相关资讯」反查。
+     */
+    public function products(): BelongsToMany
+    {
+        return $this->belongsToMany(Product::class, 'cs_faq_article_product', 'article_id', 'product_id')
+            ->withPivot('sort')
+            ->orderBy('cs_faq_article_product.sort')
+            ->orderBy('products.id');
+    }
+
+    /**
+     * slug 语义化解析：优先 slug，命中不到再用整数 id 兜底（向后兼容 /news/{id}）
+     *
+     * 返回 null 表示既不是有效 slug 也不是正整数（调用方转 404）。
+     */
+    public static function findBySlugOrId(string $key): ?self
+    {
+        if (ctype_digit($key)) {
+            return self::query()->find((int) $key);
+        }
+
+        return self::query()->where('slug', $key)->first();
+    }
+
+    /**
+     * 标签数组（tags 列可能为 null 或脏数据）——统一给前端一个干净的字符串数组
+     */
+    public function tagList(): array
+    {
+        $tags = $this->tags;
+        if (! is_array($tags)) {
+            return [];
+        }
+
+        return array_values(array_filter(array_map(
+            fn ($t) => is_string($t) ? trim($t) : '',
+            $tags,
+        ), fn ($t) => $t !== ''));
+    }
+
+    /**
+     * tags 录入归一：逗号/空白分隔的字符串 → 去重后的字符串数组（空 → null）
+     *
+     * 后台以「逗号分隔」录入，后端不存重复/空标签；null 表示无标签。
+     */
+    public static function normalizeTags(mixed $raw): ?array
+    {
+        if ($raw === null) {
+            return null;
+        }
+
+        $text = is_array($raw) ? implode(',', $raw) : (string) $raw;
+        $tags = array_values(array_unique(array_filter(
+            array_map('trim', preg_split('/[,，\s]+/u', $text) ?: []),
+            fn ($t) => $t !== '',
+        )));
+
+        return $tags === [] ? null : $tags;
     }
 
     /**
