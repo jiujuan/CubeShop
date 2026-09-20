@@ -202,6 +202,20 @@ const router = createRouter({
       meta: { title: '页面 · CubeShop' },
     },
     {
+      // CMS 新闻中心：列表（公开，决策 D4 同口径）。必须放在 catch-all 之前
+      path: '/news',
+      name: 'news-list',
+      component: () => import('@/views/NewsListView.vue'),
+      meta: { title: '新闻中心 · CubeShop' },
+    },
+    {
+      // CMS 新闻中心：详情（公开；图文/列表两形态由后端栏目 list_style 决定）
+      path: '/news/:id',
+      name: 'news-detail',
+      component: () => import('@/views/NewsDetailView.vue'),
+      meta: { title: '新闻详情 · CubeShop' },
+    },
+    {
       path: '/:pathMatch(.*)*',
       redirect: '/',
     },
