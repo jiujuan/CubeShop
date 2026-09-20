@@ -487,6 +487,9 @@ Route::middleware(['auth:sanctum', 'account.active'])->group(function () {
 
         Route::get('/cs/faq/articles', [AdminCsFaqController::class, 'articles'])->middleware('permission:cs.faq.manage');
         Route::post('/cs/faq/articles', [AdminCsFaqController::class, 'storeArticle'])->middleware('permission:cs.faq.manage');
+        // 单篇详情：后台「新增/编辑文章」是独立页面（不再是列表页侧边弹层），
+        // 该页面直接按 id 回源，避免依赖列表页内存里的行数据（刷新/直达不再空白）
+        Route::get('/cs/faq/articles/{id}', [AdminCsFaqController::class, 'showArticle'])->middleware('permission:cs.faq.manage');
         Route::get('/cs/faq/articles/{id}/preview', [AdminCsFaqController::class, 'previewArticle'])->middleware('permission:cs.faq.manage');
         Route::post('/cs/faq/articles/{id}/publish', [AdminCsFaqController::class, 'publishArticle'])->middleware('permission:cs.faq.manage');
         Route::post('/cs/faq/articles/{id}/offline', [AdminCsFaqController::class, 'offlineArticle'])->middleware('permission:cs.faq.manage');

@@ -220,6 +220,27 @@ class CsFaqController extends Controller
         ]);
     }
 
+    /**
+     * GET /api/admin/cs/faq/articles/{id} —— 单篇详情（后台独立编辑页回填）
+     *
+     * 与 `/preview` 分工：preview 面向「看成什么样」（渲染产物 + 帮助率），
+     * 这里面向「改什么」（可写字段原值 + 关联商品 id）。分开是为了不让
+     * 预览接口随编辑器加字段而无限膨胀。
+     */
+    public function showArticle(int $id): JsonResponse
+    {
+        $article = CsFaqArticle::with(['products:id,title'])->findOrFail($id);
+
+        $data = $article->toArray();
+        $data['product_ids'] = $article->products->pluck('id')->all();
+        // 带出商品标题：编辑页要拿它渲染已选 chips，不然只能先占位 id 再回查一遍
+        $data['products'] = $article->products->map(fn ($p) => [
+            'id' => $p->id, 'title' => $p->title,
+        ])->all();
+
+        return $this->success($data);
+    }
+
     /** POST /api/admin/cs/faq/articles */
     public function storeArticle(Request $request): JsonResponse
     {

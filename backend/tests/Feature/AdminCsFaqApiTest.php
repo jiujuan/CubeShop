@@ -164,6 +164,35 @@ it('文章预览返回有帮助率', function () {
         ->and($res->json('data.category_name'))->toBe('基础问题');
 });
 
+it('文章详情返回独立编辑页所需的全部可写字段', function () {
+    $category = Category::create(['name' => '详情分类', 'sort' => 1, 'status' => 1]);
+    $product = Product::create(['category_id' => $category->id, 'title' => '详情商品', 'price' => 10, 'status' => 1]);
+
+    $article = CsFaqArticle::create([
+        'category_id' => $this->category->id, 'title' => '详情文', 'summary' => '摘要',
+        'content_md' => '## 正文', 'slug' => 'detail-slug', 'cover_image' => '/storage/c.png',
+        'seo_title' => 'SEO 标题', 'seo_keywords' => 'a,b', 'seo_description' => '描述',
+        'tags' => ['x', 'y'], 'sort' => 3, 'is_hot' => true,
+        'status' => CsFaqArticle::STATUS_PUBLISHED,
+    ]);
+    $article->products()->sync([$product->id]);
+
+    $res = $this->withHeaders($this->adminAuth)->getJson('/api/admin/cs/faq/articles/'.$article->id);
+    $res->assertOk();
+
+    // 独立页回填依赖：category_id / slug / cover_image / seo_* / tags / sort / is_hot / product_ids
+    expect($res->json('data.category_id'))->toBe($this->category->id)
+        ->and($res->json('data.slug'))->toBe('detail-slug')
+        ->and($res->json('data.cover_image'))->toBe('/storage/c.png')
+        ->and($res->json('data.seo_title'))->toBe('SEO 标题')
+        ->and($res->json('data.seo_keywords'))->toBe('a,b')
+        ->and($res->json('data.sort'))->toBe(3)
+        ->and($res->json('data.is_hot'))->toBeTrue()
+        ->and($res->json('data.product_ids'))->toBe([$product->id])
+        // 商品标题一并带出（编辑页 chips 直接展示，不必二次请求）
+        ->and($res->json('data.products.0.title'))->toBe('详情商品');
+});
+
 // ---------- 新闻中心后期增强（§7）：slug / SEO / 标签 / 种草商品 ----------
 
 it('创建文章自动生成 slug 并保存 SEO 与标签（标签去重去空）', function () {
