@@ -42,6 +42,7 @@ use App\Http\Controllers\CartController;
 use App\Http\Controllers\Admin\CsFaqController as AdminCsFaqController;
 use App\Http\Controllers\Admin\CsQuickReplyController as AdminCsQuickReplyController;
 use App\Http\Controllers\Admin\CsTicketController as AdminCsTicketController;
+use App\Http\Controllers\CmsController;
 use App\Http\Controllers\CsFaqController;
 use App\Http\Controllers\CsTicketController;
 use App\Http\Controllers\FavoriteController;
@@ -114,6 +115,23 @@ Route::middleware('throttle:auth')->group(function () {
     Route::post('/auth/register', [AuthController::class, 'register'])->middleware('throttle:5,1');
     Route::post('/auth/login', [AuthController::class, 'login'])->middleware('throttle:login');
     Route::post('/auth/reset-password', [AuthController::class, 'resetPassword']);
+});
+
+// 内容中心 CMS（CMS-106）：栏目树、单页与帮助中心文章均为**公开只读**（决策 D4 解除登录）
+// —— 站点单页（关于我们/联系我们）与帮助中心都属于"未登录也要能看"的内容
+Route::prefix('cs')->group(function () {
+    Route::get('/faq/categories', [CsFaqController::class, 'categories']);
+    Route::get('/faq/articles', [CsFaqController::class, 'articles']);
+    Route::get('/faq/articles/{id}', [CsFaqController::class, 'detail']);
+});
+
+Route::prefix('cms')->group(function () {
+    // 导航用栏目树（show_in_nav=true）
+    Route::get('/nav', [CmsController::class, 'nav']);
+    // 指定父下的栏目树（帮助中心侧栏）
+    Route::get('/categories', [CmsController::class, 'categories']);
+    // 单页内容（/p/{slug}）——对外以 slug 标识，不暴露 id
+    Route::get('/pages/{slug}', [CmsController::class, 'page']);
 });
 
 /*
@@ -208,12 +226,10 @@ Route::middleware(['auth:sanctum', 'account.active'])->group(function () {
     Route::post('/user/balance/recharges', [BalanceController::class, 'storeRecharge'])->middleware('throttle:recharge');
     Route::get('/user/balance/logs', [BalanceController::class, 'logs']);
 
-    // 客户服务中心（CS-104 FAQ 用户端；CS-106 工单用户端；CS-107 上传）
+    // 客户服务中心（CS-106 工单用户端；CS-107 上传）
+    // 注：FAQ 三个读接口已移到上方公开分组（CMS-106 决策 D4），此处只留写操作与工单
     Route::prefix('cs')->group(function () {
-        // 帮助中心 FAQ（CS-104）
-        Route::get('/faq/categories', [CsFaqController::class, 'categories']);
-        Route::get('/faq/articles', [CsFaqController::class, 'articles']);
-        Route::get('/faq/articles/{id}', [CsFaqController::class, 'detail']);
+        // 帮助中心反馈（写操作，仍需登录）
         Route::post('/faq/articles/{id}/feedback', [CsFaqController::class, 'feedback']);
 
         // 工单（CS-106）：建单与回复加 10/min 限流
@@ -435,11 +451,13 @@ Route::middleware(['auth:sanctum', 'account.active'])->group(function () {
         Route::post('/reviews/{id}/hidden', [AdminReviewController::class, 'setHidden'])->middleware('permission:review.manage');
         Route::delete('/reviews/{id}', [AdminReviewController::class, 'destroy'])->middleware('permission:review.manage');
 
-        // 客户服务中心后台（CS-108/109 工单管理；CS-110 FAQ 管理）
+        // 客户服务中心后台（CS-108/109 工单管理；CS-110 FAQ 管理；CMS-104/105 升级为内容管理）
         // sort 必须注册在 {id} 之前，避免被 {id} 路由捕获
         Route::get('/cs/faq/categories', [AdminCsFaqController::class, 'categories'])->middleware('permission:cs.faq.manage');
         Route::post('/cs/faq/categories', [AdminCsFaqController::class, 'storeCategory'])->middleware('permission:cs.faq.manage');
         Route::post('/cs/faq/categories/sort', [AdminCsFaqController::class, 'sortCategories'])->middleware('permission:cs.faq.manage');
+        // 栏目换父（CMS-104）：防环与子树级联重算在 CmsCategoryService 内
+        Route::post('/cs/faq/categories/{id}/move', [AdminCsFaqController::class, 'moveCategory'])->middleware('permission:cs.faq.manage');
         Route::put('/cs/faq/categories/{id}', [AdminCsFaqController::class, 'updateCategory'])->middleware('permission:cs.faq.manage');
         Route::delete('/cs/faq/categories/{id}', [AdminCsFaqController::class, 'destroyCategory'])->middleware('permission:cs.faq.manage');
 
@@ -450,6 +468,15 @@ Route::middleware(['auth:sanctum', 'account.active'])->group(function () {
         Route::post('/cs/faq/articles/{id}/offline', [AdminCsFaqController::class, 'offlineArticle'])->middleware('permission:cs.faq.manage');
         Route::put('/cs/faq/articles/{id}', [AdminCsFaqController::class, 'updateArticle'])->middleware('permission:cs.faq.manage');
         Route::delete('/cs/faq/articles/{id}', [AdminCsFaqController::class, 'destroyArticle'])->middleware('permission:cs.faq.manage');
+
+        // 单页内容（CMS-105）：模板 schema + 字段读写（{id} 是 type=page 的栏目 id）
+        // page-templates 必须注册在 {id} 之前，避免被 pages/{id} 捕获
+        Route::get('/cs/faq/page-templates', [AdminCsFaqController::class, 'pageTemplates'])->middleware('permission:cs.faq.manage');
+        // 区块库（CMS-203）：template=blocks 的单页用它渲染区块选择器与字段表单
+        Route::get('/cs/faq/page-blocks', [AdminCsFaqController::class, 'pageBlocks'])->middleware('permission:cs.faq.manage');
+        Route::post('/cs/faq/upload', [AdminCsFaqController::class, 'uploadImage'])->middleware('permission:cs.faq.manage');
+        Route::get('/cs/faq/pages/{id}', [AdminCsFaqController::class, 'showPage'])->middleware('permission:cs.faq.manage');
+        Route::put('/cs/faq/pages/{id}', [AdminCsFaqController::class, 'savePage'])->middleware('permission:cs.faq.manage');
 
         Route::get('/cs/ticket-types', [AdminCsTicketController::class, 'ticketTypes'])->middleware('permission:cs.ticket.view');
         Route::get('/cs/assignees', [AdminCsTicketController::class, 'assignees'])->middleware('permission:cs.ticket.handle');

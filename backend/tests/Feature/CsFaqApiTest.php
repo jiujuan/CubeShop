@@ -56,6 +56,24 @@ it('分类列表只含激活分类且计数正确', function () {
     expect($byName['购物指南']['published_count'])->toBe(2);
 });
 
+it('分类列表按父子层级成树（CMS-201）', function () {
+    CsFaqCategory::create([
+        'name' => '退换货', 'sort' => 1, 'is_active' => true,
+        'parent_id' => $this->cat->id, 'level' => 2, 'path' => '/'.$this->cat->id.'/',
+    ]);
+
+    $res = $this->withHeaders($this->auth)->getJson('/api/cs/faq/categories');
+
+    $res->assertOk();
+    $byName = collect($res->json('data'))->keyBy('name');
+
+    expect($res->json('data'))->toHaveCount(2) // 子栏目不冒泡到根
+        ->and($byName['购物指南']['children'])->toHaveCount(1)
+        ->and($byName['购物指南']['children'][0]['name'])->toBe('退换货')
+        ->and($byName['购物指南']['children'][0]['level'])->toBe(2)
+        ->and($byName['售后政策']['children'])->toBe([]);
+});
+
 it('文章列表按分类筛选', function () {
     CsFaqArticle::create([
         'category_id' => $this->cat2->id, 'title' => '售后规则', 'content' => '售后规则正文', 'status' => CsFaqArticle::STATUS_PUBLISHED,
@@ -105,14 +123,14 @@ it('反馈接口累加 helpful / unhelpful', function () {
     expect($fresh->helpful_count)->toBe(1)->and($fresh->unhelpful_count)->toBe(1);
 });
 
-it('未登录访问返回 401', function () {
-    $this->getJson('/api/cs/faq/categories')->assertUnauthorized();
-    $this->getJson('/api/cs/faq/articles')->assertUnauthorized();
+it('未登录也可访问（CMS-106 决策 D4：帮助中心解除登录）', function () {
+    $this->getJson('/api/cs/faq/categories')->assertOk();
+    $this->getJson('/api/cs/faq/articles')->assertOk();
 });
 
-it('非法 category_id 返回 422（已登录场景）', function () {
-    // 未登录优先被鉴权拦截返回 401（符合「未登录 401」）
-    $this->getJson('/api/cs/faq/articles?category_id=99999')->assertUnauthorized();
-    // 已登录后校验兜底：不存在的分类返回 422
+it('非法 category_id 返回 422（公开读接口，参数校验不依赖登录）', function () {
+    // 读接口已公开（决策 D4）：未登录也走参数校验
+    $this->getJson('/api/cs/faq/articles?category_id=99999')->assertStatus(422);
+    // 已登录同样返回 422
     $this->withHeaders($this->auth)->getJson('/api/cs/faq/articles?category_id=99999')->assertStatus(422);
 });

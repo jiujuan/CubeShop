@@ -4,6 +4,15 @@ use App\Models\CsAnnouncement;
 use App\Services\Common\CaptchaService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
+/**
+ * 后台公告管理接口（P-Announcement，权限 announcement.manage）
+ *
+ * ⚠️ 本模块自 CMS-204 起已废弃（公告软并入内容中心，见 CmsAnnouncementMergeTest）；
+ * 这里只保留对**已发布路由**的回归断言，确保旧调用方拿到确定的响应而不是 404。
+ *
+ * 用户端 `/api/announcements` 的契约测试已移到 CmsAnnouncementMergeTest
+ * —— 该接口现在读的是 CMS「公告」栏目下的文章，不再是 cs_announcement 表。
+ */
 uses(RefreshDatabase::class);
 
 beforeEach(function () {
@@ -16,53 +25,6 @@ beforeEach(function () {
         'captcha_id' => $cap['captcha_id'],
         'captcha_code' => $cap['debug_code'],
     ])->json('data.token')];
-});
-
-// ============ 用户端（公开，无需登录） ============
-
-test('公开列表只返回已发布且到达发布时间的公告', function () {
-    CsAnnouncement::create([
-        'title' => '可见公告', 'content_md' => '# 标题', 'status' => CsAnnouncement::STATUS_PUBLISHED,
-        'published_at' => now()->subMinutes(5), 'is_top' => true, 'created_by' => 1,
-    ]);
-    CsAnnouncement::create([
-        'title' => '草稿不可见', 'content_md' => '草稿', 'status' => CsAnnouncement::STATUS_DRAFT,
-        'created_by' => 1,
-    ]);
-    CsAnnouncement::create([
-        'title' => '下架不可见', 'content_md' => '下架', 'status' => CsAnnouncement::STATUS_OFFLINE,
-        'published_at' => now()->subMinutes(5), 'created_by' => 1,
-    ]);
-    CsAnnouncement::create([
-        'title' => '未到时间不可见', 'content_md' => '定时', 'status' => CsAnnouncement::STATUS_PUBLISHED,
-        'published_at' => now()->addHour(), 'created_by' => 1,
-    ]);
-
-    $res = $this->getJson('/api/announcements');
-    $res->assertOk();
-    $titles = collect($res->json('data.list'))->pluck('title')->all();
-
-    expect($titles)->toContain('可见公告')
-        ->not->toContain('草稿不可见')
-        ->not->toContain('下架不可见')
-        ->not->toContain('未到时间不可见');
-    // 公开资源不暴露精确总量（SEC-04）
-    expect($res->json('data.pagination.total'))->toBeNull();
-});
-
-test('详情按 public_id 解析，不可见公告返回 404', function () {
-    $draft = CsAnnouncement::create([
-        'title' => '草稿', 'content_md' => '内容', 'status' => CsAnnouncement::STATUS_DRAFT, 'created_by' => 1,
-    ]);
-    $published = CsAnnouncement::create([
-        'title' => '已发布', 'content_md' => '# 正文', 'status' => CsAnnouncement::STATUS_PUBLISHED,
-        'published_at' => now()->subMinute(), 'created_by' => 1,
-    ]);
-
-    $this->getJson('/api/announcements/'.$draft->public_id)->assertNotFound();
-    $this->getJson('/api/announcements/'.$published->public_id)->assertOk()
-        ->assertJsonPath('data.announcement.title', '已发布')
-        ->assertJsonPath('data.announcement.id', $published->public_id);
 });
 
 // ============ 后台管理（announcement.manage） ============
@@ -89,8 +51,10 @@ test('管理员可创建公告并派生 HTML 正文', function () {
     $pub->assertOk()->assertJsonPath('data.status', 'published');
     expect($pub->json('data.published_at'))->not->toBeNull();
 
-    // 前台可见
-    $this->getJson('/api/announcements/'.$row->public_id)->assertOk();
+    // ⚠️ CMS-204 起用户端已改读内容中心的「公告」栏目，本模块的写入**不会**出现在前台。
+    // 这里断言「不出现」而不是「出现」—— 把废弃路径的实际后果固化下来，避免误以为它还有效。
+    $titles = collect($this->getJson('/api/announcements')->json('data.list'))->pluck('title')->all();
+    expect($titles)->not->toContain('新公告');
 });
 
 test('后台列表按状态筛选', function () {

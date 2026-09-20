@@ -98,9 +98,16 @@ function csPmAssertMatrix(array $auth, array $endpoints, array $expected): void
     expect($actual)->toBe($expected);
 }
 
-test('未登录访问 11 个接口全部 401', function () {
+test('未登录访问：FAQ 三个读接口公开 200，其余 401', function () {
     $all = array_merge($this->userEndpoints, $this->adminEndpoints);
-    $expected = array_fill_keys(array_column($all, 'label'), 401);
+
+    // CMS-106 决策 D4：帮助中心读接口解除登录，属公开只读
+    $publicLabels = ['user.faq.categories', 'user.faq.articles', 'user.faq.detail'];
+
+    $expected = [];
+    foreach ($all as $endpoint) {
+        $expected[$endpoint['label']] = in_array($endpoint['label'], $publicLabels, true) ? 200 : 401;
+    }
 
     csPmAssertMatrix([], $all, $expected);
 });

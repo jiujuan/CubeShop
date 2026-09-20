@@ -41,6 +41,7 @@ class CsFaqArticle extends Model
     protected $fillable = [
         'category_id', 'title', 'summary', 'content_md', 'content', 'sort',
         'is_hot', 'status', 'view_count', 'helpful_count', 'unhelpful_count', 'published_at',
+        'page_fields', 'cover_image', 'blocks',
     ];
 
     protected $casts = [
@@ -50,6 +51,8 @@ class CsFaqArticle extends Model
         'helpful_count' => 'integer',
         'unhelpful_count' => 'integer',
         'published_at' => 'datetime',
+        'page_fields' => 'array',
+        'blocks' => 'array',
     ];
 
     public function category(): BelongsTo

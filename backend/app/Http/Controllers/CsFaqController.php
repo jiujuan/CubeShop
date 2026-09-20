@@ -20,17 +20,14 @@ class CsFaqController extends Controller
     {
     }
 
-    /** GET /api/cs/faq/categories —— 激活分类 + 每类已发布文章数 */
+    /**
+     * GET /api/cs/faq/categories —— 帮助中心栏目树（激活 channel + 每类已发布文章数）
+     *
+     * CMS-201：返回带 children 的树。字段裁剪在 FaqService 内完成（不暴露后台字段）。
+     */
     public function categories(): JsonResponse
     {
-        return $this->success($this->faq->categories()->map(function ($c) {
-            return [
-                'id' => $c->id,
-                'name' => $c->name,
-                'sort' => $c->sort,
-                'published_count' => $c->published_count,
-            ];
-        })->all());
+        return $this->success($this->faq->categories());
     }
 
     /** GET /api/cs/faq/articles —— 列表（分类/关键词分页） */

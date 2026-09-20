@@ -13,6 +13,13 @@ use Illuminate\Http\Request;
  *
  * 写操作记 sys_operation_log（module=announcement）。状态机与用户端一致：
  * draft → published（发布，置 published_at）/ offline（下架，清 published_at）。
+ *
+ * @deprecated CMS-204 起公告已软并入内容中心：维护统一走 `/api/admin/cs/faq/*`
+ *   （内容管理 → 「公告」栏目），后台侧栏与路由也已摘除本模块入口。
+ *
+ *   ⚠️ 这里写的是 `cs_announcement` 原表，而用户端 `AnnouncementController` 已改读
+ *   CMS 的文章 —— 也就是说**经由本控制器的写入不会出现在前台**。保留路由只是为了让
+ *   已发布的旧客户端拿到确定的响应而不是 404；请勿再接新调用方，下个版本一并删除。
  */
 class AnnouncementController extends Controller
 {

@@ -7,6 +7,7 @@ use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Route;
 use Illuminate\Validation\ValidationException;
 use Spatie\Permission\Exceptions\UnauthorizedException;
 use Symfony\Component\HttpKernel\Exception\HttpExceptionInterface;
@@ -19,6 +20,12 @@ return Application::configure(basePath: dirname(__DIR__))
         api: __DIR__.'/../routes/api.php',
         commands: __DIR__.'/../routes/console.php',
         health: '/up',
+        then: function (): void {
+            // SEO 端点刻意不挂在任何中间件组下（CMS-202）：抓取请求不需要会话/Cookie，
+            // 而 `web` 组会启动数据库会话（纯 API 后端没有 sessions 表）→ 500。
+            // 见 routes/seo.php 的说明。
+            Route::group([], base_path('routes/seo.php'));
+        },
     )
     ->withMiddleware(function (Middleware $middleware): void {
         // 纯 API 后端：未认证不跳转 /login（默认 redirectGuestsTo 会调用 route('login') 导致 500）
