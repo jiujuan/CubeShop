@@ -3,6 +3,7 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { Heart, Minus, Plus, ShoppingCart, Truck } from 'lucide-vue-next'
 import { getProduct, type ProductDetail } from '@/api/shop'
+import { getProductNews, type NewsListItem } from '@/api/news'
 import { estimateFreight, type FreightPreview } from '@/api/order'
 import { favoriteProduct, trackProduct, unfavoriteProduct } from '@/api/favorite'
 import { getCouponCenter, type ReceivableCoupon } from '@/api/coupon'
@@ -140,12 +141,25 @@ async function load() {
     }
     // 运费预估首算（无规格商品 matchedSku 恒为 null，watch 不触发，这里兜底一次）
     void refreshFreightEstimate()
+    // 后期增强 §7：拉商品关联的种草新闻（失败静默，不阻塞详情）
+    void loadRelatedNews(data.data.id)
   } catch (e) {
     errorMsg.value = e instanceof Error ? e.message : '商品不存在或已下架'
   } finally {
     loading.value = false
   }
   loadApplicableCoupons()
+}
+
+/** 商品关联的种草新闻（后期增强 §7；无关联 / 失败时区块整体不渲染） */
+const relatedNews = ref<NewsListItem[]>([])
+async function loadRelatedNews(productId: number | string) {
+  try {
+    const { data } = await getProductNews(productId)
+    relatedNews.value = data.data
+  } catch {
+    relatedNews.value = []
+  }
 }
 
 /** 详情页「领券」小标（V1.1 二期 T-038）：命中本商品的在领券列表即展示，失败静默 */
@@ -426,7 +440,7 @@ const emojiByIndex = ['👕', '🎧', '🥤', '⌨️', '👟', '🧴', '💻', 
           </div>
         </section>
 
-        <!-- 详情 -->
+        <!-- 商品详情 -->
         <section class="mt-12 border-t border-slate-100 pt-8">
           <h3 class="mb-4 text-lg font-bold text-slate-800">商品详情</h3>
           <!-- 下架商品不渲染购买入口之外的内容区警示 -->
@@ -434,6 +448,25 @@ const emojiByIndex = ['👕', '🎧', '🥤', '⌨️', '👟', '🧴', '💻', 
             该商品已下架，暂不可购买
           </div>
           <div class="prose prose-slate max-w-none text-sm leading-7 text-slate-600" v-html="product.description || '暂无详情'"></div>
+        </section>
+
+        <!-- 相关资讯 / 种草（后期增强 §7：商品挂载新闻反向展示） -->
+        <section v-if="relatedNews.length" class="mt-12 border-t border-slate-100 pt-8" data-testid="product-news">
+          <h3 class="mb-4 text-lg font-bold text-slate-800">相关资讯</h3>
+          <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <button
+              v-for="n in relatedNews" :key="n.id"
+              class="flex items-center gap-3 rounded-xl border border-slate-100 bg-white p-3 text-left hover:shadow-sm"
+              :data-testid="`product-news-${n.id}`"
+              @click="router.push(`/news/${n.slug ?? n.id}`)"
+            >
+              <img v-if="n.cover_image" :src="n.cover_image" alt="" class="h-14 w-14 shrink-0 rounded object-cover" />
+              <div class="min-w-0 flex-1">
+                <p class="truncate text-sm text-slate-700">{{ n.title }}</p>
+                <p v-if="n.summary" class="mt-0.5 line-clamp-1 text-xs text-slate-400">{{ n.summary }}</p>
+              </div>
+            </button>
+          </div>
         </section>
       </template>
     </main>

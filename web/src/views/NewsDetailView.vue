@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ChevronRight, Eye } from 'lucide-vue-next'
+import { ChevronRight, Eye, ShoppingBag } from 'lucide-vue-next'
 import { getNewsDetail, type NewsDetailResult } from '@/api/news'
 import { applySeo } from '@/composables/useSeo'
 import { BRAND_PLACEHOLDER, currentSiteName } from '@/stores/site'
@@ -10,22 +10,25 @@ import ShopFooter from '@/components/ShopFooter.vue'
 import ShopHeader from '@/components/ShopHeader.vue'
 
 /**
- * 新闻详情（CMS 新闻中心，一期，公开）
+ * 新闻详情（CMS 新闻中心，公开）
  *
  * 正文 `content` 是后端渲染 + 净化后的安全 HTML（MarkdownRenderer → HtmlSanitizer），
  * 用 `.cms-prose` 全局类排版（净化器不放行 style/class，样式必须前端补齐）。
  * D8：附 Article 结构化数据（JSON-LD），利于搜索引擎收录。
+ * 后期增强（§7）：slug 语义化 URL、文章级 SEO 三列、标签、关联种草商品。
  */
 const route = useRoute()
 const router = useRouter()
 
-const id = computed(() => Number(route.params.id))
+/** 路由 key：slug 或数字 id（后端 slug 优先、id 兜底） */
+const key = computed(() => String(route.params.id))
 const loading = ref(true)
 const notFound = ref(false)
 const data = ref<NewsDetailResult | null>(null)
 
 const article = computed(() => data.value?.article ?? null)
-const channelName = computed(() => article.value?.category?.name ?? article.value?.category_id ? '' : '')
+const channelName = computed(() => article.value?.category?.name ?? '')
+const tags = computed(() => article.value?.tags ?? [])
 
 /** D8：Article JSON-LD（随详情数据生成；空则渲染空串，不挂垃圾标签） */
 const jsonLd = computed(() => {
@@ -42,7 +45,9 @@ const jsonLd = computed(() => {
   }
   if (a.cover_image) ld.image = [a.cover_image]
   if (url) ld.mainEntityOfPage = { '@type': 'WebPage', '@id': url }
-  if (a.summary) ld.description = a.summary
+  const desc = a.seo_description ?? a.summary
+  if (desc) ld.description = desc
+  if (tags.value.length) ld.keywords = tags.value.join(',')
   return JSON.stringify(ld)
 })
 
@@ -62,17 +67,23 @@ function removeJsonLd() {
   document.getElementById('news-jsonld')?.remove()
 }
 
+/** 详情 URL：slug 优先，无则 id */
+function goNews(id: number, slug: string | null) {
+  router.push(`/news/${slug ?? id}`)
+}
+
 async function load() {
   loading.value = true
   notFound.value = false
   try {
-    const { data: res } = await getNewsDetail(id.value)
+    const { data: res } = await getNewsDetail(key.value)
     data.value = res.data
     const a = res.data.article
-    // CMS-202：详情页 SEO（标题 + 摘要作为 description）
+    // 后期增强：文章级 SEO 三列优先，缺则回落标题 + 摘要
     applySeo({
-      title: `${a.title} · ${BRAND_PLACEHOLDER}`,
-      description: a.summary ?? undefined,
+      title: a.seo_title ?? `${a.title} · ${BRAND_PLACEHOLDER}`,
+      description: a.seo_description ?? a.summary ?? undefined,
+      keywords: a.seo_keywords ?? undefined,
     })
     injectJsonLd()
   } catch {
@@ -85,7 +96,12 @@ async function load() {
 
 onMounted(load)
 onBeforeUnmount(removeJsonLd)
-watch(() => route.params.id, (val, old) => { if (val !== old && route.name === 'news-detail') load() })
+watch(() => route.params.id, (val, old) => {
+  if (val !== old && route.name === 'news-detail') {
+    removeJsonLd()
+    load()
+  }
+})
 </script>
 
 <template>
@@ -120,9 +136,39 @@ watch(() => route.params.id, (val, old) => { if (val !== old && route.name === '
           <span v-if="article.published_at">发布于 {{ article.published_at.slice(0, 10) }}</span>
         </p>
 
+        <!-- 标签（点标签进专题页） -->
+        <div v-if="tags.length" class="mt-3 flex flex-wrap gap-2" data-testid="news-detail-tags">
+          <button
+            v-for="t in tags" :key="t"
+            class="rounded-full bg-slate-100 px-3 py-0.5 text-xs text-slate-600 hover:bg-[#e6f4ff] hover:text-[#1677ff]"
+            @click="router.push(`/news/tag/${encodeURIComponent(t)}`)"
+          ># {{ t }}</button>
+        </div>
+
         <img v-if="article.cover_image" :src="article.cover_image" alt="" class="mt-4 max-h-72 w-full rounded-lg object-cover" data-testid="news-cover" />
 
         <div class="cms-prose mt-5 break-words text-sm leading-7 text-slate-700" data-testid="news-content" v-html="article.content" />
+
+        <!-- 关联种草商品（后期增强 §7） -->
+        <section v-if="data?.products?.length" class="mt-8 border-t border-slate-100 pt-5" data-testid="news-products">
+          <h2 class="mb-3 flex items-center gap-1.5 text-sm font-semibold text-slate-700">
+            <ShoppingBag class="h-4 w-4 text-[#1677ff]" /> 相关商品
+          </h2>
+          <div class="grid grid-cols-2 gap-3 sm:grid-cols-3">
+            <button
+              v-for="p in data.products" :key="p.id"
+              class="overflow-hidden rounded-lg border border-slate-100 bg-white text-left hover:shadow-sm"
+              :data-testid="`news-product-${p.id}`"
+              @click="router.push(`/product/${p.id}`)"
+            >
+              <img v-if="p.main_image" :src="p.main_image" alt="" class="h-28 w-full object-cover" />
+              <div class="p-2">
+                <p class="line-clamp-2 text-xs text-slate-700">{{ p.title }}</p>
+                <p class="mt-1 text-xs font-medium text-[#ff4d4f]">¥{{ p.price }}</p>
+              </div>
+            </button>
+          </div>
+        </section>
 
         <!-- 上一篇 / 下一篇 -->
         <div v-if="data?.prev || data?.next" class="mt-8 grid grid-cols-2 gap-3 border-t border-slate-100 pt-5 text-sm">
@@ -130,14 +176,14 @@ watch(() => route.params.id, (val, old) => { if (val !== old && route.name === '
             v-if="data?.prev"
             class="truncate text-left text-slate-500 hover:text-[#1677ff]"
             data-testid="news-prev-link"
-            @click="router.push(`/news/${data.prev!.id}`)"
+            @click="goNews(data.prev!.id, data.prev!.slug)"
           >← {{ data.prev.title }}</button>
           <span v-else />
           <button
             v-if="data?.next"
             class="truncate text-right text-slate-500 hover:text-[#1677ff]"
             data-testid="news-next-link"
-            @click="router.push(`/news/${data.next!.id}`)"
+            @click="goNews(data.next!.id, data.next!.slug)"
           >{{ data.next.title }} →</button>
         </div>
       </article>
@@ -150,7 +196,7 @@ watch(() => route.params.id, (val, old) => { if (val !== old && route.name === '
             v-for="r in data.related" :key="r.id"
             class="flex w-full items-center gap-3 rounded-lg bg-white px-4 py-3 text-left text-sm hover:shadow-sm"
             :data-testid="`news-related-${r.id}`"
-            @click="router.push(`/news/${r.id}`)"
+            @click="goNews(r.id, r.slug)"
           >
             <img v-if="r.cover_image" :src="r.cover_image" alt="" class="h-12 w-12 shrink-0 rounded object-cover" />
             <div class="min-w-0 flex-1">

@@ -209,7 +209,15 @@ const router = createRouter({
       meta: { title: '新闻中心 · CubeShop' },
     },
     {
+      // 后期增强：标签专题页。必须放在 /news/:id 之前，避免被详情路由吞掉
+      path: '/news/tag/:tag',
+      name: 'news-tag',
+      component: () => import('@/views/NewsTagView.vue'),
+      meta: { title: '新闻专题 · CubeShop' },
+    },
+    {
       // CMS 新闻中心：详情（公开；图文/列表两形态由后端栏目 list_style 决定）
+      // {id} 为 slug 或数字 id（后期增强 §7：slug 语义化 URL，id 兜底）
       path: '/news/:id',
       name: 'news-detail',
       component: () => import('@/views/NewsDetailView.vue'),
