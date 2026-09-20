@@ -120,6 +120,21 @@ test('TC-USER-004 登录成功返回 token', function () {
         ->and($body['data']['token'])->not->toBeEmpty();
 });
 
+// USER-004B 验证码位数：少输一位直接 422 并回明确位数，而不是笼统的「验证码错误」
+test('TC-USER-004B 验证码位数不足时 422 并给出位数提示', function () {
+    $cap = app(CaptchaService::class)->generate();
+
+    $resp = $this->postJson('/api/auth/login', [
+        'username' => 'loginuser',
+        'password' => 'Test@1234',
+        'captcha_id' => $cap['captcha_id'],
+        'captcha_code' => substr($cap['debug_code'] ?? 'ABCDE', 0, 4),
+    ]);
+
+    $resp->assertStatus(422);
+    expect(collect($resp->json('data.errors.captcha_code'))->implode(' '))->toContain('验证码为 5 位');
+});
+
 // USER-005 密码错误
 test('TC-USER-005 密码错误登录被拒绝', function () {
     registerViaApi('pwduser');

@@ -61,13 +61,14 @@ class AuthController extends Controller
                 'password_confirmation' => ['required', 'same:password'],
                 'phone' => ['nullable', 'string', 'max:20', 'unique:users,phone', $this->notUsedByAdmin('phone')],
                 'email' => ['nullable', 'email', 'max:128', 'unique:users,email', $this->notUsedByAdmin('email')],
-                'code' => ['required', 'string'],
+                'code' => ['required', 'string', 'size:'.CaptchaService::LENGTH],
             ], [
                 // 应用 locale 为 en，密码规则的默认文案是英文；注册页是纯中文场景，
                 // 422 只回一个笼统 message 会让用户把「密码不合格」误认成「验证码错了」。
                 'password.min' => '密码至少 8 位',
                 'password.letters' => '密码需同时包含字母和数字',
                 'password.numbers' => '密码需同时包含字母和数字',
+                'code.size' => '验证码为 '.CaptchaService::LENGTH.' 位',
             ]);
         } catch (ValidationException $e) {
             throw $this->flattenAccountTaken($e);
@@ -110,7 +111,10 @@ class AuthController extends Controller
             'username' => ['required', 'string'],
             'password' => ['required', 'string'],
             'captcha_id' => ['required', 'string'],
-            'captcha_code' => ['required', 'string'],
+            // 验证码恒为 5 位：位数不对直接 422，避免用户少输一位拿到笼统的「验证码错误」
+            'captcha_code' => ['required', 'string', 'size:'.CaptchaService::LENGTH],
+        ], [
+            'captcha_code.size' => '验证码为 '.CaptchaService::LENGTH.' 位',
         ]);
 
         // SEC-07：账号维度锁定先于密码校验——被锁账号即使密码正确也拒绝，避免"试出正确密码"
@@ -300,10 +304,12 @@ class AuthController extends Controller
     {
         $data = $request->validate([
             'target' => ['required', 'string'],
-            'code' => ['required', 'string'],
+            'code' => ['required', 'string', 'size:'.CaptchaService::LENGTH],
             'captcha_id' => ['required', 'string'],
             'password' => ['required', 'string', ...$this->passwordRule()],
             'password_confirmation' => ['required', 'same:password'],
+        ], [
+            'code.size' => '验证码为 '.CaptchaService::LENGTH.' 位',
         ]);
 
         if (! $this->captchaService->verify($data['captcha_id'], $data['code'])) {
