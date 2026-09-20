@@ -64,6 +64,29 @@ export function getCategories() {
   return request.get<ApiResult<CategoryNode[]>>('/products/categories')
 }
 
+/**
+ * 前台顶部导航（后台「导航管理」编排，公开接口）
+ *
+ * 后端已按 sort 聚合并展开成最终渲染列表：
+ * - `category`：标题与链接由分类派生（改名自动跟随）
+ * - `custom`：后台填的任意地址；失效引用的分类条目不会出现在列表里
+ *
+ * 前端拿到即渲染，不做合并 —— 后续新增条目类型时这里不必改。
+ */
+export interface NavItem {
+  id: number
+  type: 'category' | 'custom'
+  title: string
+  url: string
+  target: '_self' | '_blank'
+  /** 仅 category 型：与 /category/{public_id} 同口径，供高亮判断 */
+  category_public_id?: string
+}
+
+export function getNav() {
+  return request.get<ApiResult<NavItem[]>>('/nav')
+}
+
 /** 热销 / 新品（API 文档 4.4） */
 export function getHot(limit = 8) {
   return request.get<ApiResult<{ hot: ProductBrief[]; newest: ProductBrief[] }>>('/products/hot', {

@@ -2,7 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { Bell, ChevronDown, ClipboardList, Clock, Heart, House, MapPin, Package, ShoppingCart, SquareUser, Ticket, UserRound, Volume2 } from 'lucide-vue-next'
-import { getCategories, type CategoryNode } from '@/api/shop'
+import { getCategories, getNav, type CategoryNode, type NavItem } from '@/api/shop'
 import { getAnnouncements, type AnnouncementListItem } from '@/api/announcement'
 import NotificationBell from '@/components/NotificationBell.vue'
 import { useAuthStore } from '@/stores/auth'
@@ -26,6 +26,12 @@ const cart = useCartStore()
 const site = useSiteStore()
 const keyword = ref('')
 const categories = ref<CategoryNode[]>([])
+/**
+ * 顶部导航条目（后台「导航管理」编排，位置由 sort 决定）
+ * 取代原先「热销推荐」硬编码 + 一级分类横排两段式渲染。
+ * 「首页」仍硬编码在最前（永远在第一位、永远存在），「全部商品分类」下拉也不受编排影响。
+ */
+const navItems = ref<NavItem[]>([])
 /** 角标数量来自 cart store（单一真源）：加购/改数量/删除后各处自动同步 */
 const cartCount = computed(() => cart.count)
 const userMenuOpen = ref(false)
@@ -44,6 +50,14 @@ onMounted(async () => {
     categories.value = data.data
   } catch {
     categories.value = []
+  }
+
+  // 导航单独一个接口：加载失败只留「首页」，不牵连分类下拉
+  try {
+    const { data } = await getNav()
+    navItems.value = data.data
+  } catch {
+    navItems.value = []
   }
   refreshCartCount()
 
@@ -89,6 +103,36 @@ const activeRootId = computed(() => {
   const root = categories.value.find((r) => r.id === id || r.children.some((c) => c.id === id))
   return root?.id
 })
+
+/** 站外地址：以 http(s) 开头。站内一律是 / 开头的路径，交给 router */
+function isExternal(item: NavItem): boolean {
+  return /^https?:\/\//i.test(item.url)
+}
+
+/** url 的路径部分（去掉 ?query），用于站内高亮比对 */
+function pathOf(url: string): string {
+  return url.split('?')[0]
+}
+
+/**
+ * 高亮：分类条目沿用「当前一级分类」（子分类页也高亮父级，与改造前一致）；
+ * 自定义条目按路径匹配。
+ */
+function isNavActive(item: NavItem): boolean {
+  if (item.type === 'category') {
+    return !!item.category_public_id && item.category_public_id === activeRootId.value
+  }
+  return route.path === pathOf(item.url)
+}
+
+function goNav(item: NavItem) {
+  if (isExternal(item)) {
+    // 站外：新窗口打开时带 noopener，避免目标页拿到 window.opener
+    window.open(item.url, item.target === '_blank' ? '_blank' : '_self', 'noopener')
+    return
+  }
+  router.push(item.url)
+}
 
 function goCart() {
   router.push(auth.token ? '/cart' : { path: '/login', query: { redirect: '/cart' } })
@@ -277,17 +321,24 @@ async function handleLogout() {
         >
           <House class="h-3.5 w-3.5" /> 首页
         </button>
-        <button
-          class="shrink-0 whitespace-nowrap border-b-2"
-          :class="route.path === '/search' ? 'border-[#1677ff] font-medium text-[#1677ff]' : 'border-transparent hover:text-[#1677ff]'"
-          @click="router.push('/search?sort=sales_desc')"
-        >热销推荐</button>
-        <button
-          v-for="root in categories" :key="root.id"
-          class="shrink-0 whitespace-nowrap border-b-2 transition-colors lg:shrink lg:whitespace-normal"
-          :class="activeRootId === root.id ? 'border-[#1677ff] font-medium text-[#1677ff]' : 'border-transparent hover:text-[#1677ff]'"
-          @click="goCategory(root.id)"
-        >{{ root.name }}</button>
+        <!-- 后台编排的导航项（商品分类引用 / 自定义链接，位置由 sort 决定） -->
+        <template v-for="item in navItems" :key="item.id">
+          <a
+            v-if="isExternal(item)"
+            :href="item.url"
+            :target="item.target"
+            rel="noopener noreferrer"
+            class="shrink-0 whitespace-nowrap border-b-2 border-transparent hover:text-[#1677ff] lg:whitespace-normal"
+            :data-testid="`nav-item-${item.id}`"
+          >{{ item.title }}</a>
+          <button
+            v-else
+            class="shrink-0 whitespace-nowrap border-b-2 transition-colors lg:shrink lg:whitespace-normal"
+            :class="isNavActive(item) ? 'border-[#1677ff] font-medium text-[#1677ff]' : 'border-transparent hover:text-[#1677ff]'"
+            :data-testid="`nav-item-${item.id}`"
+            @click="goNav(item)"
+          >{{ item.title }}</button>
+        </template>
       </div>
     </nav>
   </header>
