@@ -9,7 +9,7 @@ import {
   getCsFaqArticles, getCsFaqCategories, getCsFaqPage, getCsFaqPageBlocks, getCsFaqPageTemplates,
   moveCsFaqCategory, offlineCsFaqArticle, previewCsFaqArticle,
   publishCsFaqArticle, saveCsFaqPage, saveCsFaqPageBlocks, sortCsFaqCategories,
-  updateCsFaqArticle, updateCsFaqCategory,
+  updateCsFaqArticle, updateCsFaqCategory, uploadCmsImage,
   type CmsPageBlockOption, type CmsPageBlockPayload, type CmsPageDetail, type CmsPageTemplateOption,
   type CsChannelOption, type CsFaqArticlePayload, type CsFaqArticleRow,
   type CsFaqCategoryPayload, type CsFaqCategoryRow,
@@ -80,6 +80,8 @@ const catEditor = ref<{
   slug: string
   template: string
   show_in_nav: boolean
+  /** CMS 新闻中心：列表形态 card=图文卡片 / list=列表行（channel 才有意义） */
+  list_style: string
   /** CMS-202：SEO 三列（空串即清空） */
   seo_title: string
   seo_keywords: string
@@ -87,6 +89,7 @@ const catEditor = ref<{
 }>({
   open: false, id: null, name: '', sort: 0, is_active: true,
   parent_id: 0, type: 'channel', slug: '', template: '', show_in_nav: false,
+  list_style: 'list',
   seo_title: '', seo_keywords: '', seo_description: '',
 })
 const deleteCatTarget = ref<CsFaqCategoryRow | null>(null)
@@ -156,6 +159,7 @@ function openCatCreate() {
   catEditor.value = {
     open: true, id: null, name: '', sort: 0, is_active: true,
     parent_id: 0, type: 'channel', slug: '', template: '', show_in_nav: false,
+    list_style: 'list',
     seo_title: '', seo_keywords: '', seo_description: '',
   }
 }
@@ -165,6 +169,7 @@ function openCatCreateChild(parent: CsFaqCategoryRow) {
   catEditor.value = {
     open: true, id: null, name: '', sort: 0, is_active: true,
     parent_id: parent.id, type: 'channel', slug: '', template: '', show_in_nav: false,
+    list_style: 'list',
     seo_title: '', seo_keywords: '', seo_description: '',
   }
 }
@@ -174,6 +179,7 @@ function openCatEdit(c: CsFaqCategoryRow) {
     open: true, id: c.id, name: c.name, sort: c.sort, is_active: c.is_active,
     parent_id: c.parent_id, type: c.type ?? 'channel', slug: c.slug ?? '',
     template: c.template ?? '', show_in_nav: c.show_in_nav,
+    list_style: c.list_style ?? 'list',
     seo_title: c.seo_title ?? '', seo_keywords: c.seo_keywords ?? '',
     seo_description: c.seo_description ?? '',
   }
@@ -195,6 +201,8 @@ async function saveCategory() {
     slug: e.type === 'page' ? e.slug.trim() : null,
     template: e.type === 'page' ? e.template : null,
     show_in_nav: e.show_in_nav,
+    // CMS 新闻中心：列表形态只对栏目（channel）生效；单页忽略
+    list_style: e.type === 'channel' ? e.list_style : null,
     // CMS-202：SEO 只对单页开放（栏目页的 SEO 还没做前台出口）；空串即清空
     seo_title: e.type === 'page' ? e.seo_title.trim() : null,
     seo_keywords: e.type === 'page' ? e.seo_keywords.trim() : null,
@@ -332,7 +340,7 @@ const artPagination = ref({ page: 1, page_size: 15, total: 0, total_pages: 1 })
 const artFilters = ref<{ category_id: number | null; status: string; keyword: string }>({ category_id: null, status: '', keyword: '' })
 
 function emptyForm(): CsFaqArticlePayload {
-  return { category_id: 0, title: '', summary: '', content_md: '', sort: 0, is_hot: false, status: 'draft' }
+  return { category_id: 0, title: '', summary: '', cover_image: null, content_md: '', sort: 0, is_hot: false, status: 'draft' }
 }
 const articleEditor = ref<{ open: boolean; id: number | null; form: CsFaqArticlePayload }>(
   { open: false, id: null, form: emptyForm() },
@@ -340,6 +348,30 @@ const articleEditor = ref<{ open: boolean; id: number | null; form: CsFaqArticle
 const deleteArtTarget = ref<CsFaqArticleRow | null>(null)
 const publishTarget = ref<{ article: CsFaqArticleRow; action: 'publish' | 'offline' } | null>(null)
 const previewData = ref<{ title: string; content: string; category_name: string | null; status: string } | null>(null)
+/** CMS 新闻中心：封面图上传中状态 */
+const coverUploading = ref(false)
+
+/** 封面图上传（复用 CMS 统一上传接口 /admin/cs/faq/upload） */
+async function uploadCover(ev: Event) {
+  const input = ev.target as HTMLInputElement
+  const file = input.files?.[0]
+  if (!file) return
+  coverUploading.value = true
+  try {
+    const { data } = await uploadCmsImage(file)
+    articleEditor.value.form.cover_image = data.data.url
+    notify('ok', '封面上传成功')
+  } catch (e) {
+    notify('err', e instanceof Error ? e.message : '封面上传失败')
+  } finally {
+    coverUploading.value = false
+    input.value = ''
+  }
+}
+
+function removeCover() {
+  articleEditor.value.form.cover_image = null
+}
 
 async function loadArticles(page = 1) {
   artLoading.value = true
@@ -358,6 +390,12 @@ async function loadArticles(page = 1) {
   }
 }
 
+/** 文章列表「所属栏目」筛选：切换下拉时同步高亮左树并重新拉取 */
+function onArticleCategoryFilter() {
+  selectedCategoryId.value = artFilters.value.category_id
+  loadArticles(1)
+}
+
 function openArtCreate() {
   const form = emptyForm()
   const channel = selectedCategory.value
@@ -370,6 +408,7 @@ function openArtEdit(a: CsFaqArticleRow) {
     // 存量未迁移的行没有 markdown 源：退回 HTML 产物兜底（作者可另存为 markdown 或直接重写）
     form: {
       category_id: a.category_id, title: a.title, summary: a.summary ?? '',
+      cover_image: a.cover_image ?? null,
       content_md: a.content_md ?? a.content ?? '', sort: a.sort, is_hot: a.is_hot, status: a.status,
     },
   }
@@ -571,6 +610,9 @@ onMounted(async () => {
         <div v-else data-testid="cs-faq-articles">
           <div class="mb-3 flex flex-wrap items-center gap-2 text-[13px]">
             <h3 class="text-[15px] font-medium text-slate-800">{{ selectedCategory.name }}</h3>
+            <select v-model.number="artFilters.category_id" class="rounded-md border border-slate-300 px-2 py-1.5 outline-none focus:border-[#1677ff]" data-testid="cs-article-category-filter" @change="onArticleCategoryFilter">
+              <option v-for="n in allNodes.filter((x) => x.type !== 'page')" :key="n.id" :value="n.id">{{ n.name }}</option>
+            </select>
             <select v-model="artFilters.status" class="rounded-md border border-slate-300 px-2 py-1.5 outline-none focus:border-[#1677ff]" data-testid="cs-article-status-filter" @change="loadArticles(1)">
               <option value="">全部状态</option>
               <option value="draft">草稿</option>
@@ -666,6 +708,15 @@ onMounted(async () => {
           </select>
         </label>
 
+        <!-- CMS 新闻中心：列表形态（仅栏目有「图文卡片 / 列表行」之分，单页用不上） -->
+        <label v-if="catEditor.type === 'channel'" class="mb-2 block text-[13px]">
+          <span class="mb-1 block text-slate-500">列表形态</span>
+          <select v-model="catEditor.list_style" class="w-full rounded-md border border-slate-300 px-3 py-2 outline-none focus:border-[#1677ff]" data-testid="cs-category-list-style">
+            <option value="list">列表行（标题 + 摘要）</option>
+            <option value="card">图文卡片（封面 + 标题）</option>
+          </select>
+        </label>
+
         <label class="mb-2 block text-[13px]">
           <span class="mb-1 block text-slate-500">上级栏目</span>
           <select v-model.number="catEditor.parent_id" class="w-full rounded-md border border-slate-300 px-3 py-2 outline-none focus:border-[#1677ff]" data-testid="cs-category-parent">
@@ -751,6 +802,25 @@ onMounted(async () => {
           <span class="mb-1 block text-slate-500">摘要</span>
           <input v-model="articleEditor.form.summary" type="text" maxlength="255" class="w-full rounded-md border border-slate-300 px-3 py-2 outline-none focus:border-[#1677ff]" data-testid="cs-article-form-summary" />
         </label>
+        <div class="mb-3 text-[13px]">
+          <span class="mb-1 block text-slate-500">封面图（图文卡片新闻用；列表行新闻可不填）</span>
+          <div class="flex items-center gap-3">
+            <img
+              v-if="articleEditor.form.cover_image"
+              :src="articleEditor.form.cover_image"
+              alt="封面预览"
+              class="h-20 w-20 rounded-md border border-slate-200 object-cover"
+              data-testid="cs-article-form-cover-preview"
+            />
+            <div class="flex flex-col gap-2">
+              <label class="inline-flex cursor-pointer items-center gap-1 rounded-md border border-slate-300 px-3 py-1.5 text-[13px] text-slate-600 hover:bg-slate-50" data-testid="cs-article-form-cover-upload">
+                <input type="file" accept="image/*" class="hidden" :disabled="coverUploading" @change="uploadCover" />
+                {{ coverUploading ? '上传中…' : '上传封面' }}
+              </label>
+              <button v-if="articleEditor.form.cover_image" type="button" class="inline-flex items-center gap-1 text-[13px] text-[#ff4d4f] hover:underline" data-testid="cs-article-form-cover-remove" @click="removeCover">移除封面</button>
+            </div>
+          </div>
+        </div>
         <div class="mb-3 text-[13px]">
           <span class="mb-1 block text-slate-500">正文（Markdown）</span>
           <MarkdownEditor

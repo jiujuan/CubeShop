@@ -216,6 +216,8 @@ export interface CsFaqCategoryRow {
   slug: string | null
   /** 单页模板 key（后端 CmsPageTemplate 真源） */
   template: string | null
+  /** CMS 新闻中心：列表形态 card=图文卡片 / list=列表行（channel 才有意义，page 恒空） */
+  list_style: string
   /** 是否进入前台导航 */
   show_in_nav: boolean
   icon: string | null
@@ -237,6 +239,8 @@ export interface CsFaqArticleRow {
   category?: { id: number; name: string } | null
   title: string
   summary: string | null
+  /** CMS 新闻中心：封面图（图文卡片用；存上传返回的 URL/相对路径） */
+  cover_image: string | null
   /** 正文 markdown 源（编辑器回显用）；未迁移的存量行可能为 null */
   content_md: string | null
   /** 渲染后的 HTML 产物（预览 v-html 用，已由后端净化） */
@@ -255,6 +259,8 @@ export interface CsFaqArticlePayload {
   category_id: number
   title: string
   summary?: string | null
+  /** CMS 新闻中心：封面图（图文新闻卡片用；存上传返回的 URL/相对路径） */
+  cover_image?: string | null
   /** 正文 markdown 源；HTML 产物由后端渲染 + 净化派生，不由客户端提供 */
   content_md: string
   sort?: number
@@ -277,6 +283,8 @@ export interface CsFaqCategoryPayload {
   icon?: string | null
   sort?: number
   is_active?: boolean
+  /** CMS 新闻中心：列表形态 card=图文卡片 / list=列表行（channel 才有意义，page 忽略） */
+  list_style?: string | null
   /** CMS-202：SEO 三列（空串表示清空，后端归一为 null） */
   seo_title?: string | null
   seo_keywords?: string | null
