@@ -1,0 +1,233 @@
+# CubeShop 物流分层架构与承运商编码归一
+
+**版本**：v1.0
+**日期**：2026-09-22
+**状态**：已实施（编码归一随迁移 000113 落地）
+**关联文档**：`CubeShop_WMS_Integration_Cainiao_JD_v1.0.md`（WMS 对接）、`../deployment/KUAIDI100_SETUP.md`（轨迹查询接入）
+
+---
+
+## 1. 这份文档解决什么
+
+项目里先后出现了两套"物流"能力：一套是仓库履约（菜鸟奇门 / 京东云仓），一套是快递轨迹查询（快递100）。两者名字里都有"物流"，容易被当成同一层的可选项，进而在管理端做出错误的配置模型。
+
+本文档明确三件事：
+
+1. **两者是上下游关系，不是二选一**；
+2. **两者作用域不同**：一个按仓，一个全局；
+3. **真正的冲突在承运商编码体系**，并给出归一方案。
+
+---
+
+## 2. 分层定义
+
+### 2.1 两层职责
+
+| | WMS（仓配履约） | 物流轨迹查询（TMS） |
+|---|---|---|
+| 管什么 | 库存、入库、拣货、打包、出库 | 运单走到哪了 |
+| 数据方向 | 写 —— 指令下行 | 读 —— 状态上行 |
+| **作用域** | **按仓**（A 仓菜鸟、B 仓京东可共存） | **全局**（全站统一一个渠道） |
+| 配置载体 | `wms_configs`（带 `warehouse_id` + `provider`） | `system_configs.shipping.channel` |
+| 失败影响 | **阻断业务** —— 订单发不出去 | **不阻断** —— 只是没轨迹 |
+| 失败处理原则 | fail-closed，不允许"看着成功" | 降级跳过，保留已有轨迹 |
+| 编码体系 | 仓方自己的（奇门 `logisticsCode`） | 快递100（`shunfeng`/`zhongtong`） |
+
+最后一行是理解全篇的钥匙：**失败影响完全不同**。所以 WMS 缺凭证必须抛错（`MockAdapter::assertCredentialsForProd()`），而轨迹查询缺密钥用 `NullChannel` 静默降级是合理设计。
+
+### 2.2 上下游关系
+
+```
+订单
+ │
+ ├─ 履约方式（由订单/仓决定）───────────────┐
+ │   ├─ 商家自发货：admin 手填 公司 + 单号   │  写操作
+ │   ├─ 菜鸟奇门仓：provider = cainiao      │  按仓配置
+ │   └─ 京东云仓：provider = jd_cloud（P8） │
+ │                                          │
+ └──────────────────────────────────────────┘
+                  ↓ 产出：运单号 + 承运商编码
+                  ↓ （两层唯一的交接契约）
+ ┌──────────────────────────────────────────┐
+ │  轨迹查询层：快递100（全局唯一，只读）      │  读操作
+ │  消费上述任意路径产出的运单号               │
+ └──────────────────────────────────────────┘
+```
+
+**运单号是两层唯一的契约。** 快递100 不关心这个单号是管理员手敲的、还是菜鸟回传的，它只认"公司编码 + 单号"。
+
+---
+
+## 3. 三者怎么区分
+
+区分维度是**履约方式**，不是"选哪家物流平台"。
+
+| 履约方式 | 判定依据 | 运单号来源 | 当前状态 |
+|---|---|---|---|
+| 商家自发货 | 订单未路由到 WMS 仓 | admin 手工录入 / Excel 批量导入 | 已支持 |
+| 菜鸟奇门仓 | `wms_configs.provider = cainiao` | 出库回调回传 | 已支持 |
+| 京东云仓 | `wms_configs.provider = jd_cloud` | 出库回调回传 | P8，字段已建枚举已备 |
+
+三条发货路径最终都汇聚到 `OrderService::shipForShipment()` 这个唯一入口写 `shippings` 表，所以轨迹查询侧**不需要区分来源**。
+
+### 3.1 京东云仓接入路径
+
+准备工作已完成一半：
+
+- `App\Support\WmsProvider` 枚举含 `JD_CLOUD`，但 `isAvailable()` 返回 `false`（`ENABLED` 只列 cainiao）；
+- `wms_configs` 表的京东字段已一并建出且可空；
+- `WmsAdapterFactory::make()` 已有 provider 分支骨架。
+
+真正接入只需三步：`WmsProvider::ENABLED` 加入 `JD_CLOUD` → 实现 `JdCloudAdapter` → 工厂加分支。
+
+> **关键决策**：京东云仓接入后，轨迹**仍然统一走快递100**，不单开查询链路。
+> 理由：字典里 `JD`（京东物流）→ `jd` 已预填，快递100 原生支持查询。
+> 除非京东主动提供轨迹推送（那是订阅推送架构，不是轮询），否则没必要引入第二个查询源。
+
+---
+
+## 4. 真冲突：三套承运商编码
+
+### 4.1 冲突描述
+
+同一个"快递公司"，在不同体系里有不同的编码：
+
+| 体系 | 顺丰 | 圆通 | 京东 | 兜底值 |
+|---|---|---|---|---|
+| 平台内部（`express_companies.code`） | `SF` | `YTO` | `JD` | —— |
+| 快递100 | `shunfeng` | `yuantong` | `jd` | —— |
+| 菜鸟奇门 | `SF` | `YTO` | —— | `OTHER` |
+
+原设计 `express_companies` 只有**一列** `channel_code`，且已按快递100 编码预填。这带来两个后果。
+
+### 4.2 后果一：入站（WMS 回传）语义污染
+
+链路：`CallbackMessageParser` 取奇门 `logisticsCode` → `DeliveryOrderConfirmHandler` → `markShipped()` → `shippings.company_code`。
+
+原样落库后，`shippings.company_code` 出现了**两种互不相容的语义**：
+
+| 来源 | 落库值 | `Kuaidi100Channel` 转换结果 |
+|---|---|---|
+| admin 字典选择 | `SF` | 命中映射 → `shunfeng` ✓ 正确 |
+| 奇门回传平台码 | `SF` | 命中映射 → `shunfeng` ✓ 正确 |
+| 奇门回传快递100 码 | `shunfeng` | 未命中 → 原样回落 ✓ **碰巧对** |
+| 奇门回传中文名 / `OTHER` | `OTHER` | 未命中 → 原样回落 ✗ **查询失败** |
+
+第 3 行靠运气，第 4 行是真炸弹——而且失败是静默的，只在 `last_fail_message` 里留痕。
+
+### 4.3 后果二：`logisticsCode()` 方向反了（已修复）
+
+`CainiaoNormalizer::logisticsCode()` 原本把平台 `code` 转成 **快递100 编码**（`SF` → `shunfeng`）准备发给奇门——**方向恰恰反了**，菜鸟不认 `shunfeng`。
+
+所幸该方法全仓无任何调用点（测试中出现的 `logisticsCode` 是奇门报文字段名，不是这个方法），属于死代码，未造成实际事故。**已于本次清理**。
+
+### 4.4 根因
+
+`channel_code` 单列的设计隐含假设「全系统只有一个第三方」，这在 WMS 接入后不成立。
+
+---
+
+## 5. 解决方案
+
+### 5.1 数据层：多渠道映射列（迁移 000113）
+
+给 `express_companies` 增加 `carrier_codes` JSON 列：
+
+```json
+{
+  "kuaidi100": "shunfeng",
+  "cainiao": "SF",
+  "jd_cloud": "JD"
+}
+```
+
+**保留原 `channel_code` 列**做兼容——已有数据、admin UI、`Kuaidi100Channel` 都依赖它，一次性替换风险大于收益。迁移时把现有 `channel_code` 回填为 `carrier_codes.kuaidi100`，保证升级后行为完全不变。
+
+### 5.2 解析层：`App\Support\CarrierCode`（唯一真源）
+
+双向解析，取代散落各处的 `ExpressCompany::where(...)` 直查：
+
+| 方法 | 方向 | 用途 | 未命中时 |
+|---|---|---|---|
+| `forChannel($platformCode, $channel)` | 平台 → 渠道 | 出站（查轨迹、下发仓配指令） | 回落平台 code（保持旧行为） |
+| `fromChannel($externalCode, $channel)` | 渠道 → 平台 | **入站归一** | 返回 `null`，调用方保留原值并告警 |
+
+> **⚠️ 两个方向的隔离策略是不对称的，这是有意设计。**
+>
+> - **正查严格隔离**：`channel_code` 只参与快递100 渠道的回落。因为它要给第三方发指令，
+>   发错编码会被直接拒单（这正是被删掉的 `logisticsCode()` 踩的坑——把 `shunfeng` 发给菜鸟）。
+> - **反查刻意不做隔离**：目标是「从任意标识猜出这是哪家公司」，多一条线索只会更准。
+>   仓方回传的编码并不总能遵守我们的渠道划分，严格隔离反而会漏判
+>   （开发过程中就被集成测试抓到过：奇门回传 `shunfeng` 在严格模式下识别不出）。
+>
+> 一句话：**出站怕发错，入站怕认不出。**
+
+带进程内缓存；字典后台可维护，故提供 `flushCache()` 供长驻进程（队列 / 定时任务）与测试隔离使用。
+
+`forChannel` 的取值优先级：
+
+1. `carrier_codes[渠道]` —— 精确配置，最高优先；
+2. `channel_code`（仅当渠道为 `kuaidi100`）—— 兼容历史数据；
+3. 平台 `code` 本身 —— 保守回落。
+
+### 5.3 入站归一
+
+`DeliveryOrderConfirmHandler` 在写库前用 `fromChannel()` 反查：
+
+```
+仓方回传 SF        → 归一为 SF        → shippings.company_code = SF  ✓
+仓方回传 shunfeng  → 归一为 SF        → shippings.company_code = SF  ✓
+仓方回传 OTHER     → 未命中 → 保留原值 + Log::warning             ⚠
+```
+
+归一后 `shippings.company_code` 语义**统一为平台 code**，`shipping_packages.carrier_code` 保留仓方原始值以便对账溯源自证。
+
+未命中不再静默：告警日志带 `warehouse_id`、原始编码、订单号，可在「物流监控」异常列表里被主动发现。
+
+---
+
+## 6. 管理端配置模型建议
+
+**不要**做一个把快递100 / 菜鸟 / 京东云仓并列的下拉。正确拆法是两页：
+
+| 页面 | 作用域 | 内容 |
+|---|---|---|
+| 仓储配送配置 | 按仓 | 选 provider（菜鸟 / 京东云仓）、填仓方凭证 |
+| 轨迹查询配置 | 全局 | 选渠道（快递100 / Mock / 关闭）、显示密钥是否已配置 |
+
+现存实现中，「轨迹查询」已由物流监控页顶部的渠道卡片承担（`shipping.channel`）；「仓储配送」为 `wms_configs` 按仓维护。**两者不应合并。**
+
+字典页 `ExpressCompanyView` 已支持按渠道分别维护编码（快递100 / 菜鸟奇门 / 京东云仓三列），映射到 `carrier_codes`。
+
+---
+
+## 7. 约束清单
+
+| # | 约束 | 原因 |
+|---|---|---|
+| 1 | 轨迹查询渠道全局唯一 | 它是只读消费方，按仓拆分无意义 |
+| 2 | WMS 按仓配置，允许多 provider 共存 | 不同仓可能签约不同服务商 |
+| 3 | `shippings.company_code` 只存平台 code | 否则快递100 解析行为不可预期 |
+| 4 | `shipping_packages.carrier_code` 存仓方原值 | 用于对账溯源，不做转换 |
+| 5 | 拉取间隔 ≥ 30 分钟 | 快递100 会锁单（详见 KUAIDI100_SETUP.md） |
+| 6 | 新增编码务必先查 `CarrierCode` 而非直查模型 | 避免回落优先级被绕过 |
+
+---
+
+## 8. 源码索引
+
+| 职责 | 文件 |
+|---|---|
+| WMS 服务商枚举 | `backend/app/Support/WmsProvider.php` |
+| WMS 适配器工厂 | `backend/app/Services/Wms/WmsAdapterFactory.php` |
+| WMS 适配器接口 | `backend/app/Services/Wms/Contracts/WmsAdapter.php` |
+| 菜鸟归一（已删 `logisticsCode`） | `backend/app/Services/Wms/Adapters/Cainiao/CainiaoNormalizer.php` |
+| 回传解析 | `backend/app/Services/Wms/Callback/CallbackMessageParser.php` |
+| **入站归一落点** | `backend/app/Services/Wms/Callback/Handlers/DeliveryOrderConfirmHandler.php` |
+| **编码解析真源** | `backend/app/Support/CarrierCode.php` |
+| 轨迹查询渠道 | `backend/app/Support/Shipping/Kuaidi100Channel.php` |
+| 轨迹拉取服务 | `backend/app/Services/Shipping/TracePullService.php` |
+| 渠道配置迁移 | `backend/database/migrations/2026_09_22_000112_add_shipping_channel_config.php` |
+| 编码映射迁移 | `backend/database/migrations/2026_09_22_000113_add_carrier_codes_to_express_companies.php` |
+| 字典种子 | `backend/database/seeders/ExpressCompanySeeder.php` |
+| 管理端字典页 | `admin/src/views/order/ExpressCompanyView.vue` |
