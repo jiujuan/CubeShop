@@ -56,6 +56,10 @@ class NewsController extends Controller
      * GET /api/news/articles/{key} —— 新闻详情（全文 + 相关 + 上一篇/下一篇 + 关联商品）
      *
      * `{key}` 为 slug 或整数 id（后期增强：slug 语义化 URL，id 向后兼容）。
+     *
+     * 商品分两处出口（后期增强：正文任意位置插卡）：
+     * - `embedded_products`：正文里内联的卡片（作者用 `[[product:…]]` 指定位置），按正文顺序；
+     * - `products`：其余关联商品，供底部「相关商品」区块（已内联的不再重复）。
      */
     public function detail(string $key): JsonResponse
     {
@@ -67,6 +71,7 @@ class NewsController extends Controller
             'prev' => $result['prev'],
             'next' => $result['next'],
             'products' => $result['products'],
+            'embedded_products' => $result['embedded_products'],
         ]);
     }
 

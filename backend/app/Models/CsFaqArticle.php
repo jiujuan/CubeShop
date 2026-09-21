@@ -5,6 +5,7 @@ namespace App\Models;
 use App\Models\Product;
 use App\Support\HtmlSanitizer;
 use App\Support\MarkdownRenderer;
+use App\Support\ProductEmbed;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
@@ -129,6 +130,10 @@ class CsFaqArticle extends Model
 
     /**
      * markdown 源 → HTML 产物：正文渲染的唯一入口
+     *
+     * 三步固定顺序：渲染 → 内联商品标记转占位容器（ProductEmbed）→ 白名单净化。
+     * 占位容器排在净化**之前**，是为了让它也走一遍白名单 —— `<div id>` 本来就在白名单内，
+     * 因此「落库的 HTML 一定经过白名单」的不变式继续成立（见 App\Support\ProductEmbed）。
      */
     protected static function booted(): void
     {
@@ -141,7 +146,9 @@ class CsFaqArticle extends Model
             }
 
             $article->attributes['content'] = HtmlSanitizer::cleanHtml(
-                MarkdownRenderer::toHtml((string) $article->getAttribute('content_md'))
+                ProductEmbed::tokenize(
+                    MarkdownRenderer::toHtml((string) $article->getAttribute('content_md'))
+                )
             );
         });
     }

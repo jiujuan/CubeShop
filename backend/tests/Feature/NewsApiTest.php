@@ -206,3 +206,88 @@ it('by-product 反查商品关联的新闻（商品详情页种草位）', funct
 it('by-product 对未知商品返回空列表而非 404', function () {
     $this->getJson('/api/news/by-product/999999')->assertOk()->assertJsonPath('data', []);
 });
+
+// ---------- 正文内联商品卡（后期增强：把种草商品插到正文任意位置） ----------
+
+it('正文独占一段的商品标记：落库成占位容器，且 id 未被净化白名单剥掉', function () {
+    $article = CsFaqArticle::create([
+        'category_id' => $this->graphic->id, 'title' => '内联卡文',
+        'status' => CsFaqArticle::STATUS_PUBLISHED,
+        'content_md' => "前言\n\n[[product:01HXABCDEFGHJKMNPQRSTVWXYZ]]\n\n后记",
+    ]);
+
+    // 标记消失、换成带 id 的 div —— 说明 HtmlSanitizer 的 id 白名单放行了占位容器
+    expect($article->content)->toContain('<div id="news-product-01HXABCDEFGHJKMNPQRSTVWXYZ">')
+        ->and($article->content)->not->toContain('[[product:')
+        ->and($article->content)->toContain('前言')
+        ->and($article->content)->toContain('后记');
+});
+
+it('detail 把内联商品给到 embedded_products，底部 products 去重', function () {
+    $category = Category::create(['name' => '内联分类', 'sort' => 1, 'status' => 1]);
+    $inlined = Product::create(['category_id' => $category->id, 'title' => '内联商品', 'main_image' => '/storage/p/a.png', 'price' => 10, 'status' => 1]);
+    $bottom = Product::create(['category_id' => $category->id, 'title' => '底部商品', 'price' => 20, 'status' => 1]);
+
+    $article = CsFaqArticle::create([
+        'category_id' => $this->graphic->id, 'title' => '去重文',
+        'status' => CsFaqArticle::STATUS_PUBLISHED,
+        'content_md' => "看这款\n\n[[product:{$inlined->public_id}]]\n\n",
+    ]);
+    $article->products()->sync([$inlined->id, $bottom->id]);
+
+    $res = $this->getJson('/api/news/articles/'.$article->id)->assertOk();
+
+    // 内联的那件只出现在正文位（embedded_products），底部不再重复列一遍
+    expect($res->json('data.embedded_products'))->toHaveCount(1)
+        ->and($res->json('data.embedded_products.0.id'))->toBe($inlined->public_id)
+        ->and($res->json('data.embedded_products.0.title'))->toBe('内联商品')
+        ->and($res->json('data.embedded_products.0.main_image'))->toBe('/storage/p/a.png')
+        ->and($res->json('data.products'))->toHaveCount(1)
+        ->and($res->json('data.products.0.id'))->toBe($bottom->public_id);
+});
+
+it('占位符指向未关联的商品时不带出数据（前台相应地不渲染该占位）', function () {
+    $category = Category::create(['name' => '未关联分类', 'sort' => 1, 'status' => 1]);
+    $product = Product::create(['category_id' => $category->id, 'title' => '未关联商品', 'price' => 10, 'status' => 1]);
+
+    // 只写标记、不建关联：出口只认已发布的关联商品，不给悬空占位补数据
+    $article = CsFaqArticle::create([
+        'category_id' => $this->graphic->id, 'title' => '悬空占位文',
+        'status' => CsFaqArticle::STATUS_PUBLISHED,
+        'content_md' => "[[product:{$product->public_id}]]",
+    ]);
+
+    $res = $this->getJson('/api/news/articles/'.$article->id)->assertOk();
+
+    expect($res->json('data.embedded_products'))->toBe([])
+        ->and($res->json('data.products'))->toBe([]);
+});
+
+it('已下架商品即使内联也不带出数据', function () {
+    $category = Category::create(['name' => '下架分类', 'sort' => 1, 'status' => 1]);
+    $offline = Product::create(['category_id' => $category->id, 'title' => '已下架商品', 'price' => 10, 'status' => 0]);
+
+    $article = CsFaqArticle::create([
+        'category_id' => $this->graphic->id, 'title' => '下架卡文',
+        'status' => CsFaqArticle::STATUS_PUBLISHED,
+        'content_md' => "[[product:{$offline->public_id}]]",
+    ]);
+    $article->products()->sync([$offline->id]);
+
+    $res = $this->getJson('/api/news/articles/'.$article->id)->assertOk();
+
+    expect($res->json('data.embedded_products'))->toBe([])
+        ->and($res->json('data.products'))->toBe([]);
+});
+
+it('没有内联商品时 embedded_products 为空数组且底部商品不受影响', function () {
+    $category = Category::create(['name' => '纯底部分类', 'sort' => 1, 'status' => 1]);
+    $product = Product::create(['category_id' => $category->id, 'title' => '纯底部商品', 'price' => 10, 'status' => 1]);
+
+    $this->newsA->products()->sync([$product->id]);
+
+    $res = $this->getJson('/api/news/articles/'.$this->newsA->id)->assertOk();
+
+    expect($res->json('data.embedded_products'))->toBe([])
+        ->and($res->json('data.products'))->toHaveCount(1);
+});

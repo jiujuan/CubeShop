@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Controller;
 use App\Models\CsFaqArticle;
 use App\Models\CsFaqCategory;
+use App\Models\Product;
 use App\Services\Cms\CmsCategoryService;
 use App\Services\Common\FileUploadService;
 use App\Services\Cs\NewsService;
@@ -12,6 +13,7 @@ use App\Support\ApiResponse;
 use App\Support\CmsBlock;
 use App\Support\CmsListStyle;
 use App\Support\CmsPageTemplate;
+use App\Support\ProductEmbed;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -229,13 +231,15 @@ class CsFaqController extends Controller
      */
     public function showArticle(int $id): JsonResponse
     {
-        $article = CsFaqArticle::with(['products:id,title'])->findOrFail($id);
+        // ⚠️ 预加载的列里必须带 public_id：出口要用它拼正文标记，漏了会静默取到 null
+        $article = CsFaqArticle::with(['products:id,title,public_id'])->findOrFail($id);
 
         $data = $article->toArray();
         $data['product_ids'] = $article->products->pluck('id')->all();
-        // 带出商品标题：编辑页要拿它渲染已选 chips，不然只能先占位 id 再回查一遍
+        // 带出商品标题与 public_id：编辑页拿它渲染已选 chips（不必先占位 id 再回查），
+        // public_id 供「插入正文」拼正文标记 —— 正文里的标识一律是对外标识（P2-11 同口径）
         $data['products'] = $article->products->map(fn ($p) => [
-            'id' => $p->id, 'title' => $p->title,
+            'id' => $p->id, 'public_id' => $p->public_id, 'title' => $p->title,
         ])->all();
 
         return $this->success($data);
@@ -271,6 +275,9 @@ class CsFaqController extends Controller
 
         $productIds = $data['product_ids'] ?? [];
         unset($data['product_ids']);
+
+        // 正文标记里提到的商品并入关联集（防「写了卡片但漏勾选 → 前台一片空白」）
+        $productIds = $this->mergeInlinedProducts($data['content_md'] ?? null, $productIds);
 
         $data['tags'] = CsFaqArticle::normalizeTags($data['tags'] ?? null);
         $data['slug'] = ! empty($data['slug']) ? $data['slug'] : $this->news->uniqueSlug($data['title']);
@@ -322,6 +329,15 @@ class CsFaqController extends Controller
         $syncProducts = $request->has('product_ids');
         $productIds = $data['product_ids'] ?? [];
         unset($data['product_ids']);
+
+        if ($syncProducts) {
+            // 正文标记里提到的商品并入关联集（防「写了卡片但漏勾选 → 前台一片空白」）；
+            // 没传 product_ids 的局部更新不参与，避免把关联悄悄改掉
+            $productIds = $this->mergeInlinedProducts(
+                $data['content_md'] ?? $article->content_md,
+                $productIds
+            );
+        }
 
         if (array_key_exists('tags', $data)) {
             $data['tags'] = CsFaqArticle::normalizeTags($data['tags']);
@@ -402,7 +418,7 @@ class CsFaqController extends Controller
     /** GET /api/admin/cs/faq/articles/{id}/preview */
     public function previewArticle(int $id): JsonResponse
     {
-        $article = CsFaqArticle::with(['category', 'products:id,title,main_image,price'])->findOrFail($id);
+        $article = CsFaqArticle::with(['category', 'products:id,title,public_id,main_image,price'])->findOrFail($id);
 
         return $this->success([
             'id' => $article->id,
@@ -424,7 +440,8 @@ class CsFaqController extends Controller
             'unhelpful_count' => $article->unhelpful_count,
             'helpful_rate' => $article->helpfulRate(),
             'products' => $article->products->map(fn ($p) => [
-                'id' => $p->id, 'title' => $p->title, 'main_image' => $p->main_image, 'price' => (string) $p->price,
+                'id' => $p->id, 'public_id' => $p->public_id, 'title' => $p->title,
+                'main_image' => $p->main_image, 'price' => (string) $p->price,
             ])->all(),
         ]);
     }
@@ -578,6 +595,32 @@ class CsFaqController extends Controller
         }
 
         return $data;
+    }
+
+    /**
+     * 把正文标记里提到的商品并入关联集（并集，只增不减）
+     *
+     * 正文里的商品卡由「关联集 + 正文占位」共同决定：占位说了卡片放哪，关联集说了卡片是谁。
+     * 作者手写或粘贴标记时很容易漏掉「勾选关联商品」这一步，后果是前台该处**一片空白**
+     * （出口只认已发布的关联商品），这种静默失败很难自查 —— 索性以正文为准兜住。
+     *
+     * 只做并集：从正文删掉标记不会解除关联（避免误删一处标记就丢了商品），
+     * 要移除关联仍在后台手动取消勾选。
+     *
+     * @param  list<int>  $productIds
+     * @return list<int>
+     */
+    private function mergeInlinedProducts(?string $markdown, array $productIds): array
+    {
+        $publicIds = ProductEmbed::extractTokenIds($markdown);
+
+        if ($publicIds === []) {
+            return array_values(array_unique($productIds));
+        }
+
+        $extra = Product::query()->whereIn('public_id', $publicIds)->pluck('id')->all();
+
+        return array_values(array_unique([...$productIds, ...$extra]));
     }
 
     /** 取单页栏目；非单页或模板缺失时抛 422 */

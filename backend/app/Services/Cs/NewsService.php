@@ -7,6 +7,7 @@ use App\Models\CsFaqArticle;
 use App\Models\CsFaqCategory;
 use App\Models\Product;
 use App\Support\CmsListStyle;
+use App\Support\ProductEmbed;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 
 /**
@@ -127,7 +128,7 @@ class NewsService
      *
      * `$key` 可为 slug 或整数 id（后期增强：slug 语义化 URL，id 兜底）。
      *
-     * @return array{article: CsFaqArticle, related: list<CsFaqArticle>, prev: array<string, mixed>|null, next: array<string, mixed>|null, products: list<array<string, mixed>>}
+     * @return array{article: CsFaqArticle, related: list<CsFaqArticle>, prev: array<string, mixed>|null, next: array<string, mixed>|null, products: list<array<string, mixed>>, embedded_products: list<array<string, mixed>>}
      */
     public function detail(string|int $key): array
     {
@@ -156,25 +157,44 @@ class NewsService
             'related' => $related,
             'prev' => $prev,
             'next' => $next,
-            'products' => $this->productsOf($article),
+            ...$this->splitProducts($article),
         ];
     }
 
     /**
-     * 文章关联商品（种草）；出口只给前台详情页需要的最小字段
+     * 关联商品按「正文内联」与「底部列表」拆开（后期增强：正文任意位置插商品卡）
      *
-     * P2-11：前台商品 id 出口统一为 public_id（前端 /product/{public_id} 跳转）。
+     * 一件商品只应出现在一个位置：
+     * - 作者把商品卡内联进了正文 → 归 `embedded_products`，底部不再重复列一遍；
+     * - 其余 → 归 `products`（底部「相关商品」区块）。
      *
-     * @return list<array<string, mixed>>
+     * 正文里只存了「这里有一张商品卡」的占位（见 App\Support\ProductEmbed），真正的卡片数据
+     * 由前台用本方法返回的实时商品数据渲染 —— 因此价格/主图不会冻结在保存那一刻。
+     *
+     * ⚠️ 占位符引用但**不在关联集里**（作者手写的 id、或商品已下架/被移除关联）的商品直接忽略：
+     * 出口只认「已发布的关联商品」，不给悬空占位补数据（前台相应地不渲染该占位）。
+     *
+     * @return array{products: list<array<string, mixed>>, embedded_products: list<array<string, mixed>>}
      */
-    public function productsOf(CsFaqArticle $article): array
+    private function splitProducts(CsFaqArticle $article): array
     {
-        return $article->products()
-            ->where('products.status', 1)
-            ->limit(self::MAX_RELATED_PRODUCTS)
-            ->get()
-            ->map(fn (Product $p) => $this->toProductItem($p))
-            ->all();
+        $inlined = ProductEmbed::extractIds($article->content);
+
+        $products = [];
+        $embedded = [];
+
+        foreach ($article->products()->where('products.status', 1)->limit(self::MAX_RELATED_PRODUCTS)->get() as $product) {
+            // 内联判定按 public_id：占位符里存的就是对外标识，前后台同一口径
+            if (in_array($product->public_id, $inlined, true)) {
+                $embedded[] = $this->toProductItem($product);
+
+                continue;
+            }
+
+            $products[] = $this->toProductItem($product);
+        }
+
+        return ['products' => $products, 'embedded_products' => $embedded];
     }
 
     /**

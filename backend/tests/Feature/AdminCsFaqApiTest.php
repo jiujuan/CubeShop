@@ -278,3 +278,79 @@ it('只改标题不会清空已关联商品', function () {
 
     expect($article->fresh()->products()->pluck('products.id')->all())->toBe([$product->id]);
 });
+
+// ---------- 正文内联商品卡（后台侧：public_id 出口 + 防漏勾选） ----------
+
+it('文章详情与预览的商品都带 public_id（编辑页拼正文标记要用对外标识）', function () {
+    $category = Category::create(['name' => '出口分类', 'sort' => 1, 'status' => 1]);
+    $product = Product::create(['category_id' => $category->id, 'title' => '出口商品', 'price' => 10, 'status' => 1]);
+
+    $article = CsFaqArticle::create([
+        'category_id' => $this->category->id, 'title' => '出口文', 'content' => 'x',
+        'status' => CsFaqArticle::STATUS_PUBLISHED,
+    ]);
+    $article->products()->sync([$product->id]);
+
+    $show = $this->withHeaders($this->adminAuth)->getJson('/api/admin/cs/faq/articles/'.$article->id);
+    $show->assertOk();
+    expect($show->json('data.products.0.public_id'))->toBe($product->public_id)
+        ->and($show->json('data.products.0.id'))->toBe($product->id);
+
+    $preview = $this->withHeaders($this->adminAuth)->getJson('/api/admin/cs/faq/articles/'.$article->id.'/preview');
+    $preview->assertOk();
+    expect($preview->json('data.products.0.public_id'))->toBe($product->public_id);
+});
+
+it('正文写了商品标记但没勾选关联商品时，保存会把它并入关联集', function () {
+    $category = Category::create(['name' => '并入分类', 'sort' => 1, 'status' => 1]);
+    $product = Product::create(['category_id' => $category->id, 'title' => '并入商品', 'price' => 10, 'status' => 1]);
+
+    $res = $this->withHeaders($this->adminAuth)->postJson('/api/admin/cs/faq/articles', [
+        'category_id' => $this->category->id, 'title' => '带卡文章',
+        // 故意不传 product_ids：漏勾选是常见操作失误，否则前台该处一片空白
+        'content_md' => "看这款\n\n[[product:{$product->public_id}]]",
+    ]);
+    $res->assertCreated();
+    $id = $res->json('data.id');
+
+    expect(CsFaqArticle::find($id)->products()->pluck('products.id')->all())->toBe([$product->id]);
+});
+
+it('编辑时正文新增的商品标记同样并入关联集，且不影响已有商品', function () {
+    $category = Category::create(['name' => '编辑并入分类', 'sort' => 1, 'status' => 1]);
+    $old = Product::create(['category_id' => $category->id, 'title' => '原有商品', 'price' => 10, 'status' => 1]);
+    $fresh = Product::create(['category_id' => $category->id, 'title' => '新加商品', 'price' => 20, 'status' => 1]);
+
+    $article = CsFaqArticle::create([
+        'category_id' => $this->category->id, 'title' => '编辑带卡', 'content' => 'x',
+        'status' => CsFaqArticle::STATUS_PUBLISHED,
+    ]);
+    $article->products()->sync([$old->id]);
+
+    $this->withHeaders($this->adminAuth)->putJson('/api/admin/cs/faq/articles/'.$article->id, [
+        'content_md' => "老款 [[product:{$old->public_id}]]\n\n[[product:{$fresh->public_id}]]",
+        'product_ids' => [$old->id],
+    ])->assertOk();
+
+    $ids = CsFaqArticle::find($article->id)->products()->pluck('products.id')->all();
+    expect($ids)->toContain($old->id)->toContain($fresh->id)->toHaveCount(2);
+});
+
+it('只改标题（不带 product_ids）时关联不会被正文标记悄悄改动', function () {
+    $category = Category::create(['name' => '局部更新分类', 'sort' => 1, 'status' => 1]);
+    $old = Product::create(['category_id' => $category->id, 'title' => '保留', 'price' => 10, 'status' => 1]);
+    $other = Product::create(['category_id' => $category->id, 'title' => '不并', 'price' => 10, 'status' => 1]);
+
+    $article = CsFaqArticle::create([
+        'category_id' => $this->category->id, 'title' => '局部更新', 'content' => 'x',
+        'status' => CsFaqArticle::STATUS_PUBLISHED,
+    ]);
+    $article->products()->sync([$old->id]);
+
+    $this->withHeaders($this->adminAuth)->putJson('/api/admin/cs/faq/articles/'.$article->id, [
+        'title' => '改名了',
+        'content_md' => "[[product:{$other->public_id}]]",
+    ])->assertOk();
+
+    expect(CsFaqArticle::find($article->id)->products()->pluck('products.id')->all())->toBe([$old->id]);
+});
