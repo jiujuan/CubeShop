@@ -8,6 +8,7 @@ import {
   updateAdminAddress,
   updateUser,
   updateUserStatus,
+  changeUserPassword,
   type AdminUser,
   type AdminUserAddress,
   type AdminUserDetail,
@@ -42,6 +43,12 @@ const editTarget = ref<AdminUser | null>(null)
 const editForm = ref({ nickname: '', phone: '', email: '' })
 const saving = ref(false)
 const statusTarget = ref<AdminUser | null>(null)
+
+// 修改密码（管理员强制重置）
+const pwdTarget = ref<AdminUser | null>(null)
+const pwdForm = ref({ password: '', password_confirmation: '' })
+const pwdSaving = ref(false)
+const pwdToast = ref('')
 
 // 地址代改（设计文档 CubeShop_Address_Design_v1.0：只读查看 + 受限代改）
 const addrEditTarget = ref<AdminUserAddress | null>(null)
@@ -254,6 +261,33 @@ function goPage(page: number) {
   load(page)
 }
 
+function openChangePwd(user: AdminUser) {
+  pwdTarget.value = user
+  pwdForm.value = { password: '', password_confirmation: '' }
+  pwdToast.value = ''
+}
+
+const pwdValid = computed(() =>
+  pwdForm.value.password.length >= 8
+  && /^(?=.*[A-Za-z])(?=.*\d).+$/.test(pwdForm.value.password)
+  && pwdForm.value.password === pwdForm.value.password_confirmation,
+)
+
+async function doChangePwd() {
+  if (!pwdTarget.value || !pwdValid.value) return
+  pwdSaving.value = true
+  pwdToast.value = ''
+  try {
+    await changeUserPassword(pwdTarget.value.id, { ...pwdForm.value })
+    pwdTarget.value = null
+    pwdToast.value = '密码已重置，用户需使用新密码重新登录'
+  } catch (e) {
+    pwdToast.value = e instanceof Error ? e.message : '重置失败'
+  } finally {
+    pwdSaving.value = false
+  }
+}
+
 onMounted(() => load())
 </script>
 
@@ -264,6 +298,9 @@ onMounted(() => load())
       <h2 class="text-lg font-semibold text-slate-800">用户管理</h2>
       <span class="text-xs text-slate-400">共 {{ pagination.total }} 位用户</span>
     </div>
+
+    <!-- 内联提示条（重置密码结果） -->
+    <p v-if="pwdToast" class="mb-3 rounded bg-blue-50 px-3 py-2 text-[13px]" :class="pwdToast.includes('已重置') ? 'text-[#1677ff]' : 'text-red-500'">{{ pwdToast }}</p>
 
     <!-- 筛选区 -->
     <div class="mb-4 flex flex-wrap items-center gap-2 text-[13px]">
@@ -344,6 +381,8 @@ onMounted(() => load())
               <template v-if="!isProtected(user)">
                 <span class="text-slate-200">|</span>
                 <button class="hover:underline" @click="openEdit(user)">编辑</button>
+                <span class="text-slate-200">|</span>
+                <button class="hover:underline" @click="openChangePwd(user)">改密</button>
                 <span class="text-slate-200">|</span>
                 <button :class="user.status === 1 ? 'text-red-500' : 'text-green-600'" class="hover:underline" @click="statusTarget = user">
                   {{ user.status === 1 ? '禁用' : '启用' }}
@@ -489,6 +528,39 @@ onMounted(() => load())
             :disabled="saving"
             @click="doSave"
           >{{ saving ? '保存中…' : '保存' }}</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 修改密码弹窗 -->
+    <div v-if="pwdTarget" class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-6" @click.self="pwdTarget = null">
+      <div class="w-full max-w-sm rounded-xl bg-white p-6">
+        <h3 class="text-sm font-semibold text-slate-800">修改用户密码</h3>
+        <p class="mt-1 text-xs text-slate-400">用户：{{ pwdTarget.nickname || pwdTarget.username }}（ID #{{ pwdTarget.id }}）</p>
+        <p class="mt-1 text-xs text-amber-500">重置后该用户所有登录会话将立即失效，需使用新密码重新登录。</p>
+        <div class="mt-4 space-y-3 text-[13px]">
+          <label class="block">
+            <span class="mb-1 block text-slate-500">新密码 <span class="text-red-500">*</span></span>
+            <input
+              v-model="pwdForm.password" type="password" autocomplete="new-password" maxlength="32" placeholder="至少 8 位，含字母与数字"
+              class="w-full rounded-md border border-slate-300 px-3 py-1.5 outline-none focus:border-[#1677ff]"
+            />
+          </label>
+          <label class="block">
+            <span class="mb-1 block text-slate-500">确认新密码 <span class="text-red-500">*</span></span>
+            <input
+              v-model="pwdForm.password_confirmation" type="password" autocomplete="new-password" maxlength="32" placeholder="再次输入新密码"
+              class="w-full rounded-md border border-slate-300 px-3 py-1.5 outline-none focus:border-[#1677ff]"
+            />
+          </label>
+        </div>
+        <div class="mt-5 flex justify-end gap-2">
+          <button class="rounded-md border border-slate-300 px-4 py-1.5 text-[13px] text-slate-600 hover:bg-slate-50" @click="pwdTarget = null">取消</button>
+          <button
+            class="rounded-md bg-[#1677ff] px-4 py-1.5 text-[13px] text-white hover:bg-[#4096ff] disabled:opacity-50"
+            :disabled="!pwdValid || pwdSaving"
+            @click="doChangePwd"
+          >{{ pwdSaving ? '保存中…' : '确认重置' }}</button>
         </div>
       </div>
     </div>

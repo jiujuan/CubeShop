@@ -68,6 +68,11 @@ export function updateUserStatus(id: number, status: 0 | 1) {
   return request.put<ApiResult<AdminUser>>(`/admin/users/${id}/status`, { status })
 }
 
+/** 管理员重置用户密码（强制密码策略，重置后用户需重新登录） */
+export function changeUserPassword(id: number, data: { password: string; password_confirmation: string }) {
+  return request.put<ApiResult<AdminUser>>(`/admin/users/${id}/password`, data)
+}
+
 // ---------- 收货地址管理（设计文档 CubeShop_Address_Design_v1.0 §5，权限 address.view / address.manage） ----------
 
 export interface AdminUserAddress {
