@@ -344,8 +344,13 @@ export function getCsFaqArticles(params: { category_id?: number; status?: string
  * 编辑页是独立路由，刷新/直达时拿不到列表页内存里的行数据，必须按 id 回查。
  */
 export interface CsFaqArticleDetail extends CsFaqArticleRow {
-  /** 已关联种草商品的标题（编辑页 chips 直接展示，免二次请求） */
-  products: Array<{ id: number; title: string }>
+  /**
+   * 已关联种草商品（编辑页 chips 直接展示，免二次请求）
+   *
+   * `id` 是管理端自增主键（勾选/提交用），`public_id` 是对外标识 ——
+   * 「插入正文」往正文里写的标记只放 public_id（见 utils/csArticle 的 buildProductToken）。
+   */
+  products: Array<{ id: number; public_id: string; title: string }>
 }
 
 export function getCsFaqArticle(id: number) {
@@ -377,7 +382,7 @@ export function previewCsFaqArticle(id: number) {
     id: number; title: string; summary: string | null; content: string; category_name: string | null
     is_hot: boolean; status: string; view_count: number; helpful_count: number; unhelpful_count: number; helpful_rate: number
     /** 后期增强：关联种草商品（编辑器回填 chips 标题用） */
-    products?: Array<{ id: number; title: string; main_image: string | null; price: string }>
+    products?: Array<{ id: number; public_id: string; title: string; main_image: string | null; price: string }>
   }>>(`/admin/cs/faq/articles/${id}/preview`)
 }
 

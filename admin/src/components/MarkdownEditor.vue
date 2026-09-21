@@ -1,15 +1,18 @@
 <script setup lang="ts">
-import { MdEditor } from 'md-editor-v3'
+import { ref } from 'vue'
+import { MdEditor, type ExposeParam } from 'md-editor-v3'
 import 'md-editor-v3/lib/style.css'
 import { uploadImage } from '@/api/product'
 
 /**
  * Markdown 编辑器（内容中心 CMS · CMS-108）
  *
- * 封装 md-editor-v3，统一三件事，消除帮助中心与公告两处的重复引入：
+ * 封装 md-editor-v3，统一四件事，消除帮助中心与公告两处的重复引入：
  * - 中文界面 + 精简工具栏（去掉 github / save）
  * - 图片上传钩子：走后台统一上传接口 `POST /api/admin/upload`
  * - 对外只暴露 `v-model` 契约与 `upload-error` 事件
+ * - 透出 `insertAtCursor()`：正文里插商品卡标记等「在光标处放一段文本」的场景
+ *   （底层是 md-editor-v3 的 `insert`，会尊重当前选区/光标位置）
  *
  * 正文的源是 Markdown；HTML 产物由后端 MarkdownRenderer 渲染 + HtmlSanitizer
  * 白名单净化后派生 —— 前端既不生成 HTML 也不做净化。
@@ -32,6 +35,24 @@ const emit = defineEmits<{
   (e: 'update:modelValue', value: string): void
   (e: 'upload-error', message: string): void
 }>()
+
+const editorRef = ref<ExposeParam>()
+
+/**
+ * 在光标处插入一段文本，并把光标移到插入内容之后
+ *
+ * `deviationStart/End` 是相对插入文本末尾的偏移：这里用它把光标停在插入块之后，
+ * 连续插几张卡时顺序才符合直觉（否则光标停在块前，第二张会插到第一张前面）。
+ */
+function insertAtCursor(text: string) {
+  editorRef.value?.insert(() => ({
+    targetValue: text,
+    deviationStart: text.length,
+    deviationEnd: text.length,
+  }))
+}
+
+defineExpose({ insertAtCursor })
 
 /** md-editor-v3 图片上传钩子：上传成功后回填 markdown 图片语法 */
 async function onUploadImg(
@@ -57,6 +78,7 @@ async function onUploadImg(
 
 <template>
   <MdEditor
+    ref="editorRef"
     :model-value="modelValue"
     language="zh-CN"
     :toolbars-exclude="['github', 'save']"

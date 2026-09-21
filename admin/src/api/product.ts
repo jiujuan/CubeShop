@@ -24,6 +24,14 @@ export interface Sku {
 
 export interface AdminProduct {
   id: number
+  /**
+   * 对外标识（ULID）
+   *
+   * 管理端一律用自增 `id`，但**正文里的商品标记只存 public_id**（对前台出口同一口径，
+   * P2-11）：内容一旦写进正文就是对外可见的，不能把自增主键泄露出去，否则改标识时
+   * 已发布的正文会全部失效。列表接口是模型直出，天然带这个字段。
+   */
+  public_id: string
   title: string
   subtitle: string | null
   main_image: string | null

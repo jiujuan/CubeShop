@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ArrowLeft, Check, ChevronRight, Save, X } from 'lucide-vue-next'
+import { ArrowLeft, Check, ChevronRight, CornerDownLeft, Save, X } from 'lucide-vue-next'
 import MarkdownEditor from '@/components/MarkdownEditor.vue'
 import LoadingSpinner from '@/components/LoadingSpinner.vue'
 import {
@@ -9,7 +9,7 @@ import {
   type CsFaqArticlePayload, type CsFaqCategoryRow,
 } from '@/api/cs'
 import { getProducts } from '@/api/product'
-import { ARTICLE_STATUS_OPTIONS, hotLabelFor } from '@/utils/csArticle'
+import { ARTICLE_STATUS_OPTIONS, buildProductToken, hasProductToken, hotLabelFor } from '@/utils/csArticle'
 
 /**
  * 内容中心 CMS · 文章新增/编辑（独立页面）
@@ -82,18 +82,28 @@ const showSeo = ref(false)
 
 // ---- 关联种草商品 ----
 
-const selectedProducts = ref<Array<{ id: number; title: string }>>([])
-const productPicker = ref<{ keyword: string; loading: boolean; results: Array<{ id: number; title: string }> }>(
+/** 已选商品：`id` 是勾选/提交用的自增主键，`public_id` 是写进正文标记的对外标识 */
+interface PickedProduct { id: number; public_id: string; title: string }
+
+const selectedProducts = ref<PickedProduct[]>([])
+const productPicker = ref<{ keyword: string; loading: boolean; results: PickedProduct[] }>(
   { keyword: '', loading: false, results: [] },
 )
 /** 结果面板开合态：搜索后展开，点外部 / 取消按钮 / Esc 收起 */
 const productPickerOpen = ref(false)
 /** 搜索行 + 结果面板容器，用于「点击外部关闭」的范围判断 */
 const productPickerRef = ref<HTMLElement | null>(null)
+/** markdown 编辑器实例（「插入正文」要在光标处放标记） */
+const bodyEditorRef = ref<{ insertAtCursor: (text: string) => void } | null>(null)
 
 /** 该商品是否已关联（结果行右侧「已选」绿标用） */
 function isProductSelected(id: number): boolean {
   return (form.value.product_ids ?? []).includes(id)
+}
+
+/** 该商品的卡片是否已经插进正文（chip 上标出来，避免重复插） */
+function isProductInlined(publicId: string): boolean {
+  return hasProductToken(form.value.content_md, publicId)
 }
 
 /** 收起结果面板（点外部 / 取消按钮 / Esc 共用同一出口） */
@@ -135,7 +145,7 @@ async function searchProducts() {
   productPickerOpen.value = true
   try {
     const { data } = await getProducts({ keyword, page_size: 10 })
-    productPicker.value.results = data.data.list.map((p) => ({ id: p.id, title: p.title }))
+    productPicker.value.results = data.data.list.map((p) => ({ id: p.id, public_id: p.public_id, title: p.title }))
   } catch {
     productPicker.value.results = []
   } finally {
@@ -143,7 +153,7 @@ async function searchProducts() {
   }
 }
 
-function toggleProduct(p: { id: number; title: string }) {
+function toggleProduct(p: PickedProduct) {
   const ids = form.value.product_ids ?? []
   const idx = ids.indexOf(p.id)
   if (idx >= 0) {
@@ -151,9 +161,30 @@ function toggleProduct(p: { id: number; title: string }) {
     selectedProducts.value = selectedProducts.value.filter((s) => s.id !== p.id)
   } else {
     ids.push(p.id)
-    if (!selectedProducts.value.some((s) => s.id === p.id)) selectedProducts.value.push({ id: p.id, title: p.title })
+    if (!selectedProducts.value.some((s) => s.id === p.id)) {
+      selectedProducts.value.push({ id: p.id, public_id: p.public_id, title: p.title })
+    }
   }
   form.value.product_ids = [...ids]
+}
+
+/**
+ * 把商品卡标记插到正文光标处（独占一段）
+ *
+ * 前后各留一个空行：后端只认「独占一段」的标记（渲染成 `<p>[[product:x]]</p>`），
+ * 贴着上下的文字写成行内的话标记会按字面保留、前台直接显示这串字符。
+ *
+ * 顺带把商品勾选上（未选中则选中）：没关联的商品即使正文里有标记，出口也不给数据，
+ * 前台那处就是空的 —— 与其让作者去理解这条规则，不如插入时就一并关联。
+ */
+function insertProductToken(p: PickedProduct) {
+  if (!isProductSelected(p.id)) toggleProduct(p)
+
+  const editor = bodyEditorRef.value
+  if (!editor) return
+
+  editor.insertAtCursor(`\n\n${buildProductToken(p.public_id)}\n\n`)
+  notify('ok', `已把「${p.title}」的商品卡插入正文光标处`)
 }
 
 function removeProduct(id: number) {
@@ -218,7 +249,7 @@ async function load() {
         is_hot: a.is_hot,
         status: a.status,
       }
-      selectedProducts.value = (a.products ?? []).map((p) => ({ id: p.id, title: p.title }))
+      selectedProducts.value = (a.products ?? []).map((p) => ({ id: p.id, public_id: p.public_id, title: p.title }))
       // 已填过 SEO 就默认展开，免得运营以为丢了
       showSeo.value = !!(a.seo_title || a.seo_keywords || a.seo_description)
     } else {
@@ -366,6 +397,7 @@ onMounted(load)
       <div class="mt-4">
         <span class="mb-1 block text-slate-500">正文（Markdown） <span class="text-red-500">*</span></span>
         <MarkdownEditor
+          ref="bodyEditorRef"
           v-model="form.content_md"
           data-testid="cs-article-form-content"
           @upload-error="(msg: string) => notify('err', msg)"
@@ -401,19 +433,30 @@ onMounted(load)
           </div>
         </div>
 
-        <!-- 关联种草商品（前台详情页展示，商品详情页反查相关资讯） -->
+        <!-- 关联种草商品（前台详情页展示：插进正文 = 卡在正文里，其余落底部「相关商品」） -->
         <div class="rounded-md border border-slate-200 px-3 py-3">
           <span class="mb-2 block text-slate-500">关联种草商品（可选）</span>
           <div class="mb-2 flex flex-wrap gap-1.5" data-testid="cs-article-form-products">
             <span
               v-for="p in selectedProducts" :key="p.id"
-              class="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-600"
+              class="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs"
+              :class="isProductInlined(p.public_id) ? 'bg-[#e6f4ff] text-[#1677ff]' : 'bg-slate-100 text-slate-600'"
             >
               {{ p.title }}
-              <button type="button" class="text-slate-400 hover:text-[#ff4d4f]" :data-testid="`cs-article-form-product-remove-${p.id}`" @click="removeProduct(p.id)"><X class="h-3 w-3" /></button>
+              <span v-if="isProductInlined(p.public_id)" class="text-[10px]" :data-testid="`cs-article-form-product-inlined-${p.id}`">已插入正文</span>
+              <button
+                type="button" class="text-slate-400 hover:text-[#1677ff]"
+                title="插入到正文光标处"
+                :data-testid="`cs-article-form-product-insert-${p.id}`"
+                @click="insertProductToken(p)"
+              ><CornerDownLeft class="h-3 w-3" /></button>
+              <button type="button" class="text-slate-400 hover:text-[#ff4d4f]" title="取消关联" :data-testid="`cs-article-form-product-remove-${p.id}`" @click="removeProduct(p.id)"><X class="h-3 w-3" /></button>
             </span>
             <span v-if="!selectedProducts.length" class="text-xs text-slate-400">尚未关联商品</span>
           </div>
+          <p class="mb-2 text-xs text-slate-400">
+            点商品后的箭头把商品卡插到正文光标处（会插成独立一段）；不插的商品会统一列在正文末尾的「相关商品」。
+          </p>
           <div ref="productPickerRef">
             <div class="flex gap-2">
               <input
@@ -432,18 +475,28 @@ onMounted(load)
                 <button type="button" class="text-xs text-slate-400 hover:text-[#1677ff]" data-testid="cs-article-form-product-picker-cancel" @click="closeProductPicker">取消</button>
               </div>
               <div class="max-h-40 overflow-y-auto">
-                <button
-                  v-for="p in productPicker.results" :key="p.id" type="button"
-                  class="flex w-full items-center justify-between gap-2 px-3 py-1.5 text-left text-xs hover:bg-slate-50"
-                  :data-testid="`cs-article-form-product-option-${p.id}`"
-                  @click="toggleProduct(p)"
+                <div
+                  v-for="p in productPicker.results" :key="p.id"
+                  class="flex items-center gap-2 px-3 py-1.5 text-xs hover:bg-slate-50"
                 >
-                  <span class="truncate" :class="isProductSelected(p.id) ? 'text-green-700' : 'text-slate-600'">{{ p.title }}</span>
-                  <span v-if="isProductSelected(p.id)" class="inline-flex shrink-0 items-center gap-1 text-green-600" :data-testid="`cs-article-form-product-selected-${p.id}`">
-                    已选 <Check class="h-3.5 w-3.5" />
-                  </span>
-                  <span v-else class="shrink-0 text-[#1677ff]">添加</span>
-                </button>
+                  <button
+                    type="button"
+                    class="flex flex-1 items-center justify-between gap-2 text-left"
+                    :data-testid="`cs-article-form-product-option-${p.id}`"
+                    @click="toggleProduct(p)"
+                  >
+                    <span class="truncate" :class="isProductSelected(p.id) ? 'text-green-700' : 'text-slate-600'">{{ p.title }}</span>
+                    <span v-if="isProductSelected(p.id)" class="inline-flex shrink-0 items-center gap-1 text-green-600" :data-testid="`cs-article-form-product-selected-${p.id}`">
+                      已选 <Check class="h-3.5 w-3.5" />
+                    </span>
+                    <span v-else class="shrink-0 text-[#1677ff]">添加</span>
+                  </button>
+                  <button
+                    type="button" class="shrink-0 text-[#1677ff] hover:underline"
+                    :data-testid="`cs-article-form-product-insert-option-${p.id}`"
+                    @click="insertProductToken(p)"
+                  >插入正文</button>
+                </div>
                 <p v-if="!productPicker.loading && !productPicker.results.length" class="px-3 py-3 text-center text-xs text-slate-400" data-testid="cs-article-form-product-picker-empty">没有匹配的商品</p>
               </div>
             </div>

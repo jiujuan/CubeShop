@@ -42,7 +42,14 @@ vi.mock('md-editor-v3', async () => {
       name: 'MdEditor',
       props: { modelValue: { type: String, default: '' }, onUploadImg: { type: Function, default: null } },
       emits: ['update:modelValue'],
-      setup(props, { emit }) {
+      setup(props, { emit, expose }) {
+        // 光标插入的桩实现：真实编辑器按光标位置插，这里退化为「追加到末尾」——
+        // 断言只需验证标记进了正文（content_md），位置由真实编辑器与后端共同保证。
+        expose({
+          insert: (generate: () => { targetValue: string }) => {
+            emit('update:modelValue', (props.modelValue ?? '') + generate().targetValue)
+          },
+        })
         return () => h('textarea', {
           'data-testid': 'md-editor-stub',
           value: props.modelValue,
@@ -275,7 +282,7 @@ describe('文章独立编辑页（CsFaqArticleEditView）', () => {
 
   it('编辑：已关联商品的标题由详情接口带出，直接渲染 chips', async () => {
     getCsFaqArticleMock.mockResolvedValue({ data: { data: articleDetail({
-      product_ids: [5], products: [{ id: 5, title: '种草商品' }],
+      product_ids: [5], products: [{ id: 5, public_id: '01HXPRODUCT00000000000005', title: '种草商品' }],
     }) } })
     const { wrapper } = await mountPage('/cs/faq/articles/1/edit')
 
@@ -284,7 +291,7 @@ describe('文章独立编辑页（CsFaqArticleEditView）', () => {
   })
 
   it('搜索并关联种草商品后随保存提交 product_ids', async () => {
-    getProductsMock.mockResolvedValue({ data: { data: { list: [{ id: 5, title: '种草商品' }], pagination: { page: 1, page_size: 10, total: 1, total_pages: 1 } } } })
+    getProductsMock.mockResolvedValue({ data: { data: { list: [{ id: 5, public_id: '01HXPRODUCT00000000000005', title: '种草商品' }], pagination: { page: 1, page_size: 10, total: 1, total_pages: 1 } } } })
     const { wrapper } = await mountPage('/cs/faq/articles/1/edit')
 
     await wrapper.find('[data-testid="cs-article-form-product-search"]').setValue('种草')
@@ -302,7 +309,7 @@ describe('文章独立编辑页（CsFaqArticleEditView）', () => {
   })
 
   it('商品搜索结果行：未选中显示「添加」，选中后「已选」变绿并带勾', async () => {
-    getProductsMock.mockResolvedValue({ data: { data: { list: [{ id: 5, title: '种草商品' }], pagination: { page: 1, page_size: 10, total: 1, total_pages: 1 } } } })
+    getProductsMock.mockResolvedValue({ data: { data: { list: [{ id: 5, public_id: '01HXPRODUCT00000000000005', title: '种草商品' }], pagination: { page: 1, page_size: 10, total: 1, total_pages: 1 } } } })
     const { wrapper } = await mountPage('/cs/faq/articles/1/edit')
 
     await wrapper.find('[data-testid="cs-article-form-product-search"]').setValue('种草')
@@ -326,7 +333,7 @@ describe('文章独立编辑页（CsFaqArticleEditView）', () => {
   })
 
   it('商品搜索面板：面板内点击不关闭，点击外部即收起', async () => {
-    getProductsMock.mockResolvedValue({ data: { data: { list: [{ id: 5, title: '种草商品' }], pagination: { page: 1, page_size: 10, total: 1, total_pages: 1 } } } })
+    getProductsMock.mockResolvedValue({ data: { data: { list: [{ id: 5, public_id: '01HXPRODUCT00000000000005', title: '种草商品' }], pagination: { page: 1, page_size: 10, total: 1, total_pages: 1 } } } })
     const { wrapper } = await mountPage('/cs/faq/articles/1/edit')
 
     // 搜索前没有面板
@@ -352,7 +359,7 @@ describe('文章独立编辑页（CsFaqArticleEditView）', () => {
   })
 
   it('商品搜索面板：面板内「取消」按钮与 Esc 都能收起', async () => {
-    getProductsMock.mockResolvedValue({ data: { data: { list: [{ id: 5, title: '种草商品' }], pagination: { page: 1, page_size: 10, total: 1, total_pages: 1 } } } })
+    getProductsMock.mockResolvedValue({ data: { data: { list: [{ id: 5, public_id: '01HXPRODUCT00000000000005', title: '种草商品' }], pagination: { page: 1, page_size: 10, total: 1, total_pages: 1 } } } })
     const { wrapper } = await mountPage('/cs/faq/articles/1/edit')
     const picker = '[data-testid="cs-article-form-product-picker"]'
 
@@ -385,6 +392,81 @@ describe('文章独立编辑页（CsFaqArticleEditView）', () => {
 
     expect(wrapper.find('[data-testid="cs-article-form-product-picker-empty"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="cs-article-form-product-picker-cancel"]').exists()).toBe(true)
+  })
+
+  // ---- 把商品卡插到正文任意位置（标记独占一段，后端换成占位、前台渲染真卡片） ----
+
+  it('已选商品 chip 上的「插入正文」把标记插进正文（独占一段、用 public_id）', async () => {
+    getCsFaqArticleMock.mockResolvedValue({ data: { data: articleDetail({
+      product_ids: [5], products: [{ id: 5, public_id: '01HXPRODUCT00000000000005', title: '种草商品' }],
+      content_md: '现有正文',
+    }) } })
+    const { wrapper } = await mountPage('/cs/faq/articles/1/edit')
+
+    await wrapper.find('[data-testid="cs-article-form-product-insert-5"]').trigger('click')
+    await flushPromises()
+
+    const md = (wrapper.find('[data-testid="cs-article-form-content"]').element as HTMLTextAreaElement).value
+    // 前后留空行 ⇒ 独占一段，后端才认（行内写法会按字面保留）
+    expect(md).toContain('\n\n[[product:01HXPRODUCT00000000000005]]\n\n')
+    // 正文里放的是对外标识，不是自增主键
+    expect(md).not.toContain('[[product:5]]')
+  })
+
+  it('插入后 chip 标出「已插入正文」，保存时标记随 content_md 一起提交', async () => {
+    getCsFaqArticleMock.mockResolvedValue({ data: { data: articleDetail({
+      product_ids: [5], products: [{ id: 5, public_id: '01HXPRODUCT00000000000005', title: '种草商品' }],
+      content_md: '现有正文',
+    }) } })
+    const { wrapper } = await mountPage('/cs/faq/articles/1/edit')
+
+    expect(wrapper.find('[data-testid="cs-article-form-product-inlined-5"]').exists()).toBe(false)
+
+    await wrapper.find('[data-testid="cs-article-form-product-insert-5"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="cs-article-form-product-inlined-5"]').exists()).toBe(true)
+
+    await wrapper.find('[data-testid="cs-article-save"]').trigger('click')
+    await flushPromises()
+
+    expect(updateCsFaqArticleMock).toHaveBeenCalledWith(1, expect.objectContaining({
+      content_md: expect.stringContaining('[[product:01HXPRODUCT00000000000005]]'),
+    }))
+  })
+
+  it('搜索结果行也能直接插入正文，并顺带把该商品关联上', async () => {
+    getProductsMock.mockResolvedValue({ data: { data: { list: [{ id: 5, public_id: '01HXPRODUCT00000000000005', title: '种草商品' }], pagination: { page: 1, page_size: 10, total: 1, total_pages: 1 } } } })
+    const { wrapper } = await mountPage('/cs/faq/articles/new')
+
+    await wrapper.find('[data-testid="cs-article-form-product-search"]').setValue('种草')
+    await wrapper.find('[data-testid="cs-article-form-product-search-btn"]').trigger('click')
+    await flushPromises()
+
+    // 未关联时先插入：出口只认已发布的关联商品，不关联的话前台那处是空的
+    expect(wrapper.find('[data-testid="cs-article-form-product-remove-5"]').exists()).toBe(false)
+
+    await wrapper.find('[data-testid="cs-article-form-product-insert-option-5"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="cs-article-form-product-remove-5"]').exists()).toBe(true)
+    expect((wrapper.find('[data-testid="cs-article-form-content"]').element as HTMLTextAreaElement).value)
+      .toContain('[[product:01HXPRODUCT00000000000005]]')
+  })
+
+  it('插入多张卡片时逐张追加，重复插入不会报错', async () => {
+    getCsFaqArticleMock.mockResolvedValue({ data: { data: articleDetail({
+      product_ids: [5], products: [{ id: 5, public_id: '01HXPRODUCT00000000000005', title: '种草商品' }],
+      content_md: '',
+    }) } })
+    const { wrapper } = await mountPage('/cs/faq/articles/1/edit')
+
+    await wrapper.find('[data-testid="cs-article-form-product-insert-5"]').trigger('click')
+    await wrapper.find('[data-testid="cs-article-form-product-insert-5"]').trigger('click')
+    await flushPromises()
+
+    const md = (wrapper.find('[data-testid="cs-article-form-content"]').element as HTMLTextAreaElement).value
+    expect(md.split('[[product:01HXPRODUCT00000000000005]]').length - 1).toBe(2)
   })
 
   it('正文图片上传走后台统一上传接口，并回填 url 给编辑器', async () => {

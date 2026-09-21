@@ -30,3 +30,24 @@ export type ArticleStatus = (typeof ARTICLE_STATUS_OPTIONS)[number]['value']
 export const ARTICLE_STATUS_LABELS: Record<string, string> = Object.fromEntries(
   ARTICLE_STATUS_OPTIONS.map((o) => [o.value, o.label]),
 )
+
+/**
+ * 正文内联商品卡的标记（与后端 `App\Support\ProductEmbed` 同一口径）
+ *
+ * 作者在正文里「独占一段」写这个标记，后端渲染时把它换成占位容器，前台在该位置
+ * 渲染真卡片（价格实时 —— 正文里只存位置，不存卡片 HTML）。
+ *
+ * ⚠️ 标记里必须是商品 **public_id**（对外标识）：正文一旦发布就是对外可见的，
+ * 存自增主键既泄露内部 id，也会在将来换标识时让存量正文全部失效。
+ *
+ * ⚠️ 只有**独占一段**才会生效：markdown 渲染后须是 `<p>[[product:x]]</p>`。
+ * 写成行内（前后还有文字）后端按字面保留，前台会原样显示这串字符。
+ */
+export function buildProductToken(publicId: string): string {
+  return `[[product:${publicId}]]`
+}
+
+/** 正文里是否已经插过该商品（编辑页据此把 chip 标成「已插入正文」） */
+export function hasProductToken(markdown: string | null | undefined, publicId: string): boolean {
+  return (markdown ?? '').includes(buildProductToken(publicId))
+}
