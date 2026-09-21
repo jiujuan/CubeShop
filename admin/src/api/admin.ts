@@ -79,3 +79,45 @@ export function getOperationLogs(params: {
     { params },
   )
 }
+
+export interface AuthLog {
+  id: number
+  event: string
+  event_label: string
+  actor_type: string
+  actor_label: string
+  user_id: number | null
+  identifier: string | null
+  success: boolean
+  success_label: string
+  fail_reason: string | null
+  ip: string | null
+  user_agent: string | null
+  device_id: number | null
+  token_id: string | null
+  detail: Record<string, unknown> | null
+  created_at: string
+}
+
+/** 认证日志列表（登录/注册/登出，含失败明细，权限 log.auth.view） */
+export function getAuthLogs(params: {
+  page?: number
+  page_size?: number
+  event?: string
+  actor_type?: string
+  success?: boolean
+  identifier?: string
+  fail_reason?: string
+  created_from?: string
+  created_to?: string
+}) {
+  return request.get<ApiResult<{ list: AuthLog[]; pagination: { page: number; page_size: number; total: number; total_pages: number } }>>(
+    '/admin/auth-logs',
+    { params },
+  )
+}
+
+/** 认证日志详情（权限 log.auth.view） */
+export function getAuthLog(id: number) {
+  return request.get<ApiResult<AuthLog>>(`/admin/auth-logs/${id}`)
+}

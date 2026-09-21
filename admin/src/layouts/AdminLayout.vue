@@ -2,7 +2,7 @@
 import { computed, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import {
-  BarChart3, BookOpen, Box, Calculator, ChevronDown, ChevronRight, ChevronsLeft, ChevronsRight, ClipboardList, CreditCard, FileClock, FolderTree, History, Images, LayoutDashboard, Layers, LayoutList, LifeBuoy, ListTree, LogOut, MapPinned, Menu, MessageSquare, Megaphone, Package, RotateCcw, ScrollText, Settings, ShieldCheck,   SquareUser, Tags, Truck, UploadCloud, UserCog, UserRound, Users, Wallet, Warehouse, Ticket, Undo2, Activity, Diff,
+  BarChart3, BookOpen, Box, Calculator, ChevronDown, ChevronRight, ChevronsLeft, ChevronsRight, ClipboardList, CreditCard, FileClock, FolderTree, History, Images, KeyRound, LayoutDashboard, Layers, LayoutList, LifeBuoy, ListTree, LogOut, MapPinned, Menu, MessageSquare, Megaphone, Package, RotateCcw, ScrollText, Settings, ShieldCheck,   SquareUser, Tags, Truck, UploadCloud, UserCog, UserRound, Users, Wallet, Warehouse, Ticket, Undo2, Activity, Diff,
 } from 'lucide-vue-next'
 import { useAuthStore } from '@/stores/auth'
 
@@ -63,6 +63,7 @@ const icons: Record<string, unknown> = {
   Undo2,
   Activity,
   Diff,
+  KeyRound,
 }
 
 interface MenuItem {
@@ -151,6 +152,7 @@ const menuGroups = computed<MenuGroup[]>(() => {
       items: [
         { path: '/configs', title: '系统配置', icon: 'Settings', permission: 'config.manage' },
         { path: '/operation-logs', title: '操作日志', icon: 'FileClock', permission: 'log.view' },
+        { path: '/auth-logs', title: '认证日志', icon: 'KeyRound', permission: 'log.auth.view' },
         { path: '/accounts', title: '管理员账号', icon: 'UserCog', permission: 'account.manage' },
         { path: '/roles', title: '角色权限', icon: 'ShieldCheck', permission: 'role.manage' },
         { path: '/payment-channels', title: '支付渠道配置', icon: 'CreditCard', permission: 'payment.channel.manage' },

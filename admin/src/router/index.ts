@@ -309,6 +309,12 @@ const router = createRouter({
           meta: { title: '操作日志', menu: true, icon: 'FileClock', permission: 'log.view' },
         },
         {
+          path: 'auth-logs',
+          name: 'auth-logs',
+          component: () => import('@/views/system/AuthLogView.vue'),
+          meta: { title: '认证日志', menu: true, icon: 'KeyRound', permission: 'log.auth.view' },
+        },
+        {
           path: 'accounts',
           name: 'accounts',
           component: () => import('@/views/system/AccountView.vue'),
