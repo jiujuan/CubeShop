@@ -28,6 +28,9 @@ const {
   pullShippingMock,
   batchShipImportMock,
   downloadBatchShipTemplateMock,
+  getShippingChannelMock,
+  updateShippingChannelMock,
+  getShippingDetailMock,
 } = vi.hoisted(() => ({
   getOrdersMock: vi.fn(),
   shipOrderMock: vi.fn(),
@@ -40,6 +43,9 @@ const {
   pullShippingMock: vi.fn(),
   batchShipImportMock: vi.fn(),
   downloadBatchShipTemplateMock: vi.fn(),
+  getShippingChannelMock: vi.fn(),
+  updateShippingChannelMock: vi.fn(),
+  getShippingDetailMock: vi.fn(),
 }))
 
 vi.mock('@/api/order', () => ({
@@ -56,6 +62,9 @@ vi.mock('@/api/order', () => ({
   pullShipping: pullShippingMock,
   batchShipImport: batchShipImportMock,
   downloadBatchShipTemplate: downloadBatchShipTemplateMock,
+  getShippingChannel: getShippingChannelMock,
+  updateShippingChannel: updateShippingChannelMock,
+  getShippingDetail: getShippingDetailMock,
   ORDER_STATUS_LABELS: {
     pending_payment: '待支付',
     paid: '已支付',
@@ -284,9 +293,10 @@ describe('T-047 批量发货页', () => {
         data: {
           success: 0,
           total: 2,
+          // 字段名与后端一致：reason（非 message）
           failed: [
-            { row: 1, order_no: 'CS20260917001', message: '订单号不存在' },
-            { row: 2, order_no: '', message: '快递单号格式错误' },
+            { row: 1, order_no: 'CS20260917001', reason: '订单号不存在' },
+            { row: 2, order_no: '', reason: '快递单号格式错误' },
           ],
         },
       }),
@@ -306,6 +316,58 @@ describe('T-047 批量发货页', () => {
     expect(wrapper.find('[data-testid="batch-success"]').exists()).toBe(false)
   })
 
+  it('TC-047-F12 识别不一致时展示 warnings 提示且不阻断成功横幅', async () => {
+    batchShipImportMock.mockResolvedValue({
+      data: {
+        data: {
+          success: 2,
+          total: 2,
+          failed: [],
+          warnings: [
+            {
+              row: 2,
+              order_no: 'CS20260917001',
+              tracking_no: 'YT12345678',
+              filled: 'ZTO',
+              detected: 'YTO',
+              detected_name: '圆通速递',
+            },
+          ],
+        },
+      },
+    })
+    const { wrapper } = await mountView(BatchShipView)
+
+    await pickXlsx(wrapper)
+    await flushPromises()
+    await wrapper.find('[data-testid="batch-upload"]').trigger('click')
+    await flushPromises()
+
+    // 已按填写内容发货：成功横幅仍在
+    expect(wrapper.find('[data-testid="batch-success"]').exists()).toBe(true)
+    const warnings = wrapper.find('[data-testid="batch-warnings"]')
+    expect(warnings.exists()).toBe(true)
+    expect(warnings.text()).toContain('圆通速递')
+    expect(warnings.text()).toContain('YTO')
+    // 明确告知仅供参考
+    expect(warnings.text()).toContain('仅供参考')
+  })
+
+  it('TC-047-F13 无 warnings 时不展示提示区', async () => {
+    batchShipImportMock.mockResolvedValue({
+      data: { data: { success: 1, total: 1, failed: [], warnings: [] } },
+    })
+    const { wrapper } = await mountView(BatchShipView)
+
+    await pickXlsx(wrapper)
+    await flushPromises()
+    await wrapper.find('[data-testid="batch-upload"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="batch-success"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="batch-warnings"]').exists()).toBe(false)
+  })
+
   it('TC-047-F11 非 xlsx/xls 文件被拒绝', async () => {
     const { wrapper } = await mountView(BatchShipView)
     await pickXlsx(wrapper, 'doc.pdf')
@@ -317,7 +379,10 @@ describe('T-047 批量发货页', () => {
 })
 
 function companyFixture(overrides: Record<string, unknown> = {}) {
-  return { id: 1, code: 'SF', name: '顺丰速运', channel_code: 'shunfeng', sort: 10, status: 1, ...overrides }
+  return {
+    id: 1, code: 'SF', name: '顺丰速运', channel_code: 'shunfeng',
+    carrier_codes: { kuaidi100: 'shunfeng' }, sort: 10, status: 1, ...overrides,
+  }
 }
 
 describe('T-047 快递公司字典页', () => {
@@ -336,16 +401,18 @@ describe('T-047 快递公司字典页', () => {
 
     await wrapper.get('[data-testid="company-form-code"]').setValue('JD')
     await wrapper.get('[data-testid="company-form-name"]').setValue('京东物流')
-    await wrapper.get('[data-testid="company-form-channel"]').setValue('jd')
+    await wrapper.get('[data-testid="company-form-carrier-kuaidi100"]').setValue('jd')
     await flushPromises()
     expect(save.attributes('disabled')).toBeUndefined()
 
     await save.trigger('click')
     await flushPromises()
 
+    // channel_code 为历史兼容列，随 carrier_codes.kuaidi100 同步写入，避免两处不一致
     expect(createShippingCompanyMock).toHaveBeenCalledWith({
       code: 'JD',
       name: '京东物流',
+      carrier_codes: { kuaidi100: 'jd' },
       channel_code: 'jd',
       sort: 0,
       status: 1,
@@ -438,5 +505,144 @@ describe('T-047 物流监控页', () => {
     const { wrapper } = await mountView(ShippingMonitorView, { permissions: [], roles: ['operator'] })
 
     expect(wrapper.find('[data-testid="monitor-pull-51"]').exists()).toBe(false)
+  })
+
+  /** 渠道信息 mock：默认「快递100 + 后台配置 + 密钥已配置」 */
+  function channelInfo(overrides: Record<string, unknown> = {}) {
+    return {
+      configured: 'kuaidi100',
+      channel: 'kuaidi100',
+      label: '快递100',
+      source: 'database',
+      available: true,
+      key_configured: true,
+      customer_configured: true,
+      options: [
+        { value: '', label: '跟随环境配置（.env）' },
+        { value: 'kuaidi100', label: '快递100' },
+        { value: 'mock', label: '本地演示（Mock，不发真实请求）' },
+        { value: 'off', label: '关闭轨迹查询' },
+      ],
+      ...overrides,
+    }
+  }
+
+  function monitorList() {
+    getShippingsMock.mockResolvedValue({
+      data: {
+        data: {
+          list: [shippingRow()],
+          pagination: { page: 1, page_size: 20, total: 1, total_pages: 1 },
+        },
+      },
+    })
+  }
+
+  it('TC-047-F14 展示当前渠道与密钥状态（不回显密钥明文）', async () => {
+    getShippingChannelMock.mockResolvedValue({ data: { data: channelInfo() } })
+    monitorList()
+    const { wrapper } = await mountView(ShippingMonitorView)
+
+    expect(wrapper.find('[data-testid="channel-label"]').text()).toBe('快递100')
+    expect(wrapper.find('[data-testid="channel-available"]').text()).toBe('可查询')
+    expect(wrapper.find('[data-testid="channel-source"]').text()).toBe('后台配置')
+    expect(wrapper.find('[data-testid="channel-key"]').text()).toBe('已配置')
+    // 密钥只在 .env 维护，页面应提示而非提供输入框
+    expect(wrapper.find('[data-testid="channel-card"]').text()).toContain('SHIPPING_CHANNEL_KEY')
+  })
+
+  it('TC-047-F15 切换渠道调用接口并重新读取', async () => {
+    getShippingChannelMock.mockResolvedValue({ data: { data: channelInfo({ configured: '', source: 'env' }) } })
+    updateShippingChannelMock.mockResolvedValue({
+      data: { data: { configured: 'mock', channel: 'mock' }, message: '物流渠道已切换' },
+    })
+    monitorList()
+    const { wrapper } = await mountView(ShippingMonitorView)
+
+    expect(wrapper.find('[data-testid="channel-source"]').text()).toBe('环境配置（.env）')
+
+    await wrapper.find('[data-testid="channel-switch"]').setValue('mock')
+    await flushPromises()
+
+    expect(updateShippingChannelMock).toHaveBeenCalledWith('mock')
+    // 切换后重新拉取渠道信息（初始 1 次 + 刷新 1 次）
+    expect(getShippingChannelMock).toHaveBeenCalledTimes(2)
+  })
+
+  it('TC-047-F16 运单轨迹详情与用户端同口径（时间线倒序）', async () => {
+    getShippingChannelMock.mockResolvedValue({ data: { data: channelInfo() } })
+    getShippingDetailMock.mockResolvedValue({
+      data: {
+        data: {
+          id: 51,
+          order_id: 1001,
+          order_no: 'CS20260917001',
+          company_code: 'SF',
+          company_name: '顺丰速运',
+          tracking_no: 'SF12345678',
+          phone: '13800000000',
+          trace_status: 'in_transit',
+          shipped_at: '2026-09-01 10:00:00',
+          delivered_at: null,
+          pull_fail_count: 0,
+          last_fail_message: null,
+          has_trace: true,
+          traces: [
+            { context: '快件已到达中转中心', occurred_at: '2026-09-02 10:00:00' },
+            { context: '快件已揽收', occurred_at: '2026-09-01 09:00:00' },
+          ],
+        },
+      },
+    })
+    monitorList()
+    const { wrapper } = await mountView(ShippingMonitorView)
+
+    await wrapper.find('[data-testid="monitor-detail-51"]').trigger('click')
+    await flushPromises()
+
+    const list = wrapper.find('[data-testid="detail-trace-list"]')
+    expect(list.exists()).toBe(true)
+    expect(list.findAll('li')).toHaveLength(2)
+    // 最新在顶
+    expect(list.findAll('li')[0].text()).toContain('快件已到达中转中心')
+    expect(wrapper.find('[data-testid="detail-status"]').text()).toBe('运输中')
+
+    // 关闭弹层
+    await wrapper.find('[data-testid="detail-close"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-testid="detail-mask"]').exists()).toBe(false)
+  })
+
+  it('TC-047-F17 无轨迹时详情弹层展示空态而非时间线', async () => {
+    getShippingChannelMock.mockResolvedValue({ data: { data: channelInfo() } })
+    getShippingDetailMock.mockResolvedValue({
+      data: {
+        data: {
+          id: 51,
+          order_id: 1001,
+          order_no: 'CS20260917001',
+          company_code: 'SF',
+          company_name: '顺丰速运',
+          tracking_no: 'SF12345678',
+          phone: null,
+          trace_status: 'pending',
+          shipped_at: '2026-09-01 10:00:00',
+          delivered_at: null,
+          pull_fail_count: 1,
+          last_fail_message: '查询渠道超时',
+          has_trace: false,
+          traces: [],
+        },
+      },
+    })
+    monitorList()
+    const { wrapper } = await mountView(ShippingMonitorView)
+
+    await wrapper.find('[data-testid="monitor-detail-51"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="detail-trace-list"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="detail-trace-empty"]').text()).toContain('暂无轨迹')
+    expect(wrapper.find('[data-testid="detail-fail"]').text()).toContain('查询渠道超时')
   })
 })

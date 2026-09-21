@@ -111,6 +111,38 @@ async function doUpload() {
       <p class="font-medium text-green-600">批量发货完成：成功 {{ result.success }} / 共 {{ result.total }} 单</p>
     </div>
 
+    <!-- 结果：识别提示（不阻断，已按填写内容执行） -->
+    <div
+      v-if="result && result.warnings && result.warnings.length"
+      data-testid="batch-warnings"
+      class="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-4 text-[13px]"
+    >
+      <p class="font-medium text-amber-700">
+        以下 {{ result.warnings.length }} 行的快递公司识别结果与填写不一致，已按填写内容发货，请复核
+      </p>
+      <table class="mt-2 w-full text-[13px]">
+        <thead>
+          <tr class="border-b border-amber-200 text-left text-amber-700/70">
+            <th class="w-16 px-3 py-1.5">行号</th>
+            <th class="px-3 py-1.5">订单号</th>
+            <th class="px-3 py-1.5">运单号</th>
+            <th class="px-3 py-1.5">填写</th>
+            <th class="px-3 py-1.5">识别结果</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-for="(row, idx) in result.warnings" :key="idx" class="border-b border-amber-100">
+            <td class="px-3 py-1.5 text-slate-500">{{ row.row }}</td>
+            <td class="px-3 py-1.5 font-mono text-black">{{ row.order_no || '—' }}</td>
+            <td class="px-3 py-1.5 font-mono text-slate-600">{{ row.tracking_no }}</td>
+            <td class="px-3 py-1.5 text-slate-500">{{ row.filled }}</td>
+            <td class="px-3 py-1.5 text-amber-700">{{ row.detected_name }}（{{ row.detected }}）</td>
+          </tr>
+        </tbody>
+      </table>
+      <p class="mt-2 text-[12px] text-slate-400">识别结果由快递100 提供，仅供参考；如有疑问请以实际承运快递为准。</p>
+    </div>
+
     <!-- 结果：失败明细 -->
     <div v-if="result && result.failed.length" data-testid="batch-failed" class="mt-4">
       <p class="mb-2 rounded-lg border border-red-200 bg-red-50 p-3 text-[13px] font-medium text-red-600">
@@ -128,7 +160,7 @@ async function doUpload() {
           <tr v-for="(row, idx) in result.failed" :key="idx" class="border-b border-slate-100">
             <td class="px-3 py-1.5 text-slate-500">{{ row.row }}</td>
             <td class="px-3 py-1.5 font-mono text-black">{{ row.order_no || '—' }}</td>
-            <td class="px-3 py-1.5 text-red-500">{{ row.message }}</td>
+            <td class="px-3 py-1.5 text-red-500">{{ row.reason }}</td>
           </tr>
         </tbody>
       </table>

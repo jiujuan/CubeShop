@@ -3,6 +3,7 @@ import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
   acceptOrder,
+  detectShippingCompany,
   exportOrders,
   getEnabledShippingCompanies,
   getOrders,
@@ -45,6 +46,11 @@ const shipTrackingTouched = ref(false)
 const shipRemark = ref('')
 const shipConfirmStep = ref(false)
 const shipping = ref(false)
+
+// 运单号智能识别（V1.1 三期）：结果由快递100 提供，**仅供参考**，可一键采用也可忽略
+const detecting = ref(false)
+const detected = ref<{ guess: string; name: string } | null>(null)
+const detectMessage = ref('')
 const acceptTarget = ref<AdminOrder | null>(null)
 const acceptRemark = ref('')
 const accepting = ref(false)
@@ -113,6 +119,10 @@ async function openShip(order: AdminOrder) {
   shipTrackingTouched.value = false
   shipRemark.value = ''
   shipConfirmStep.value = false
+  // 重置上一单的识别结果，避免串单
+  detecting.value = false
+  detected.value = null
+  detectMessage.value = ''
   if (!shipCompanies.value.length) {
     try {
       const { data } = await getEnabledShippingCompanies()
@@ -121,6 +131,52 @@ async function openShip(order: AdminOrder) {
       shipCompanies.value = []
     }
   }
+}
+
+/** 识别结果是否与当前选择冲突（决定要不要给「采用」入口） */
+const detectMismatch = computed(
+  () => detected.value !== null && detected.value.guess !== shipCompanyCode.value,
+)
+
+/**
+ * 识别运单号所属快递公司（V1.1 三期）
+ *
+ * 渠道未配置 / 服务异常 / 无法识别 → 一律只提示，绝不阻断人工选择。
+ * 官方不保证 100% 准确，故不自动改写用户已选的快递公司。
+ */
+async function doDetectCompany() {
+  const no = shipTrackingNo.value.trim()
+  if (detecting.value || no === '' || shipTrackingError.value !== '') return
+
+  detecting.value = true
+  detected.value = null
+  detectMessage.value = ''
+  try {
+    const { data } = await detectShippingCompany(no)
+    const guess = data.data.guess
+    if (!guess) {
+      detectMessage.value = '未能识别该单号，请手动选择快递公司'
+
+      return
+    }
+    const name = data.data.candidates[0]?.name ?? guess
+    detected.value = { guess, name }
+    detectMessage.value =
+      guess === shipCompanyCode.value
+        ? `识别结果：${name}，与当前选择一致`
+        : `识别结果：${name}（${guess}），与当前选择不一致`
+  } catch {
+    detectMessage.value = '识别服务暂不可用，请手动选择快递公司'
+  } finally {
+    detecting.value = false
+  }
+}
+
+/** 采用识别结果（仍需人工确认，不自动填） */
+function applyDetected() {
+  if (!detected.value) return
+  shipCompanyCode.value = detected.value.guess
+  detectMessage.value = `已采用识别结果：${detected.value.name}`
 }
 
 /** 单号粘贴：去除所有空白字符（防止从快递单复制出空格/换行） */
@@ -340,18 +396,47 @@ onMounted(() => load())
           </select>
 
           <label class="mt-3 block text-xs text-slate-500">快递单号</label>
-          <input
-            v-model="shipTrackingNo"
-            data-testid="ship-tracking-no"
-            type="text"
-            placeholder="8~32 位字母或数字"
-            class="mt-1 w-full rounded-lg border px-3 py-1.5 text-[13px] font-mono outline-none"
-            :class="shipTrackingTouched && shipTrackingError ? 'border-red-400 focus:border-red-400' : 'border-slate-200 focus:border-[#1677ff]'"
-            @blur="shipTrackingTouched = true"
-            @paste="onTrackingPaste"
-          />
+          <div class="mt-1 flex items-start gap-2">
+            <input
+              v-model="shipTrackingNo"
+              data-testid="ship-tracking-no"
+              type="text"
+              placeholder="8~32 位字母或数字"
+              class="min-w-0 flex-1 rounded-lg border px-3 py-1.5 text-[13px] font-mono outline-none"
+              :class="shipTrackingTouched && shipTrackingError ? 'border-red-400 focus:border-red-400' : 'border-slate-200 focus:border-[#1677ff]'"
+              @blur="shipTrackingTouched = true"
+              @paste="onTrackingPaste"
+            />
+            <Button
+              variant="outline"
+              class="shrink-0"
+              data-testid="ship-detect-company"
+              :disabled="detecting || shipTrackingNo.trim() === '' || shipTrackingError !== ''"
+              @click="doDetectCompany"
+            >
+              {{ detecting ? '识别中…' : '识别' }}
+            </Button>
+          </div>
           <p v-if="shipTrackingTouched && shipTrackingError" data-testid="ship-tracking-error" class="mt-1 text-xs text-red-500">
             {{ shipTrackingError }}
+          </p>
+          <p
+            v-if="detectMessage"
+            data-testid="ship-detect-hint"
+            class="mt-1 text-xs"
+            :class="detectMismatch ? 'text-amber-600' : 'text-slate-500'"
+          >
+            {{ detectMessage }}
+            <button
+              v-if="detectMismatch"
+              type="button"
+              data-testid="ship-detect-apply"
+              class="ml-1 text-[#1677ff] underline"
+              @click="applyDetected"
+            >
+              采用
+            </button>
+            <span v-if="detected" class="ml-1 text-slate-400">（由快递100 猜测，仅供参考）</span>
           </p>
 
           <label class="mt-3 block text-xs text-slate-500">备注（可选）</label>

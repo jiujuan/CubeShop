@@ -432,12 +432,18 @@ export function getEnabledShippingCompanies() {
   return request.get<ApiResult<EnabledShippingCompany[]>>('/admin/shipping-companies/enabled')
 }
 
-/** 快递公司字典行（管理页；GET /admin/shipping-companies，权限 shipping.manage） */
+/**
+ * 快递公司字典行（管理页；GET /admin/shipping-companies，权限 shipping.manage）
+ *
+ * `carrier_codes` 为多渠道承运商编码映射 { kuaidi100: 'shunfeng', cainiao: 'SF', jd_cloud: 'JD' }。
+ * `channel_code` 是快递100 的历史兼容列，新数据以 carrier_codes.kuaidi100 为准。
+ */
 export interface ShippingCompany {
   id: number
   code: string
   name: string
   channel_code: string | null
+  carrier_codes?: Record<string, string> | null
   sort: number
   status: number
   created_at?: string
@@ -448,6 +454,7 @@ export interface ShippingCompanyPayload {
   code?: string
   name?: string
   channel_code?: string | null
+  carrier_codes?: Record<string, string> | null
   sort?: number
   status?: number
 }
@@ -519,11 +526,87 @@ export function pullShipping(id: number) {
   return request.post<ApiResult<PullResult>>(`/admin/shippings/${id}/pull`)
 }
 
+/**
+ * 当前物流查询渠道（GET /admin/shippings/channel，权限 order.view）
+ *
+ * ⚠️ 只回显「密钥是否已配置」，接口不返回 key/customer 明文。
+ */
+export interface ShippingChannelInfo {
+  /** 后台配置值：'' = 跟随 .env */
+  configured: string
+  /** 实际生效渠道；null = 未启用（关闭或未配置） */
+  channel: string | null
+  label: string
+  /** database = 后台已覆盖；env = 跟随环境配置 */
+  source: 'database' | 'env'
+  /** 密钥齐备且渠道可用，能真正发起查询 */
+  available: boolean
+  key_configured: boolean
+  customer_configured: boolean
+  options: Array<{ value: string; label: string }>
+}
+
+export function getShippingChannel() {
+  return request.get<ApiResult<ShippingChannelInfo>>('/admin/shippings/channel')
+}
+
+/** 切换渠道（PUT /admin/shippings/channel，权限 shipping.manage）；密钥仍走 .env */
+export function updateShippingChannel(channel: string) {
+  return request.put<ApiResult<{ configured: string; channel: string | null }>>('/admin/shippings/channel', { channel })
+}
+
+/** 运单轨迹详情（GET /admin/shippings/{id}，权限 order.view）—— 与用户端订单物流同口径 */
+export interface ShippingDetail {
+  id: number
+  order_id: number
+  order_no: string | null
+  company_code: string
+  company_name: string
+  tracking_no: string
+  phone: string | null
+  trace_status: string
+  shipped_at: string | null
+  delivered_at: string | null
+  pull_fail_count: number
+  last_fail_message: string | null
+  has_trace: boolean
+  traces: Array<{ context: string; occurred_at: string }>
+}
+
+export function getShippingDetail(id: number) {
+  return request.get<ApiResult<ShippingDetail>>(`/admin/shippings/${id}`)
+}
+
+/** 智能识别提示行（V1.1 三期）：识别结果与填写的公司编码不一致，已按填写执行，仅供参考 */
+export interface BatchShipWarning {
+  row: number
+  order_no: string
+  tracking_no: string
+  filled: string
+  detected: string
+  detected_name: string
+}
+
 /** 批量发货结果（预校验失败时 failed 非空，success=0） */
 export interface BatchShipResult {
   success: number
   total: number
-  failed: Array<{ row: number; order_no: string; message: string }>
+  /** 字段名与后端保持一致：reason（非 message） */
+  failed: Array<{ row: number; order_no: string; reason: string }>
+  /** 仅成功返回时存在；空数组表示全部一致 */
+  warnings?: BatchShipWarning[]
+}
+
+/** 运单号智能识别快递公司（V1.1 三期） */
+export interface DetectCompanyResult {
+  tracking_no: string
+  candidates: Array<{ code: string; name: string }>
+  /** 相似度最高的候选内部编码；无法识别为 null */
+  guess: string | null
+}
+
+export function detectShippingCompany(trackingNo: string) {
+  return request.post<ApiResult<DetectCompanyResult>>('/admin/orders/detect-company', { tracking_no: trackingNo })
 }
 
 export function batchShipImport(file: File) {

@@ -14,8 +14,12 @@ import TablePagination from '@/components/TablePagination.vue'
 
 /**
  * 快递公司字典（V1.1 T-047，E03；权限 shipping.manage）
- * CRUD + 启停 + 排序 + channel_code（第三方查询渠道编码）。
+ * CRUD + 启停 + 排序 + 多渠道承运商编码 `carrier_codes`（快递100 / 菜鸟奇门 / 京东云仓）。
  * 被运单引用的编码禁止删除（后端 40009），建议停用。
+ *
+ * ⚠️ 同一个快递公司在各体系里编码不同（SF / shunfeng / 奇门 logisticsCode），
+ * 统一存 `carrier_codes.{渠道}`，解析由后端 App\Support\CarrierCode 裁决。
+ * `channel_code` 是快递100 的历史兼容列，保存时同步写入以免两处不一致。
  */
 const loading = ref(true)
 const list = ref<ShippingCompany[]>([])
@@ -26,9 +30,21 @@ const statusFilter = ref<'' | 0 | 1>('')
 
 // 编辑弹窗：{} 形态=新增（无 id），完整 ShippingCompany=编辑
 const editing = ref<ShippingCompany | (Omit<ShippingCompany, 'id'> & { id?: never }) | null>(null)
-const form = ref({ code: '', name: '', channel_code: '', sort: 0, status: 1 })
+const form = ref({ code: '', name: '', carrier_codes: {} as Record<string, string>, sort: 0, status: 1 })
 const saving = ref(false)
 const deleting = ref<ShippingCompany | null>(null)
+
+/** 可维护编码的渠道清单，须与后端 App\Support\CarrierCode::CHANNELS 保持一致 */
+const CARRIER_CHANNELS = [
+  { key: 'kuaidi100', label: '快递100', placeholder: '如 shunfeng' },
+  { key: 'cainiao', label: '菜鸟奇门', placeholder: '如 SF' },
+  { key: 'jd_cloud', label: '京东云仓', placeholder: '如 JD' },
+] as const
+
+/** 已配置渠道数（列表展示用） */
+function configuredCount(company: ShippingCompany): number {
+  return Object.values(company.carrier_codes ?? {}).filter((v) => String(v).trim() !== '').length
+}
 
 const isCreate = computed(() => editing.value !== null && editing.value.id === undefined)
 const formValid = computed(() => form.value.code.trim() !== '' && form.value.name.trim() !== '')
@@ -54,8 +70,8 @@ function search() {
 }
 
 function openCreate() {
-  editing.value = { code: '', name: '', channel_code: null, sort: 0, status: 1 }
-  form.value = { code: '', name: '', channel_code: '', sort: list.value.length ? Math.max(...list.value.map((c) => c.sort)) + 10 : 0, status: 1 }
+  editing.value = { code: '', name: '', channel_code: null, carrier_codes: null, sort: 0, status: 1 }
+  form.value = { code: '', name: '', carrier_codes: {}, sort: list.value.length ? Math.max(...list.value.map((c) => c.sort)) + 10 : 0, status: 1 }
 }
 
 function openEdit(company: ShippingCompany) {
@@ -63,7 +79,7 @@ function openEdit(company: ShippingCompany) {
   form.value = {
     code: company.code,
     name: company.name,
-    channel_code: company.channel_code ?? '',
+    carrier_codes: { ...(company.carrier_codes ?? {}) },
     sort: company.sort,
     status: company.status,
   }
@@ -73,9 +89,16 @@ async function doSave() {
   if (!formValid.value || saving.value) return
   saving.value = true
   try {
+    // 去空值；channel_code 同步写入，保证历史兼容列与 carrier_codes.kuaidi100 不会两处打架
+    const codes: Record<string, string> = {}
+    for (const [key, value] of Object.entries(form.value.carrier_codes)) {
+      const trimmed = value.trim()
+      if (trimmed !== '') codes[key] = trimmed
+    }
     const payload = {
       name: form.value.name.trim(),
-      channel_code: form.value.channel_code.trim() || null,
+      carrier_codes: codes,
+      channel_code: codes.kuaidi100 ?? null,
       sort: form.value.sort,
       status: form.value.status,
     }
@@ -142,7 +165,7 @@ onMounted(() => load())
         <tr class="border-b border-slate-200 text-left text-slate-500">
           <th class="px-3 py-1.5">编码</th>
           <th class="px-3 py-1.5">名称</th>
-          <th class="px-3 py-1.5">渠道编码</th>
+          <th class="px-3 py-1.5">渠道编码（快递100）</th>
           <th class="w-16 px-3 py-1.5">排序</th>
           <th class="w-20 px-3 py-1.5">状态</th>
           <th class="w-40 px-3 py-1.5">操作</th>
@@ -152,7 +175,10 @@ onMounted(() => load())
         <tr v-for="company in list" :key="company.id" class="border-b border-slate-100 hover:bg-slate-50">
           <td class="px-3 py-1.5 font-mono text-black">{{ company.code }}</td>
           <td class="px-3 py-1.5 text-black">{{ company.name }}</td>
-          <td class="px-3 py-1.5 font-mono text-slate-500">{{ company.channel_code || '—' }}</td>
+          <td class="px-3 py-1.5" data-testid="company-carrier">
+            <span class="font-mono text-slate-500">{{ company.carrier_codes?.kuaidi100 || company.channel_code || '—' }}</span>
+            <span v-if="configuredCount(company) > 1" class="ml-1 text-xs text-slate-400">等 {{ configuredCount(company) }} 个渠道</span>
+          </td>
           <td class="px-3 py-1.5 text-slate-500">{{ company.sort }}</td>
           <td class="px-3 py-1.5">
             <button
@@ -188,7 +214,7 @@ onMounted(() => load())
 
     <!-- 新增 / 编辑弹窗 -->
     <div v-if="editing" class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-6" @click.self="editing = null">
-      <div class="w-full max-w-sm rounded-xl bg-white p-6">
+      <div class="w-full max-w-md rounded-xl bg-white p-6">
         <h3 class="text-sm font-semibold text-slate-800">{{ isCreate ? '新增快递公司' : `编辑：${editing.name}` }}</h3>
 
         <label class="mt-4 block text-xs text-slate-500">编码 <span class="text-red-500">*</span></label>
@@ -205,12 +231,18 @@ onMounted(() => load())
           class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-1.5 text-[13px] outline-none focus:border-[#1677ff]"
         />
 
-        <label class="mt-3 block text-xs text-slate-500">渠道编码（第三方轨迹查询用，可空）</label>
-        <input
-          v-model="form.channel_code" type="text" placeholder="如 shunfeng"
-          data-testid="company-form-channel"
-          class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-1.5 text-[13px] font-mono outline-none focus:border-[#1677ff]"
-        />
+        <label class="mt-3 block text-xs text-slate-500">各渠道承运商编码（可空）</label>
+        <p class="mt-0.5 text-xs text-slate-400">留空表示未配置，届时回落平台编码</p>
+        <div v-for="channel in CARRIER_CHANNELS" :key="channel.key" class="mt-1 flex items-center gap-2">
+          <span class="w-16 shrink-0 text-xs text-slate-500">{{ channel.label }}</span>
+          <input
+            v-model="form.carrier_codes[channel.key]"
+            type="text"
+            :placeholder="channel.placeholder"
+            :data-testid="`company-form-carrier-${channel.key}`"
+            class="flex-1 rounded-lg border border-slate-200 px-3 py-1.5 text-[13px] font-mono outline-none focus:border-[#1677ff]"
+          />
+        </div>
 
         <div class="mt-3 flex gap-3">
           <div class="flex-1">
