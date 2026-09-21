@@ -44,7 +44,11 @@ return Application::configure(basePath: dirname(__DIR__))
 
         // SEC-10：反枚举频控中间件作用于全部 API 路由，
         // 中间件内部按前缀过滤，仅对公开资源（商品/工单/评价/订单）的 404 计数与限流。
-        $middleware->api(append: [\App\Http\Middleware\EnumGuard::class]);
+        $middleware->api(append: [
+            \App\Http\Middleware\EnumGuard::class,
+            // 认证尝试兜底日志（传输层 429/500）：仅对登录/注册入口生效，内部已短路非认证路径。
+            \App\Http\Middleware\LogAuthAttempt::class,
+        ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         // API 请求一律返回 JSON

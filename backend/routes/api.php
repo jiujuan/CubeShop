@@ -9,6 +9,7 @@ use App\Http\Controllers\Admin\CategoryController;
 use App\Http\Controllers\Admin\AddressController as AdminAddressController;
 use App\Http\Controllers\Admin\AccountController as AdminAccountController;
 use App\Http\Controllers\Admin\AnnouncementController as AdminAnnouncementController;
+use App\Http\Controllers\Admin\AuthLogController;
 use App\Http\Controllers\Admin\ConfigController;
 use App\Http\Controllers\Admin\HomeBannerController as AdminHomeBannerController;
 use App\Http\Controllers\Admin\NavItemController;
@@ -272,6 +273,10 @@ Route::middleware(['auth:sanctum', 'account.active'])->group(function () {
 
         // 操作日志 log.view
         Route::get('/operation-logs', [OperationLogController::class, 'index'])->middleware('permission:log.view');
+
+        // 认证日志 log.auth.view（登录/注册/登出，含失败明细）
+        Route::get('/auth-logs', [AuthLogController::class, 'index'])->middleware('permission:log.auth.view');
+        Route::get('/auth-logs/{id}', [AuthLogController::class, 'show'])->middleware('permission:log.auth.view');
 
         // 图片上传（登录即可，商品相关权限在业务层校验）
         Route::post('/upload', [UploadController::class, 'store']);

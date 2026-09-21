@@ -23,15 +23,17 @@ final class DeviceTokenService
     /**
      * 签发 Token 并记录设备指纹
      *
-     * @return array{token: string, device_id: int, expires_at: string|null}
+     * @return array{token: string, token_id: int, device_id: int, expires_at: string|null}
      */
     public function issue(Model $user, Request $request, string $name = 'api'): array
     {
         /** @var NewAccessToken $newToken */
         $newToken = $user->createToken($name);
 
+        $tokenId = $newToken->accessToken->getKey();
+
         $deviceId = DB::table('auth_tokens')->insertGetId([
-            'token_id' => $newToken->accessToken->getKey(),
+            'token_id' => $tokenId,
             'tokenable_type' => $user->getMorphClass(),
             'tokenable_id' => $user->getKey(),
             'ip' => $request->ip(),
@@ -42,6 +44,7 @@ final class DeviceTokenService
 
         return [
             'token' => $newToken->plainTextToken,
+            'token_id' => $tokenId,
             'device_id' => $deviceId,
             'expires_at' => $this->expiresAt(),
         ];

@@ -42,6 +42,8 @@ class RolePermissionSeeder extends Seeder
         'dashboard.view',
         'config.manage',
         'log.view',
+        // 认证日志（登录/注册/登出，含失败明细）：超管 + 运营可查看
+        'log.auth.view',
         'user.manage',
         'address.view',
         'address.manage',
@@ -135,6 +137,8 @@ class RolePermissionSeeder extends Seeder
             // 若后续要把「凭证配置」收紧为超管专属，只需从下列一处移除 wms.config.manage
             //（并同步幂等迁移 000081 的 OPERATOR_PERMISSIONS）。
             'wms.config.manage', 'wms.order.view', 'wms.order.manage', 'wms.return.manage',
+            // 认证日志（登录/注册/登出，含失败明细）：运营可查看以协助排障
+            'log.auth.view',
         ]);
 
         // 客服（cs_agent）：只做客服工作台与帮助中心，不含任何经营数据（CS-117 缺陷 #4）

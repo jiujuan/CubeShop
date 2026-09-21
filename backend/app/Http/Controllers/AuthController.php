@@ -3,9 +3,11 @@
 namespace App\Http\Controllers;
 
 use App\Exceptions\BusinessException;
+use App\Models\AuthLog;
 use App\Models\SysOperationLog;
 use App\Models\SysUser;
 use App\Models\User;
+use App\Services\Auth\AuthLogService;
 use App\Services\Common\CaptchaService;
 use App\Services\Common\OperationLogService;
 use App\Support\ApiResponse;
@@ -20,6 +22,7 @@ class AuthController extends Controller
     use ApiResponse;
 
     public function __construct(
+        private readonly AuthLogService $authLog,
         private readonly CaptchaService $captchaService,
         private readonly OperationLogService $operationLog,
         private readonly \App\Services\Common\ConfigService $config,
@@ -71,11 +74,23 @@ class AuthController extends Controller
                 'code.size' => '验证码为 '.CaptchaService::LENGTH.' 位',
             ]);
         } catch (ValidationException $e) {
+            // 注册校验失败（用户名/手机号/邮箱占用、密码强度、验证码位长等）：详尽记录但不向前端细分
+            $this->authLog->record(AuthLog::EVENT_REGISTER, false, [
+                'identifier' => $request->input('username'),
+                'fail_reason' => 'validation',
+                'detail' => ['fields' => array_keys($e->errors())],
+            ]);
+            $request->attributes->set('auth_log_skip', true);
             throw $this->flattenAccountTaken($e);
         }
 
         // V1.0 简化：code 为注册图形验证码
         if (! $this->captchaService->verify((string) $request->input('captcha_id', ''), $data['code'])) {
+            $this->authLog->record(AuthLog::EVENT_REGISTER, false, [
+                'identifier' => $data['username'],
+                'fail_reason' => 'captcha_error',
+            ]);
+            $request->attributes->set('auth_log_skip', true);
             throw BusinessException::badRequest('验证码错误或已过期');
         }
 
@@ -89,6 +104,15 @@ class AuthController extends Controller
         ]);
 
         $issued = $this->devices->issue($user, $request);
+
+        // 注册成功留痕（买家）
+        $this->authLog->record(AuthLog::EVENT_REGISTER, true, [
+            'user_id' => $user->id,
+            'actor_type' => AuthLog::ACTOR_CUSTOMER,
+            'identifier' => $user->username,
+            'device_id' => $issued['device_id'] ?? null,
+            'token_id' => $issued['token_id'] ?? null,
+        ]);
 
         return $this->success([
             'token' => $issued['token'],
@@ -107,42 +131,90 @@ class AuthController extends Controller
      */
     public function login(Request $request)
     {
-        $data = $request->validate([
-            'username' => ['required', 'string'],
-            'password' => ['required', 'string'],
-            'captcha_id' => ['required', 'string'],
-            // 验证码恒为 5 位：位数不对直接 422，避免用户少输一位拿到笼统的「验证码错误」
-            'captcha_code' => ['required', 'string', 'size:'.CaptchaService::LENGTH],
-        ], [
-            'captcha_code.size' => '验证码为 '.CaptchaService::LENGTH.' 位',
-        ]);
+        try {
+            $data = $request->validate([
+                'username' => ['required', 'string'],
+                'password' => ['required', 'string'],
+                'captcha_id' => ['required', 'string'],
+                // 验证码恒为 5 位：位数不对直接 422，避免用户少输一位拿到笼统的「验证码错误」
+                'captcha_code' => ['required', 'string', 'size:'.CaptchaService::LENGTH],
+            ], [
+                'captcha_code.size' => '验证码为 '.CaptchaService::LENGTH.' 位',
+            ]);
+        } catch (ValidationException $e) {
+            $this->authLog->record(AuthLog::EVENT_LOGIN, false, [
+                'identifier' => $request->input('username'),
+                'fail_reason' => 'validation',
+                'detail' => ['fields' => array_keys($e->errors())],
+            ]);
+            $request->attributes->set('auth_log_skip', true);
+            throw $e;
+        }
+
+        $identifier = $data['username'];
 
         // SEC-07：账号维度锁定先于密码校验——被锁账号即使密码正确也拒绝，避免"试出正确密码"
-        $this->loginSecurity->assertNotLocked($data['username']);
+        try {
+            $this->loginSecurity->assertNotLocked($identifier);
+        } catch (BusinessException $e) {
+            $this->authLog->record(AuthLog::EVENT_LOGIN, false, [
+                'identifier' => $identifier,
+                'actor_type' => $this->actorTypeOfIdentifier($identifier),
+                'fail_reason' => 'account_locked',
+            ]);
+            $request->attributes->set('auth_log_skip', true);
+            throw $e;
+        }
 
         if (! $this->captchaService->verify($data['captcha_id'], $data['captcha_code'])) {
+            $this->authLog->record(AuthLog::EVENT_LOGIN, false, [
+                'identifier' => $identifier,
+                'actor_type' => $this->actorTypeOfIdentifier($identifier),
+                'fail_reason' => 'captcha_error',
+            ]);
+            $request->attributes->set('auth_log_skip', true);
             throw BusinessException::badRequest('验证码错误或已过期');
         }
 
-        $user = $this->findAccount($data['username'], $data['password']);
+        $user = $this->findAccount($identifier, $data['password']);
 
         if (! $user) {
             // 失败计数；解锁条件为"窗口内失败达阈值"，与 IP 无关
-            $this->loginSecurity->recordFailure($data['username']);
+            $this->loginSecurity->recordFailure($identifier);
 
             // SEC-08：不区分"账号不存在"与"密码错误"
+            $this->authLog->record(AuthLog::EVENT_LOGIN, false, [
+                'identifier' => $identifier,
+                'actor_type' => $this->actorTypeOfIdentifier($identifier),
+                'fail_reason' => 'invalid_credential',
+            ]);
+            $request->attributes->set('auth_log_skip', true);
             throw BusinessException::badRequest('用户名或密码错误');
         }
 
         if ((int) $user->status !== 1) {
+            $this->authLog->record(AuthLog::EVENT_LOGIN, false, [
+                'user_id' => $user->id,
+                'actor_type' => $this->actorTypeOf($user),
+                'identifier' => $identifier,
+                'fail_reason' => 'account_disabled',
+            ]);
+            $request->attributes->set('auth_log_skip', true);
             throw BusinessException::conflict('账号已被禁用，请联系管理员');
         }
 
         if ($user->trashed()) {
+            $this->authLog->record(AuthLog::EVENT_LOGIN, false, [
+                'user_id' => $user->id,
+                'actor_type' => $this->actorTypeOf($user),
+                'identifier' => $identifier,
+                'fail_reason' => 'account_deleted',
+            ]);
+            $request->attributes->set('auth_log_skip', true);
             throw BusinessException::conflict('账号已注销');
         }
 
-        $this->loginSecurity->clear($data['username']);
+        $this->loginSecurity->clear($identifier);
 
         $user->forceFill([
             'last_login_at' => now(),
@@ -150,6 +222,15 @@ class AuthController extends Controller
         ])->save();
 
         $issued = $this->devices->issue($user, $request);
+
+        // 登录成功留痕（详细维度写入 auth_logs；通用 sys_operation_log 维持原记录）
+        $this->authLog->record(AuthLog::EVENT_LOGIN, true, [
+            'user_id' => $user->id,
+            'actor_type' => $this->actorTypeOf($user),
+            'identifier' => $identifier,
+            'device_id' => $issued['device_id'] ?? null,
+            'token_id' => $issued['token_id'] ?? null,
+        ]);
 
         $this->operationLog->record($user->id, 'auth', 'login', null, null, null, $this->actorTypeOf($user));
 
@@ -166,13 +247,29 @@ class AuthController extends Controller
      */
     public function logout(Request $request)
     {
-        $token = $request->user()->currentAccessToken();
+        $user = $request->user();
+        $token = $user->currentAccessToken();
+        $tokenId = $token?->getKey();
+
+        $deviceId = $tokenId !== null
+            ? \Illuminate\Support\Facades\DB::table('auth_tokens')->where('token_id', $tokenId)->value('id')
+            : null;
+
+        // 登出成功留痕
+        $this->authLog->record(AuthLog::EVENT_LOGOUT, true, [
+            'user_id' => $user->id,
+            'actor_type' => $this->actorTypeOf($user),
+            'identifier' => $user->username,
+            'device_id' => $deviceId,
+            'token_id' => $tokenId,
+        ]);
+
         if ($token) {
             \Illuminate\Support\Facades\DB::table('auth_tokens')
                 ->where('token_id', $token->getKey())
                 ->delete();
+            $token->delete();
         }
-        $request->user()->currentAccessToken()->delete();
 
         return $this->success(null, '已退出登录');
     }
@@ -411,6 +508,19 @@ class AuthController extends Controller
         return $user instanceof SysUser
             ? SysOperationLog::ACTOR_ADMIN
             : SysOperationLog::ACTOR_CUSTOMER;
+    }
+
+    /**
+     * 登录失败时账号归属无法确定（可能根本不存在），按标识是否命中 sys_user 做最佳推断，
+     * 仅用于审计标注，不影响对外响应（SEC-08 仍统一文案）。
+     */
+    private function actorTypeOfIdentifier(string $identifier): string
+    {
+        if (SysUser::where('username', $identifier)->orWhere('phone', $identifier)->exists()) {
+            return AuthLog::ACTOR_ADMIN;
+        }
+
+        return AuthLog::ACTOR_CUSTOMER;
     }
 
     /**
