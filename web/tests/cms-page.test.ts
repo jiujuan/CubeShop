@@ -41,6 +41,7 @@ function makeRouter(path: string) {
       { path: '/cart', component: { template: '<div />' } },
       { path: '/p/:slug', component: PageView },
       { path: '/service-center/faq', component: { template: '<div />' } },
+      { path: '/news', component: { template: '<div />' } },
     ],
   })
   return { router, path }
@@ -123,7 +124,7 @@ describe('CMS 站点单页 PageView（CMS-112）', () => {
     expect(screen.getByTestId('cms-page-not-found').textContent).toContain('页面不存在或已下线')
   })
 
-  it('页脚三个入口指向真实路由（不再是死链）', async () => {
+  it('页脚入口指向真实路由（不再是死链），且含新闻中心', async () => {
     const pinia = freshPinia()
     const { router } = makeRouter('/p/about')
     router.push('/p/about')
@@ -134,5 +135,8 @@ describe('CMS 站点单页 PageView（CMS-112）', () => {
     expect(screen.getByTestId('footer-about').getAttribute('href')).toBe('/p/about')
     expect(screen.getByTestId('footer-help').getAttribute('href')).toBe('/service-center/faq')
     expect(screen.getByTestId('footer-contact').getAttribute('href')).toBe('/p/contact')
+    // 新闻中心此前在前台没有任何入口（/news 只能直输 URL），页脚是它唯一的常驻露出位
+    expect(screen.getByTestId('footer-news').getAttribute('href')).toBe('/news')
+    expect(screen.getByTestId('footer-news').textContent).toContain('新闻中心')
   })
 })
