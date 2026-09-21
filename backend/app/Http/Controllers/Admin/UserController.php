@@ -8,9 +8,11 @@ use App\Models\Order;
 use App\Models\User;
 use App\Services\Common\OperationLogService;
 use App\Support\ApiResponse;
+use App\Support\WeakPassword;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\Rules\Password;
 
 /**
  * 后台用户管理（API 文档 8.8，权限 user.manage）
@@ -162,6 +164,60 @@ class UserController extends Controller
         return $this->success(
             $this->brief($this->withOrderStats(User::query())->find($id)),
             $data['status'] === 1 ? '已启用' : '已禁用',
+        );
+    }
+
+    /**
+     * 管理员重置买家密码（强制密码策略，重置后强制其重新登录）
+     * PUT /admin/users/{id}/password  body: { password, password_confirmation }
+     *
+     * 与用户自助改密（AuthController::changePassword）不同：管理员不校验原密码，
+     * 且重置后吊销该用户全部 Token（含当前会话），迫使用户用新密码重新登录。
+     */
+    public function changePassword(Request $request, int $id): JsonResponse
+    {
+        $min = (int) config('auth.password_min_length', 8);
+        $max = (int) config('auth.password_max_length', 32);
+
+        $data = $request->validate([
+            'password' => [
+                'required', 'string', "min:{$min}", "max:{$max}",
+                Password::min(8)->letters()->numbers(),
+                WeakPassword::rule(),
+            ],
+            'password_confirmation' => ['required', 'same:password'],
+        ], [
+            'password.min' => "新密码需至少 {$min} 位，且同时包含字母与数字",
+            'password.max' => "新密码不能超过 {$max} 位",
+            'password.letters' => '新密码需同时包含字母与数字',
+            'password.numbers' => '新密码需同时包含字母与数字',
+            'password_confirmation.same' => '两次输入的密码不一致',
+        ]);
+
+        $user = User::query()->find($id);
+        if (! $user) {
+            throw BusinessException::notFound('用户不存在');
+        }
+
+        // User 模型 password 已配置 hashed 自动转换，赋原始值即可
+        $user->password = $data['password'];
+        $user->save();
+
+        // 重置后吊销全部 Token，强制重新登录（不同用户自己改密，管理员操作不保留其任何会话）
+        $revoked = $user->tokens()->delete();
+
+        $this->operationLog->record(
+            $request->user()->id,
+            'user',
+            'reset_user_password',
+            'users',
+            $user->id,
+            sprintf('管理员重置用户 %s（#%d）密码，已吊销 %d 个会话强制其重新登录', $user->username, $user->id, $revoked),
+        );
+
+        return $this->success(
+            $this->brief($this->withOrderStats(User::query())->find($id)),
+            '密码已重置，用户需使用新密码重新登录',
         );
     }
 

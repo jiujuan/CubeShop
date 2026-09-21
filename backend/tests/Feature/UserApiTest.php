@@ -189,3 +189,77 @@ test('TC-USER-008 登录按 admin 优先 / 买家兜底正确分流', function (
     expect($buyerLogin->json('code'))->toBe(0)
         ->and($buyerLogin->json('data.user.roles'))->toBe([]);
 });
+
+// 管理员重置买家密码：成功 + 新密码可登录 + 旧密码失效 + 强制重新登录
+test('TC-USER-009 管理员重置密码后新密码生效且旧密码失效', function () {
+    $resp = $this->putJson('/api/admin/users/'.$this->buyer->id.'/password', [
+        'password' => 'NewPass@2024',
+        'password_confirmation' => 'NewPass@2024',
+    ], $this->adminAuth);
+
+    expect($resp->json('code'))->toBe(0)
+        ->and($resp->json('message'))->toContain('重置');
+
+    // 新密码可登录
+    $cap1 = app(\App\Services\Common\CaptchaService::class)->generate();
+    $ok = $this->postJson('/api/auth/login', [
+        'username' => $this->buyerUsername,
+        'password' => 'NewPass@2024',
+        'captcha_id' => $cap1['captcha_id'],
+        'captcha_code' => $cap1['debug_code'],
+    ]);
+    expect($ok->json('code'))->toBe(0);
+
+    // 旧密码失效
+    $cap2 = app(\App\Services\Common\CaptchaService::class)->generate();
+    $bad = $this->postJson('/api/auth/login', [
+        'username' => $this->buyerUsername,
+        'password' => 'Test@1234',
+        'captcha_id' => $cap2['captcha_id'],
+        'captcha_code' => $cap2['debug_code'],
+    ]);
+    expect($bad->json('code'))->toBe(40000);
+
+    // 旧 Token 被吊销 → 401
+    $this->getJson('/api/auth/me', $this->buyerAuth)->assertStatus(401);
+});
+
+// 重置密码校验：长度/复杂度/弱口令/两次不一致
+test('TC-USER-010 重置密码参数校验', function () {
+    $tooShort = $this->putJson('/api/admin/users/'.$this->buyer->id.'/password', [
+        'password' => 'abc123',
+        'password_confirmation' => 'abc123',
+    ], $this->adminAuth);
+    expect($tooShort->json('code'))->toBe(40000);
+
+    $pureNum = $this->putJson('/api/admin/users/'.$this->buyer->id.'/password', [
+        'password' => '12345678',
+        'password_confirmation' => '12345678',
+    ], $this->adminAuth);
+    expect($pureNum->json('code'))->toBe(40000);
+
+    $weak = $this->putJson('/api/admin/users/'.$this->buyer->id.'/password', [
+        'password' => 'Password1',
+        'password_confirmation' => 'Password1',
+    ], $this->adminAuth);
+    expect($weak->json('code'))->toBe(40000);
+
+    $mismatch = $this->putJson('/api/admin/users/'.$this->buyer->id.'/password', [
+        'password' => 'NewPass@2024',
+        'password_confirmation' => 'NewPass@2025',
+    ], $this->adminAuth);
+    expect($mismatch->json('code'))->toBe(40000);
+});
+
+// 无权限 / 用户不存在
+test('TC-USER-011 重置密码权限与存在性校验', function () {
+    $this->putJson('/api/admin/users/'.$this->buyer->id.'/password', [
+        'password' => 'NewPass@2024',
+        'password_confirmation' => 'NewPass@2024',
+    ], $this->buyerAuth)->assertStatus(403);
+
+    $this->putJson('/api/admin/users/99999999/password', [
+        'password' => 'NewPass@2024',
+        'password_confirmation' => 'NewPass@2024',
+    ], $this->adminAuth)->assertJson(['code' => 40004]);
+});

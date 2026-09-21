@@ -576,6 +576,7 @@ Route::middleware(['auth:sanctum', 'account.active'])->group(function () {
         Route::get('/users/{id}', [UserController::class, 'show'])->middleware('permission:user.manage');
         Route::put('/users/{id}', [UserController::class, 'update'])->middleware('permission:user.manage');
         Route::put('/users/{id}/status', [UserController::class, 'updateStatus'])->middleware('permission:user.manage');
+        Route::put('/users/{id}/password', [UserController::class, 'changePassword'])->middleware('permission:user.manage');
 
         // 收货地址管理（设计文档 CubeShop_Address_Design_v1.0 §5）
         // 查看：address.view（运营可核对）；代改：address.manage（仅超管，禁改默认/归属）
