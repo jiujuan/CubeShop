@@ -3,6 +3,7 @@ import { onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ChevronRight, Eye, ThumbsDown, ThumbsUp } from 'lucide-vue-next'
 import { getFaqArticle, postFaqFeedback, type FaqArticle } from '@/api/cs'
+import CmsArticleBody from '@/components/CmsArticleBody.vue'
 import FaqBreadcrumb from '@/components/FaqBreadcrumb.vue'
 import LoadingSpinner from '@/components/LoadingSpinner.vue'
 import ShopFooter from '@/components/ShopFooter.vue'
@@ -98,7 +99,13 @@ onMounted(load)
             <span>有帮助 {{ article.helpful_count }} · 无帮助 {{ article.unhelpful_count }}</span>
           </p>
           <!-- 正文：富文本 HTML（写入侧已白名单净化，见文件头注释） -->
-          <div class="faq-body mt-5 break-words text-sm leading-7 text-slate-700" data-testid="faq-content" v-html="article.content" />
+          <div class="faq-body mt-5 break-words text-sm leading-7 text-slate-700" data-testid="faq-content">
+            <!--
+              帮助中心不提供正文内联商品卡（后台也只在新闻中心文章上给「插入正文」入口），
+              这里不传商品 ⇒ 万一正文里残留标记，占位连同回退文案一并被摘掉，不留空壳。
+            -->
+            <CmsArticleBody :content="article.content" />
+          </div>
         </article>
 
         <!-- 反馈 -->

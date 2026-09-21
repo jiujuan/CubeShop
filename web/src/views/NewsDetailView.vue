@@ -5,6 +5,7 @@ import { ChevronRight, Eye, ShoppingBag } from 'lucide-vue-next'
 import { getNewsDetail, type NewsDetailResult } from '@/api/news'
 import { applySeo } from '@/composables/useSeo'
 import { BRAND_PLACEHOLDER, currentSiteName } from '@/stores/site'
+import CmsArticleBody from '@/components/CmsArticleBody.vue'
 import LoadingSpinner from '@/components/LoadingSpinner.vue'
 import ShopFooter from '@/components/ShopFooter.vue'
 import ShopHeader from '@/components/ShopHeader.vue'
@@ -29,6 +30,7 @@ const data = ref<NewsDetailResult | null>(null)
 const article = computed(() => data.value?.article ?? null)
 const channelName = computed(() => article.value?.category?.name ?? '')
 const tags = computed(() => article.value?.tags ?? [])
+const embeddedProducts = computed(() => data.value?.embedded_products ?? [])
 
 /** D8：Article JSON-LD（随详情数据生成；空则渲染空串，不挂垃圾标签） */
 const jsonLd = computed(() => {
@@ -147,9 +149,15 @@ watch(() => route.params.id, (val, old) => {
 
         <img v-if="article.cover_image" :src="article.cover_image" alt="" class="mt-4 max-h-72 w-full rounded-lg object-cover" data-testid="news-cover" />
 
-        <div class="cms-prose mt-5 break-words text-sm leading-7 text-slate-700" data-testid="news-content" v-html="article.content" />
+        <!--
+          正文交给共享的 CmsArticleBody：HTML 片段 v-html，内联商品卡渲染成真组件
+          （卡片用接口的实时数据渲染，所以改价后正文里的卡片立刻跟着变）。
+        -->
+        <div class="cms-prose mt-5 break-words text-sm leading-7 text-slate-700" data-testid="news-content">
+          <CmsArticleBody :content="article.content" :products="embeddedProducts" />
+        </div>
 
-        <!-- 关联种草商品（后期增强 §7） -->
+        <!-- 底部「相关商品」：作者没插进正文的那些（插进正文的不在这里重复） -->
         <section v-if="data?.products?.length" class="mt-8 border-t border-slate-100 pt-5" data-testid="news-products">
           <h2 class="mb-3 flex items-center gap-1.5 text-sm font-semibold text-slate-700">
             <ShoppingBag class="h-4 w-4 text-[#1677ff]" /> 相关商品

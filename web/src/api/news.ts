@@ -91,7 +91,19 @@ export interface NewsDetailResult {
   related: NewsListItem[]
   prev: NewsNeighbor | null
   next: NewsNeighbor | null
+  /**
+   * 底部「相关商品」——作者没把卡片插进正文的那部分
+   *
+   * 插进正文的商品归 `embedded_products`，不再在这里重复出现（一页只出现一次）。
+   */
   products: NewsProduct[]
+  /**
+   * 正文里内联的商品卡
+   *
+   * 正文 HTML 里只有占位容器（`id="news-product-{public_id}"`），卡片由前端在这个位置
+   * 用这份**实时**数据渲染 —— 因此改价后正文里的卡片立刻跟着变（正文里不存卡片 HTML）。
+   */
+  embedded_products: NewsProduct[]
 }
 
 /** 标签聚合项 */

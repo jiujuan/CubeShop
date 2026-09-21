@@ -183,6 +183,7 @@ describe('新闻详情 NewsDetailView', () => {
       prev: { id: 10, slug: 'prev-slug', title: '上一篇标题' },
       next: { id: 13, slug: null, title: '下一篇标题' },
       products: [{ id: 'p-1', title: '种草商品', subtitle: null, main_image: 'http://x/p.png', price: '99.00' }],
+      embedded_products: [],
     } },
   })
 
@@ -246,6 +247,65 @@ describe('新闻详情 NewsDetailView', () => {
     getNewsDetailMock.mockResolvedValue(payload)
     await renderDetail()
     expect(screen.queryByTestId('news-products')).toBeNull()
+  })
+
+  // ---- 正文内联商品卡（作者把卡片插在正文任意位置） ----
+
+  /** 正文里带占位容器的详情数据（后端把「独占一段」的标记换成这个 div） */
+  function inlinedPayload(placeholderId = 'news-product-01INLINE00000000000000001') {
+    const payload = detailPayload()
+    payload.data.data.article.content =
+      `<p>前半段</p><div id="${placeholderId}">［商品卡］</div><p>后半段</p>`
+    payload.data.data.embedded_products = [
+      { id: '01INLINE00000000000000001', title: '正文里的商品', subtitle: '副标题', main_image: 'http://x/inline.png', price: '12.50' },
+    ]
+    return payload
+  }
+
+  it('正文里的商品卡占位渲染成真卡片，位置留在正文中间', async () => {
+    getNewsDetailMock.mockResolvedValue(inlinedPayload())
+    const router = await renderDetail()
+
+    const card = screen.getByTestId('cms-inline-product-01INLINE00000000000000001')
+    expect(card.textContent).toContain('正文里的商品')
+    expect(card.textContent).toContain('12.50')
+
+    // 卡片夹在前后段落之间（段落顺序未被破坏）
+    const content = screen.getByTestId('news-content')
+    expect(content.textContent).toContain('前半段')
+    expect(content.textContent).toContain('后半段')
+    expect(content.textContent!.indexOf('前半段')).toBeLessThan(content.textContent!.indexOf('正文里的商品'))
+    expect(content.textContent!.indexOf('正文里的商品')).toBeLessThan(content.textContent!.indexOf('后半段'))
+    // 占位容器与回退文案都不该留在页面上
+    expect(content.innerHTML).not.toContain('［商品卡］')
+
+    await card.click()
+    await waitFor(() => expect(router.currentRoute.value.fullPath).toBe('/product/01INLINE00000000000000001'))
+  })
+
+  it('占位符指向的商品后端没给数据时整段丢掉（不留空壳）', async () => {
+    const payload = inlinedPayload()
+    // 后端对「未关联/已下架」的商品不给数据 → 该占位应被整段移除
+    payload.data.data.embedded_products = []
+    getNewsDetailMock.mockResolvedValue(payload)
+
+    await renderDetail()
+
+    expect(screen.queryByTestId('cms-inline-product-01INLINE00000000000000001')).toBeNull()
+    const content = screen.getByTestId('news-content')
+    expect(content.textContent).toContain('前半段')
+    expect(content.textContent).toContain('后半段')
+    expect(content.innerHTML).not.toContain('［商品卡］')
+  })
+
+  it('底部「相关商品」只列没插进正文的那些（后端已去重）', async () => {
+    getNewsDetailMock.mockResolvedValue(inlinedPayload())
+    await renderDetail()
+
+    // 内联了一件、底部一件：两处各自渲染，互不重复
+    expect(screen.getByTestId('cms-inline-product-01INLINE00000000000000001')).toBeTruthy()
+    expect(screen.getByTestId('news-products')).toBeTruthy()
+    expect(screen.getByTestId('news-product-p-1')).toBeTruthy()
   })
 
   it('文章不存在时显示未找到', async () => {
