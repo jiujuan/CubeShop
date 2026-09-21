@@ -10,7 +10,7 @@ namespace App\Support\Shipping;
  */
 class NullChannel implements ShippingChannelInterface
 {
-    public function query(string $companyCode, string $trackingNo): TraceResult
+    public function query(string $companyCode, string $trackingNo, ?string $phone = null): TraceResult
     {
         return TraceResult::fail('未配置物流轨迹查询渠道（SHIPPING_CHANNEL），无法查询');
     }

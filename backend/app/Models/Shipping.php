@@ -23,7 +23,7 @@ class Shipping extends Model
     public const TRACE_FAILED = 'failed';
 
     protected $fillable = [
-        'order_id', 'company_code', 'company_name', 'tracking_no',
+        'order_id', 'company_code', 'company_name', 'tracking_no', 'phone',
         'trace_status', 'pull_fail_count', 'last_fail_message', 'shipped_at', 'delivered_at',
     ];
 
@@ -40,5 +40,25 @@ class Shipping extends Model
     public function traces(): HasMany
     {
         return $this->hasMany(ShippingTrace::class)->orderByDesc('occurred_at');
+    }
+
+    /**
+     * 取轨迹查询所需的收件人手机号（V1.1 三期）
+     *
+     * 优先用发货时冗余的 `phone`；历史运单（000110 迁移前）为空时
+     * 回落到订单收货快照 `address_snapshot.contact_phone`，避免旧数据查不了顺丰/中通。
+     * 调用方建议 `with('order')` 预加载，避免 N+1。
+     */
+    public function resolvePhone(): ?string
+    {
+        $phone = trim((string) $this->phone);
+        if ($phone !== '') {
+            return $phone;
+        }
+
+        $snapshot = $this->order?->address_snapshot;
+        $fallback = is_array($snapshot) ? trim((string) ($snapshot['contact_phone'] ?? '')) : '';
+
+        return $fallback !== '' ? $fallback : null;
     }
 }

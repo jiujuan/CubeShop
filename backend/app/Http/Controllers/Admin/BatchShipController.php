@@ -75,13 +75,21 @@ class BatchShipController extends Controller
             'filename' => $request->file('file')->getClientOriginalName(),
             'total' => count($dataRows),
             'success' => $success,
+            'warnings' => count($result['warnings'] ?? []),
         ]);
+
+        $warnings = $result['warnings'] ?? [];
+        $message = "批量发货完成：成功 {$success} 单";
+        if ($warnings !== []) {
+            $message .= '，其中 '.count($warnings).' 行快递公司识别结果与填写不一致，请复核';
+        }
 
         return $this->success([
             'success' => $success,
             'total' => count($dataRows),
             'failed' => [],
-        ], "批量发货完成：成功 {$success} 单");
+            'warnings' => $warnings,
+        ], $message);
     }
 
     /**

@@ -6,6 +6,9 @@ use App\Models\FulfillmentOrder;
 use App\Models\Shipping;
 use App\Models\ShippingPackage;
 use App\Services\Wms\FulfillmentOrderService;
+use App\Support\CarrierCode;
+use App\Support\WmsProvider;
+use Illuminate\Support\Facades\Log;
 
 /**
  * 出库单确认收货回传（奇门 deliveryorder.confirm，WMS 计划 P3 / F1）
@@ -16,7 +19,10 @@ use App\Services\Wms\FulfillmentOrderService;
  * - **订单发货唯一入口** `OrderService::shipForShipment()`（经 markShipped），绝不另写订单状态；
  * - 主表 `shippings` 只存首包裹（订单展示链路零变化），全量包裹落 `shipping_packages`；
  * - 幂等：markShipped 同运单号幂等；若已发货但**运单号不一致** → 视为数据冲突，
- *   落告警并按已消费处理（状态机已终态，重推无意义，且不制造重推风暴）。
+ *   落告警并按已消费处理（状态机已终态，重推无意义，且不制造重推风暴）；
+ * - **入站归一**：仓方回传的承运商编码先经 `CarrierCode::fromChannel()` 转成平台码再落
+ *   `shippings.company_code`（详见 {@see self::normalizeCarrierCode()}）；原值仍保留在
+ *   `shipping_packages.carrier_code` 供溯源。
  */
 class DeliveryOrderConfirmHandler implements CallbackHandler
 {
@@ -50,7 +56,7 @@ class DeliveryOrderConfirmHandler implements CallbackHandler
             throw new \App\Exceptions\Wms\WmsBizException('回传缺少运单号（expressCode），无法确认发货');
         }
 
-        $carrierCode = (string) ($first['carrier_code'] ?? '');
+        $carrierCode = $this->normalizeCarrierCode((string) ($first['carrier_code'] ?? ''), $fo);
         $carrierName = (string) ($first['carrier_name'] ?? $carrierCode);
 
         /*
@@ -115,5 +121,43 @@ class DeliveryOrderConfirmHandler implements CallbackHandler
                 ],
             );
         }
+    }
+
+    /**
+     * 仓方承运商编码 → 平台码（入站归一）。
+     *
+     * `shippings.company_code` 只允许存平台内部 code —— 快递100 解析、后台筛选、导出都按这个口径。
+     * 仓方回传的是它们自己的体系（奇门 `logisticsCode`），原样落库会让同一张表出现
+     * `SF` / `shunfeng` / `OTHER` 三种互不兼容的取值，快递100 只能命中一半。
+     *
+     * 按**单据自身的 provider** 选渠道而非写死 cainiao —— 京东云仓（P8）接入后此处无需改动。
+     *
+     * 归一失败时**保留原值并告警**，绝不阻断发货：发货本身没问题，错的只是编码；
+     * 强行置空会让后续连补救转换的机会都没有。原值同时留在
+     * `shipping_packages.carrier_code` 供对账溯源。
+     */
+    private function normalizeCarrierCode(string $raw, FulfillmentOrder $fo): string
+    {
+        $raw = trim($raw);
+        if ($raw === '') {
+            return '';
+        }
+
+        $channel = (string) ($fo->provider ?: WmsProvider::CAINIAO);
+        $normalized = CarrierCode::fromChannel($raw, $channel);
+
+        if ($normalized !== null) {
+            return $normalized;
+        }
+
+        Log::warning('[WMS] 回传承运商编码无法归一为平台码', [
+            'outbound_no' => $fo->outbound_no,
+            'order_id' => $fo->order_id,
+            'warehouse_id' => $fo->warehouse_id,
+            'provider' => $channel,
+            'raw_carrier_code' => $raw,
+        ]);
+
+        return $raw;
     }
 }

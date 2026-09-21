@@ -4,20 +4,50 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Models\Shipping;
+use App\Services\Common\ConfigService;
+use App\Services\Common\OperationLogService;
 use App\Services\Shipping\TracePullService;
+use App\Support\Shipping\Kuaidi100Channel;
+use App\Support\Shipping\ShippingChannelInterface;
 use Illuminate\Http\Request;
 use App\Support\ApiResponse;
 use Illuminate\Http\JsonResponse;
 
 /**
  * 后台物流管理（V1.1 T-045 / T-047 前置接口）
+ *
+ * 三期补充：渠道查看/切换（system_configs.shipping.channel 覆盖 .env）、运单轨迹详情。
  */
 class ShippingController extends Controller
 {
     use ApiResponse;
 
-    public function __construct(private readonly TracePullService $tracePull)
-    {
+    /** 渠道配置项（后台可切换；密钥仍走 .env，不入库） */
+    public const CHANNEL_CONFIG_KEY = 'shipping.channel';
+
+    /**
+     * 可选渠道：'' 表示跟随 .env，off 表示强制关闭
+     *
+     * @var list<array{value: string, label: string}>
+     */
+    public const CHANNEL_OPTIONS = [
+        ['value' => '', 'label' => '跟随环境配置（.env）'],
+        ['value' => 'kuaidi100', 'label' => '快递100'],
+        ['value' => 'mock', 'label' => '本地演示（Mock，不发真实请求）'],
+        ['value' => 'off', 'label' => '关闭轨迹查询'],
+    ];
+
+    /** 渠道 → 展示名 */
+    private const CHANNEL_LABELS = [
+        'kuaidi100' => '快递100',
+        'mock' => '本地演示（Mock）',
+    ];
+
+    public function __construct(
+        private readonly TracePullService $tracePull,
+        private readonly ConfigService $config,
+        private readonly OperationLogService $operationLog,
+    ) {
     }
 
     /**
@@ -118,5 +148,115 @@ class ShippingController extends Controller
         }
 
         return $this->success($data, $result === TracePullService::RESULT_SKIPPED ? '未配置查询渠道，已跳过' : '拉取成功');
+    }
+
+    /**
+     * 运单轨迹详情（V1.1 三期；权限 order.view）
+     * GET /admin/shippings/{id}
+     *
+     * 与用户端 GET /orders/{id}/shipping 返回同一口径的轨迹时间线，
+     * 便于客服在后台直接核对买家看到的物流信息。
+     */
+    public function show(int $id): JsonResponse
+    {
+        $shipping = Shipping::query()
+            ->with('order:id,order_no')
+            ->find($id);
+
+        if (! $shipping) {
+            return $this->fail('物流记录不存在', 40004);
+        }
+
+        $traces = $shipping->traces()->orderByDesc('occurred_at')->orderByDesc('id')->get();
+
+        return $this->success([
+            'id' => $shipping->id,
+            'order_id' => $shipping->order_id,
+            'order_no' => $shipping->order?->order_no,
+            'company_code' => $shipping->company_code,
+            'company_name' => $shipping->company_name,
+            'tracking_no' => $shipping->tracking_no,
+            'phone' => $shipping->phone,
+            'trace_status' => $shipping->trace_status,
+            'shipped_at' => $shipping->shipped_at?->toDateTimeString(),
+            'delivered_at' => $shipping->delivered_at?->toDateTimeString(),
+            'pull_fail_count' => $shipping->pull_fail_count,
+            'last_fail_message' => $shipping->last_fail_message,
+            'has_trace' => $traces->isNotEmpty(),
+            'traces' => $traces->map(fn ($t) => [
+                'context' => $t->context,
+                'occurred_at' => $t->occurred_at->toDateTimeString(),
+            ])->all(),
+        ]);
+    }
+
+    /**
+     * 当前轨迹查询渠道（V1.1 三期；权限 order.view）
+     * GET /admin/shippings/channel
+     *
+     * ⚠️ 只回显「密钥是否已配置」，不返回 key/customer 明文。
+     */
+    public function channel(): JsonResponse
+    {
+        $configured = trim((string) ($this->config->get(self::CHANNEL_CONFIG_KEY) ?? ''));
+        $effective = $configured === 'off' ? null : $configured;
+        $effective = $effective !== '' ? $effective : config('services.shipping.channel');
+
+        $channel = app(ShippingChannelInterface::class);
+
+        return $this->success([
+            // 后台配置值：'' 表示跟随 .env
+            'configured' => $configured,
+            // 实际生效渠道（null = 未启用）
+            'channel' => $effective,
+            'label' => $effective === null ? '未启用' : (self::CHANNEL_LABELS[$effective] ?? $effective),
+            'source' => $configured === '' ? 'env' : 'database',
+            // 渠道能否真正发起查询（密钥齐备）
+            'available' => $channel->available(),
+            'key_configured' => trim((string) config('services.shipping.key')) !== '',
+            'customer_configured' => trim((string) config('services.shipping.customer')) !== '',
+            'options' => self::CHANNEL_OPTIONS,
+        ]);
+    }
+
+    /**
+     * 切换轨迹查询渠道（V1.1 三期；权限 shipping.manage）
+     * PUT /admin/shippings/channel  body: { channel: ''|kuaidi100|mock|off }
+     *
+     * 写入 system_configs 并即时生效（AppServiceProvider 每次启动用 DB 值覆盖 config）。
+     * 密钥不在此处维护：key/customer 仍需在 .env 配置（凭证不入库）。
+     */
+    public function updateChannel(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            // present + nullable：'' 是合法值（跟随 env），而 ConvertEmptyStringsToNull 会转成 null
+            'channel' => ['present', 'nullable', 'string', 'max:20'],
+        ]);
+
+        $channel = trim((string) ($data['channel'] ?? ''));
+
+        if (! in_array($channel, array_column(self::CHANNEL_OPTIONS, 'value'), true)) {
+            return $this->fail('不支持的物流渠道', 40000, ['allowed' => array_column(self::CHANNEL_OPTIONS, 'value')]);
+        }
+
+        $this->config->set(self::CHANNEL_CONFIG_KEY, $channel);
+        // 当前请求立即生效，无需等到下次启动
+        config(['services.shipping.channel' => $channel === 'off' ? null : $channel]);
+        // 渠道编码缓存随渠道切换失效
+        Kuaidi100Channel::flushCache();
+
+        $this->operationLog->record(
+            $request->user()->id,
+            'shipping',
+            'switch_channel',
+            'system_configs',
+            null,
+            ['shipping.channel' => $channel === '' ? '(跟随 .env)' : $channel],
+        );
+
+        return $this->success(
+            ['configured' => $channel, 'channel' => $channel === 'off' ? null : $channel],
+            $channel === '' ? '已恢复为跟随环境配置' : '物流渠道已切换',
+        );
     }
 }

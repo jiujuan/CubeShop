@@ -23,13 +23,17 @@ class T045FakeChannel implements ShippingChannelInterface
 {
     public array $calls = [];
 
+    /** 每次调用收到的手机号（V1.1 三期：验证 phone 是否透传到渠道） */
+    public array $phones = [];
+
     public ?Throwable $throw = null;
 
     public ?TraceResult $result = null;
 
-    public function query(string $companyCode, string $trackingNo): TraceResult
+    public function query(string $companyCode, string $trackingNo, ?string $phone = null): TraceResult
     {
         $this->calls[] = $companyCode.'|'.$trackingNo;
+        $this->phones[] = $phone;
 
         if ($this->throw) {
             throw $this->throw;
@@ -278,11 +282,11 @@ test('TC-TRC-045-08 Command 分批拉取与调用计数（mock 渠道）', funct
 
         public function __construct(private readonly ShippingChannelInterface $inner) {}
 
-        public function query(string $companyCode, string $trackingNo): TraceResult
+        public function query(string $companyCode, string $trackingNo, ?string $phone = null): TraceResult
         {
             $this->calls[] = $companyCode.'|'.$trackingNo;
 
-            return $this->inner->query($companyCode, $trackingNo);
+            return $this->inner->query($companyCode, $trackingNo, $phone);
         }
 
         public function available(): bool

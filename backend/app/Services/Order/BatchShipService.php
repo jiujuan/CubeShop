@@ -5,6 +5,7 @@ namespace App\Services\Order;
 use App\Models\ExpressCompany;
 use App\Models\Order;
 use App\Models\Shipping;
+use App\Support\Shipping\Kuaidi100AutoNumber;
 use App\Support\ShippingRules;
 use Illuminate\Support\Facades\DB;
 
@@ -15,25 +16,35 @@ use Illuminate\Support\Facades\DB;
  * 避免「部分成功」带来的对账困难；校验失败明细返回给前端下载修正后重传。
  *
  * Excel 列序（ShippingRules::BATCH_SHIP_HEADERS）：订单号、快递公司编码、运单号。
+ *
+ * V1.1 三期附加：运单号智能识别（快递100）。识别结果与填写的公司编码不一致时
+ * 只记入 `warnings` **提示复核**，不阻断——官方不保证识别 100% 准确，
+ * 商家整列填错是主要场景，但误判会打断正常发货，故以提示为准。
  */
 class BatchShipService
 {
-    public function __construct(private readonly OrderService $orders)
-    {
+    public function __construct(
+        private readonly OrderService $orders,
+        private readonly Kuaidi100AutoNumber $autoNumber,
+    ) {
     }
 
     /**
      * 逐行校验（不落库）。
      *
      * @param  array<int, array{0:string,1:string,2:string}>  $rows  数据行（不含表头）
-     * @return array{valid: list<array{order:Order, company_code:string, company_name:string, tracking_no:string}>, failed: list<array{row:int, order_no:string, reason:string}>}
+     * @return array{valid: list<array{order:Order, company_code:string, company_name:string, tracking_no:string}>, failed: list<array{row:int, order_no:string, reason:string}>, warnings: list<array{row:int, order_no:string, tracking_no:string, filled:string, detected:string, detected_name:string}>}
      */
     public function validateRows(array $rows): array
     {
         $valid = [];
         $failed = [];
+        $warnings = [];
         $seenOrderNos = [];
         $seenTracking = [];
+        // 识别限额：超过后跳过，避免大文件逐行请求拖垮导入
+        $detectLimit = max(0, (int) config('services.shipping.autonumber_batch_limit', 100));
+        $detected = 0;
 
         // 预取：启用字典 + 本批涉及的订单（一次查询，避免逐行 N+1）
         $companyMap = ExpressCompany::enabled()->pluck('name', 'code');
@@ -115,6 +126,24 @@ class BatchShipService
                 continue;
             }
 
+            // 智能识别复核（V1.1 三期）：仅提示，不阻断
+            if ($detected < $detectLimit && $this->autoNumber->available()) {
+                $candidates = $this->autoNumber->detect($trackingNo);
+                $detected++;
+
+                $top = $candidates[0] ?? null;
+                if ($top !== null && $top['code'] !== $companyCode) {
+                    $warnings[] = [
+                        'row' => $rowNo,
+                        'order_no' => $orderNo,
+                        'tracking_no' => $trackingNo,
+                        'filled' => $companyCode,
+                        'detected' => $top['code'],
+                        'detected_name' => $top['name'],
+                    ];
+                }
+            }
+
             $seenOrderNos[$orderNo] = true;
             $seenTracking[$trackingKey] = true;
             $valid[] = [
@@ -125,7 +154,7 @@ class BatchShipService
             ];
         }
 
-        return ['valid' => $valid, 'failed' => $failed];
+        return ['valid' => $valid, 'failed' => $failed, 'warnings' => $warnings];
     }
 
     /**

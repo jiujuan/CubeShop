@@ -6,6 +6,7 @@ use App\Exceptions\BusinessException;
 use App\Http\Controllers\Controller;
 use App\Models\ExpressCompany;
 use App\Support\ApiResponse;
+use App\Support\CarrierCode;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
@@ -13,7 +14,12 @@ use Illuminate\Validation\Rule;
 /**
  * 快递公司字典维护（V1.1 T-047，E03；权限 shipping.manage）
  *
- * CRUD + 启停 + 排序 + channel_code（第三方渠道编码，轨迹查询用）。
+ * CRUD + 启停 + 排序 + 多渠道承运商编码 `carrier_codes`（
+ * 详见 {@see CarrierCode}；`channel_code` 为快递100 的历史兼容列）。
+ *
+ * ⚠️ 写操作后必须清 `CarrierCode` 缓存 —— 它持有进程内的正/反查表，
+ * 不清会导致本次进程（尤其长驻的队列 worker）继续用旧映射。
+ * 注意静态缓存只能覆盖**当前进程**，其他进程待重启或自然失效。
  */
 class ExpressCompanyController extends Controller
 {
@@ -60,6 +66,7 @@ class ExpressCompanyController extends Controller
         }
 
         $company = ExpressCompany::create($data);
+        CarrierCode::flushCache();
 
         return $this->success($company, '新增成功');
     }
@@ -74,6 +81,7 @@ class ExpressCompanyController extends Controller
 
         $data = $this->validated($request, $company->id);
         $company->update($data);
+        CarrierCode::flushCache();
 
         return $this->success($company->fresh(), '更新成功');
     }
@@ -100,12 +108,42 @@ class ExpressCompanyController extends Controller
         // 更新为部分更新语义：code/name 仅在提供时校验（新增时 required）
         $required = $ignoreId === null;
 
-        return $request->validate([
+        $data = $request->validate([
             'code' => [($required ? 'required' : 'sometimes'), 'string', 'max:20', Rule::unique('express_companies', 'code')->ignore($ignoreId)],
             'name' => [($required ? 'required' : 'sometimes'), 'string', 'max:50'],
             'channel_code' => ['nullable', 'string', 'max:30'],
+            'carrier_codes' => ['nullable', 'array'],
+            'carrier_codes.*' => ['nullable', 'string', 'max:30'],
             'sort' => ['nullable', 'integer', 'min:0', 'max:9999'],
             'status' => ['nullable', 'integer', 'in:0,1'],
         ]);
+
+        if (array_key_exists('carrier_codes', $data)) {
+            $data['carrier_codes'] = $this->normalizeCarrierCodes($data['carrier_codes']);
+        }
+
+        return $data;
+    }
+
+    /**
+     * 规范化多渠道编码映射：只保留 {@see CarrierCode::CHANNELS} 声明的渠道，去空值与首尾空格。
+     *
+     * 非法键丢弃而非报错 —— 渠道清单以 `CarrierCode` 为准，前端多传一个键不该让整个保存失败。
+     *
+     * @param  array<string, mixed>|null  $raw
+     * @return array<string, string>
+     */
+    private function normalizeCarrierCodes(?array $raw): array
+    {
+        $clean = [];
+
+        foreach (array_keys(CarrierCode::CHANNELS) as $channel) {
+            $value = trim((string) ($raw[$channel] ?? ''));
+            if ($value !== '') {
+                $clean[$channel] = $value;
+            }
+        }
+
+        return $clean;
     }
 }

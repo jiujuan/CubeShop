@@ -49,6 +49,14 @@ return [
         'channel' => env('SHIPPING_CHANNEL'),
         'key' => env('SHIPPING_CHANNEL_KEY'),
         'customer' => env('SHIPPING_CHANNEL_CUSTOMER'),
+        // 实时查询（快递100 开放平台）；智能识别与查询同源，可单独指向内网代理
+        'query_url' => env('SHIPPING_QUERY_URL', 'https://poll.kuaidi100.com/poll/query.do'),
+        'autonumber_url' => env('SHIPPING_AUTONUMBER_URL', 'https://www.kuaidi100.com/autonumber/auto'),
+        // 智能识别默认开启；随查询套餐赠送，失败一律降级不阻断发货
+        'autonumber_enabled' => (bool) env('SHIPPING_AUTONUMBER_ENABLED', true),
+        // 批量校验时最多识别多少行（超出的行跳过识别，避免大文件拖慢导入）
+        'autonumber_batch_limit' => (int) env('SHIPPING_AUTONUMBER_BATCH_LIMIT', 100),
+        'timeout' => (int) env('SHIPPING_TIMEOUT', 8),
         'pull_window_days' => (int) env('SHIPPING_PULL_WINDOW_DAYS', 30),
         'batch_size' => (int) env('SHIPPING_BATCH_SIZE', 50),
         'batch_delay_ms' => (int) env('SHIPPING_BATCH_DELAY_MS', 200),

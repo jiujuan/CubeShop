@@ -346,9 +346,15 @@ Route::middleware(['auth:sanctum', 'account.active'])->group(function () {
         Route::get('/orders/export', [AdminOrderController::class, 'export'])->middleware(['permission:order.export', 'throttle:3,1']);
         Route::get('/orders/batch-ship/template', [\App\Http\Controllers\Admin\BatchShipController::class, 'template'])->middleware('permission:order.ship');
         Route::post('/orders/batch-ship', [\App\Http\Controllers\Admin\BatchShipController::class, 'store'])->middleware('permission:order.ship');
+        // 运单号智能识别（V1.1 三期）—— 静态路径，同样须注册在 {id} 之前
+        Route::post('/orders/detect-company', [AdminOrderController::class, 'detectCompany'])->middleware('permission:order.ship');
 
         // 物流管理（V1.1 T-045 / T-047）—— pull 必须注册在 {id} 类路由之外，无冲突
         Route::post('/shippings/{id}/pull', [\App\Http\Controllers\Admin\ShippingController::class, 'pull'])->middleware('permission:order.ship')->whereNumber('id');
+        // ⚠️ /shippings/channel 与 /shippings/{id} 必须注册在 {id} 之前，否则被当作 id 匹配
+        Route::get('/shippings/channel', [\App\Http\Controllers\Admin\ShippingController::class, 'channel'])->middleware('permission:order.view');
+        Route::put('/shippings/channel', [\App\Http\Controllers\Admin\ShippingController::class, 'updateChannel'])->middleware('permission:shipping.manage');
+        Route::get('/shippings/{id}', [\App\Http\Controllers\Admin\ShippingController::class, 'show'])->middleware('permission:order.view')->whereNumber('id');
         Route::get('/shippings', [\App\Http\Controllers\Admin\ShippingController::class, 'index'])->middleware('permission:order.view');
 
         // 快递公司字典维护（V1.1 T-047，权限 shipping.manage）—— enabled 必须在 {id} 之前

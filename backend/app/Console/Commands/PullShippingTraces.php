@@ -40,6 +40,7 @@ class PullShippingTraces extends Command
         $stats = ['pulled' => 0, 'failed' => 0, 'skipped' => 0];
 
         Shipping::query()
+            ->with('order') // resolvePhone() 需回落 address_snapshot，预加载避免 N+1
             ->whereIn('trace_status', $statuses)
             ->where('shipped_at', '>=', now()->subDays($days))
             ->orderBy('id')

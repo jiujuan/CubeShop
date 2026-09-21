@@ -25,6 +25,7 @@ class OrderController extends Controller
 
     public function __construct(
         private readonly OrderService $orders,
+        private readonly \App\Support\Shipping\Kuaidi100AutoNumber $autoNumber,
     ) {}
 
     /**
@@ -122,6 +123,28 @@ class OrderController extends Controller
         // 在事务提交后统一派发（T-044 起单笔/批量共用，避免批量路径漏发）
 
         return $this->success($this->detail($order->load('items')), '发货成功');
+    }
+
+    /**
+     * 运单号智能识别快递公司（V1.1 三期，权限 order.ship）
+     * POST /admin/orders/detect-company  body: { tracking_no }
+     *
+     * 仅作**提示**：快递100 官方不保证 100% 准确，前端展示须标注「由快递100猜测」
+     * 并允许手改。渠道未配置或调用失败时返回空候选，由前端退回手动选择。
+     */
+    public function detectCompany(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'tracking_no' => ['required', 'string', 'regex:'.\App\Support\ShippingRules::TRACKING_NO_REGEX],
+        ]);
+
+        $candidates = $this->autoNumber->detect($data['tracking_no']);
+
+        return $this->success([
+            'tracking_no' => $data['tracking_no'],
+            'candidates' => $candidates,
+            'guess' => $candidates[0]['code'] ?? null,
+        ], $candidates === [] ? '未能识别该单号，请手动选择快递公司' : '识别完成（结果仅供参考）');
     }
 
     /**

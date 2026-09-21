@@ -21,7 +21,7 @@ class AppServiceProvider extends ServiceProvider
         $this->app->bind(\App\Support\Shipping\ShippingChannelInterface::class, function () {
             return match (config('services.shipping.channel')) {
                 'mock' => new \App\Support\Shipping\MockChannel(),
-                // 'kuaidi100' => new \App\Support\Shipping\Kuaidi100Channel(...),  // 渠道账号就绪后接入
+                'kuaidi100' => new \App\Support\Shipping\Kuaidi100Channel(),
                 default => new \App\Support\Shipping\NullChannel(),
             };
         });
@@ -54,11 +54,35 @@ class AppServiceProvider extends ServiceProvider
     }
 
     /**
+     * 物流查询渠道：后台配置（system_configs.shipping.channel）覆盖 .env
+     *
+     * 目的是让运营能在后台切换渠道而无需改配置重启；留空表示跟随 .env 的 SHIPPING_CHANNEL。
+     * ⚠️ 密钥（key/customer）不入库，仍走 .env——凭证扩散风险高于便利性收益。
+     */
+    private function applyShippingChannelOverride(): void
+    {
+        try {
+            $override = trim((string) (app(\App\Services\Common\ConfigService::class)->get('shipping.channel') ?? ''));
+        } catch (\Throwable) {
+            // 系统表未建立（安装/迁移前）或数据库不可用时，保持 env 配置
+            return;
+        }
+
+        if ($override === '') {
+            return;
+        }
+
+        // off = 强制关闭查询（覆盖 env 中已配置的渠道）
+        config(['services.shipping.channel' => $override === 'off' ? null : $override]);
+    }
+
+    /**
      * Bootstrap any application services.
      */
     public function boot(): void
     {
         $this->assertPaymentSecurityConfig();
+        $this->applyShippingChannelOverride();
 
         // 超级管理员绕过全部权限校验：角色定义上超管即拥有所有权限，
         // 避免后续新增权限码时因未同步授权而导致超管被误判为无权限（V1.1 reports 403 问题）

@@ -39,7 +39,11 @@ class TracePullService
         }
 
         try {
-            $result = $this->channel->query($shipping->company_code, $shipping->tracking_no);
+            $result = $this->channel->query(
+                $shipping->company_code,
+                $shipping->tracking_no,
+                $shipping->resolvePhone(),
+            );
         } catch (\Throwable $e) {
             Log::warning('shipping trace pull exception', [
                 'shipping_id' => $shipping->id,
@@ -78,6 +82,11 @@ class TracePullService
             $occurredAt = $trace['occurred_at'] instanceof \DateTimeInterface
                 ? $trace['occurred_at']->format('Y-m-d H:i:s')
                 : (string) $trace['occurred_at'];
+            // 第三方偶发缺失时间时兜底为发货时间：绝不能用 now()，
+            // 否则每次拉取时间戳都不同 → 去重键不命中 → 重复插入同一条轨迹
+            if ($occurredAt === '') {
+                $occurredAt = $shipping->shipped_at?->format('Y-m-d H:i:s') ?? now()->format('Y-m-d H:i:s');
+            }
             $context = mb_substr((string) $trace['context'], 0, 500);
             $key = $occurredAt.'|'.$context;
 

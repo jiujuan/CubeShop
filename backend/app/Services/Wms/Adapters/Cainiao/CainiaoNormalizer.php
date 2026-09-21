@@ -2,14 +2,18 @@
 
 namespace App\Services\Wms\Adapters\Cainiao;
 
-use App\Models\ExpressCompany;
 use App\Models\WmsConfig;
 
 /**
  * 平台值 → 奇门值 的归一（WMS 计划 P2 / Step 2）
  *
  * 只做**值的翻译**，不组织报文结构（结构由 {@see \App\Services\Wms\Adapters\CainiaoAdapter} 负责）。
- * 拆开的好处：字段值口径变化（如某地市改名、某快递公司换 channel_code）时改一处即可。
+ * 拆开的好处：字段值口径变化（如某地市改名、某仓库编码调整）时改一处即可。
+ *
+ * ⚠️ **承运商编码的翻译不在本类**。历史上这里有个 `logisticsCode()` 把平台 code 转成
+ * 快递100 编码（`SF` → `shunfeng`）拟发奇门——方向是错的（菜鸟不认快递100 编码），
+ * 且全仓无调用点，已删除。涉及多方编码互转统一走 {@see \App\Support\CarrierCode}，
+ * 它同时负责正查（平台→渠道）与反查（渠道→平台，用于 WMS 回传入站归一）。
  *
  * 数据来源约定：
  * - 收货人取自 `orders.address_snapshot`（下单时快照，之后用户改地址不影响已下单的发货单）
@@ -86,24 +90,5 @@ class CainiaoNormalizer
             'detailAddress' => $detail,
             'zipCode' => trim((string) ($buyerInfo['postcode'] ?? '')),
         ], static fn (string $v) => $v !== '');
-    }
-
-    /**
-     * 快递公司编码 → 物流公司编码（设计文档 §7.2 `logisticsCode`）。
-     *
-     * 平台内部 `code`（如 SF）与第三方渠道 `channel_code` 未必一致，优先取 channel_code；
-     * 未配置 channel_code 时回落平台 code——总比丢字段好，仓方多半也认。
-     */
-    public function logisticsCode(?string $carrierCode): ?string
-    {
-        $code = trim((string) $carrierCode);
-        if ($code === '') {
-            return null;
-        }
-
-        $channel = ExpressCompany::where('code', $code)->value('channel_code');
-        $channel = is_string($channel) ? trim($channel) : '';
-
-        return $channel !== '' ? $channel : $code;
     }
 }

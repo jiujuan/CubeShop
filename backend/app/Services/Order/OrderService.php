@@ -386,6 +386,8 @@ class OrderService
                 'company_code' => $companyCode,
                 'company_name' => $companyName,
                 'tracking_no' => $trackingNo,
+                // 手机号快照：顺丰/中通轨迹查询必填，随发货一起固化（同 company_name 快照口径）
+                'phone' => $this->consigneePhone($result),
                 'trace_status' => Shipping::TRACE_PENDING,
                 'shipped_at' => $result->shipped_at ?? now(),
             ]);
@@ -402,6 +404,24 @@ class OrderService
         OrderShipped::dispatch($shipped);
 
         return $shipped;
+    }
+
+    /**
+     * 收货人手机号（发货快照用，V1.1 三期）
+     *
+     * 取自下单时刻的 `address_snapshot.contact_phone`，不读用户地址簿——
+     * 用户事后改地址不应影响已发货运单的查询凭据。
+     */
+    private function consigneePhone(Order $order): ?string
+    {
+        $snapshot = $order->address_snapshot;
+        if (! is_array($snapshot)) {
+            return null;
+        }
+
+        $phone = trim((string) ($snapshot['contact_phone'] ?? ''));
+
+        return $phone !== '' ? $phone : null;
     }
 
     /**
