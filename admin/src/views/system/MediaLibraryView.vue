@@ -8,6 +8,7 @@ import {
 import { Button } from '@/components/ui/button'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import LoadingSpinner from '@/components/LoadingSpinner.vue'
+import TablePagination from '@/components/TablePagination.vue'
 import { useAuthStore } from '@/stores/auth'
 
 /**
@@ -180,6 +181,21 @@ async function doDelete() {
     notify(err instanceof Error ? err.message : '删除失败', false)
   }
 }
+
+// ---------------- 查看大图 ----------------
+const previewOpen = ref(false)
+const previewUrl = ref('')
+const previewName = ref('')
+
+function openPreview(m: MediaFile) {
+  previewUrl.value = m.url
+  previewName.value = m.original_name ?? m.path
+  previewOpen.value = true
+}
+
+function closePreview() {
+  previewOpen.value = false
+}
 </script>
 
 <template>
@@ -259,7 +275,6 @@ async function doDelete() {
       <button class="rounded-md border border-slate-300 px-3 py-1.5 text-[13px] text-slate-600 hover:bg-slate-50" @click="reset">
         重置
       </button>
-      <span class="ml-auto text-[13px] text-slate-500">共 {{ pagination.total }} 张</span>
     </div>
 
     <p v-if="tip" class="mb-3 rounded-md px-3 py-2 text-[13px]" :class="tipOk ? 'bg-green-50 text-green-600' : 'bg-red-50 text-red-500'">
@@ -280,7 +295,14 @@ async function doDelete() {
         data-testid="media-card"
       >
         <div class="relative">
-          <img :src="m.url" :alt="m.original_name ?? ''" class="h-32 w-full bg-slate-50 object-cover" loading="lazy" />
+          <img
+            :src="m.url"
+            :alt="m.original_name ?? ''"
+            class="h-32 w-full cursor-pointer bg-slate-50 object-cover"
+            loading="lazy"
+            data-testid="media-thumb"
+            @click="openPreview(m)"
+          />
           <span
             v-if="m.usage_count === 0"
             class="absolute left-1 top-1 rounded bg-amber-500 px-1.5 py-0.5 text-[10px] text-white"
@@ -333,20 +355,8 @@ async function doDelete() {
       </div>
     </div>
 
-    <!-- 分页 -->
-    <div v-if="pagination.total_pages > 1" class="mt-4 flex items-center justify-center gap-2 text-[13px]">
-      <button
-        class="rounded border border-slate-300 px-3 py-1 text-slate-600 disabled:opacity-40"
-        :disabled="pagination.page <= 1"
-        @click="load(pagination.page - 1)"
-      >上一页</button>
-      <span class="text-slate-500">{{ pagination.page }} / {{ pagination.total_pages }}</span>
-      <button
-        class="rounded border border-slate-300 px-3 py-1 text-slate-600 disabled:opacity-40"
-        :disabled="pagination.page >= pagination.total_pages"
-        @click="load(pagination.page + 1)"
-      >下一页</button>
-    </div>
+    <!-- 分页（与后台「商品列表」等列表页一致） -->
+    <TablePagination :pagination="pagination" @change="load" />
 
     <ConfirmDialog
       :open="confirmId !== null"
@@ -356,5 +366,23 @@ async function doDelete() {
       @cancel="confirmId = null"
       @confirm="doDelete"
     />
+
+    <!-- 查看大图 -->
+    <Teleport to="body">
+      <div
+        v-if="previewOpen"
+        class="fixed inset-0 z-50 flex flex-col items-center justify-center bg-black/70 p-4"
+        data-testid="media-preview"
+        @click.self="closePreview"
+      >
+        <button
+          class="absolute right-4 top-4 text-white/80 hover:text-white"
+          data-testid="media-preview-close"
+          @click="closePreview"
+        >✕</button>
+        <img :src="previewUrl" :alt="previewName" class="max-h-[82vh] max-w-[92vw] rounded-lg object-contain shadow-xl" />
+        <p class="mt-3 max-w-[92vw] truncate text-[13px] text-white/80">{{ previewName }}</p>
+      </div>
+    </Teleport>
   </div>
 </template>
