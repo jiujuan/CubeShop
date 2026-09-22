@@ -7,6 +7,7 @@ import { useAuthStore } from '@/stores/auth'
 import { useCartStore } from '@/stores/cart'
 import type { ProductBrief } from '@/api/types'
 import { hashIndex } from '@/utils/id'
+import AppImage from '@/components/AppImage.vue'
 
 /**
  * 商品卡片（三种布局）
@@ -90,7 +91,7 @@ const emojiByIndex = ['👕', '🎧', '🥤', '⌨️', '👟', '🧴', '💻', 
 
     <!-- 图（3 栏大图：固定等比方形，图片铺满居中裁切，保证每张尺寸一致、不变形） -->
     <div class="relative aspect-square overflow-hidden bg-gradient-to-br from-[#f5faff] to-[#eaf4ff]">
-      <img v-if="product.main_image" :src="product.main_image" class="absolute inset-0 h-full w-full object-cover object-center" alt="" />
+      <AppImage v-if="product.main_image" :src="product.main_image" class="absolute inset-0 h-full w-full object-cover object-center" alt="" />
       <span v-else class="absolute inset-0 flex items-center justify-center text-6xl transition-transform group-hover:scale-105">{{ emojiByIndex[hashIndex(product.id, emojiByIndex.length)] }}</span>
     </div>
 
@@ -140,7 +141,7 @@ const emojiByIndex = ['👕', '🎧', '🥤', '⌨️', '👟', '🧴', '💻', 
 
     <!-- 图（固定等比方形，图片铺满居中裁切，保证每张尺寸一致、不变形） -->
     <div class="relative aspect-square overflow-hidden bg-gradient-to-br from-[#f5faff] to-[#e6f4ff]">
-      <img v-if="product.main_image" :src="product.main_image" class="absolute inset-0 h-full w-full object-cover object-center" alt="" />
+      <AppImage v-if="product.main_image" :src="product.main_image" class="absolute inset-0 h-full w-full object-cover object-center" alt="" />
       <span v-else class="absolute inset-0 flex items-center justify-center text-6xl transition-transform group-hover:scale-105">{{ emojiByIndex[hashIndex(product.id, emojiByIndex.length)] }}</span>
     </div>
 
@@ -192,7 +193,7 @@ const emojiByIndex = ['👕', '🎧', '🥤', '⌨️', '👟', '🧴', '💻', 
     >{{ tag === 'hot' ? '热销' : '新品' }}</span>
 
     <div class="relative h-24 w-24 shrink-0 overflow-hidden rounded-lg bg-gradient-to-br from-[#f0f7ff] to-[#e6f4ff] text-4xl">
-      <img v-if="product.main_image" :src="product.main_image" class="absolute inset-0 h-full w-full rounded-lg object-cover object-center" alt="" />
+      <AppImage v-if="product.main_image" :src="product.main_image" class="absolute inset-0 h-full w-full rounded-lg object-cover object-center" alt="" />
       <span v-else class="absolute inset-0 flex items-center justify-center">{{ emojiByIndex[hashIndex(product.id, emojiByIndex.length)] }}</span>
     </div>
 

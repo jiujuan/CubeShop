@@ -9,6 +9,7 @@ import { BRAND_PLACEHOLDER } from '@/stores/site'
 import LoadingSpinner from '@/components/LoadingSpinner.vue'
 import ShopFooter from '@/components/ShopFooter.vue'
 import ShopHeader from '@/components/ShopHeader.vue'
+import AppImage from '@/components/AppImage.vue'
 
 /**
  * 新闻专题页（按标签聚合，公开）
@@ -86,7 +87,7 @@ watch(tag, () => load(1))
           :data-testid="`news-tag-row-${a.id}`"
           @click="goDetail(a)"
         >
-          <img v-if="a.cover_image" :src="a.cover_image" alt="" class="h-16 w-16 shrink-0 rounded-md object-cover" />
+          <AppImage v-if="a.cover_image" :src="a.cover_image" alt="" class="h-16 w-16 shrink-0 rounded-md object-cover" />
           <div class="min-w-0 flex-1">
             <p class="truncate text-sm font-medium text-slate-700">{{ a.title }}</p>
             <p v-if="a.summary" class="mt-1 line-clamp-1 text-xs text-slate-400">{{ a.summary }}</p>

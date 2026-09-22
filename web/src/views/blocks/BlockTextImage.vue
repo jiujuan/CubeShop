@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import type { CmsPageBlock } from '@/api/cms'
+import AppImage from '@/components/AppImage.vue'
 
 /**
  * 区块 · 图文分栏（CMS-203）
@@ -34,7 +35,7 @@ const imageFirst = computed(() => str('side') !== 'right')
 
       <div :class="image ? 'grid items-center gap-6 md:grid-cols-2' : ''">
         <div v-if="image" :class="imageFirst ? '' : 'md:order-2'" data-testid="block-text-image-media">
-          <img :src="image" alt="" class="w-full rounded-lg object-cover" />
+          <AppImage :src="image" alt="" class="w-full rounded-lg object-cover" />
         </div>
         <div
           class="cms-prose break-words text-sm leading-7 text-slate-600"

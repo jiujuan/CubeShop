@@ -9,6 +9,7 @@ import CmsArticleBody from '@/components/CmsArticleBody.vue'
 import LoadingSpinner from '@/components/LoadingSpinner.vue'
 import ShopFooter from '@/components/ShopFooter.vue'
 import ShopHeader from '@/components/ShopHeader.vue'
+import AppImage from '@/components/AppImage.vue'
 
 /**
  * 新闻详情（CMS 新闻中心，公开）
@@ -147,7 +148,7 @@ watch(() => route.params.id, (val, old) => {
           ># {{ t }}</button>
         </div>
 
-        <img v-if="article.cover_image" :src="article.cover_image" alt="" class="mt-4 max-h-72 w-full rounded-lg object-cover" data-testid="news-cover" />
+        <AppImage v-if="article.cover_image" :src="article.cover_image" alt="" class="mt-4 max-h-72 w-full rounded-lg object-cover" data-testid="news-cover" />
 
         <!--
           正文交给共享的 CmsArticleBody：HTML 片段 v-html，内联商品卡渲染成真组件
@@ -169,7 +170,7 @@ watch(() => route.params.id, (val, old) => {
               :data-testid="`news-product-${p.id}`"
               @click="router.push(`/product/${p.id}`)"
             >
-              <img v-if="p.main_image" :src="p.main_image" alt="" class="h-28 w-full object-cover" />
+              <AppImage v-if="p.main_image" :src="p.main_image" alt="" class="h-28 w-full object-cover" />
               <div class="p-2">
                 <p class="line-clamp-2 text-xs text-slate-700">{{ p.title }}</p>
                 <p class="mt-1 text-xs font-medium text-[#ff4d4f]">¥{{ p.price }}</p>
@@ -206,7 +207,7 @@ watch(() => route.params.id, (val, old) => {
             :data-testid="`news-related-${r.id}`"
             @click="goNews(r.id, r.slug)"
           >
-            <img v-if="r.cover_image" :src="r.cover_image" alt="" class="h-12 w-12 shrink-0 rounded object-cover" />
+            <AppImage v-if="r.cover_image" :src="r.cover_image" alt="" class="h-12 w-12 shrink-0 rounded object-cover" />
             <div class="min-w-0 flex-1">
               <p class="truncate text-slate-700">{{ r.title }}</p>
               <p class="mt-0.5 text-xs text-slate-400">{{ r.published_at?.slice(0, 10) }}</p>

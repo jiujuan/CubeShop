@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import type { CmsPageBlock } from '@/api/cms'
+import AppImage from '@/components/AppImage.vue'
 
 /**
  * 区块 · 图集（CMS-203）
@@ -34,7 +35,7 @@ const images = computed(() => {
       </h2>
 
       <div class="grid grid-cols-2 gap-3 sm:grid-cols-3">
-        <img
+        <AppImage
           v-for="(url, index) in images"
           :key="index"
           :src="url"

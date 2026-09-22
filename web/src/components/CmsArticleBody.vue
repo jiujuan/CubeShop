@@ -3,6 +3,7 @@ import { computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { ShoppingBag } from 'lucide-vue-next'
 import type { NewsProduct } from '@/api/news'
+import AppImage from '@/components/AppImage.vue'
 
 /**
  * CMS 正文渲染（文章正文 + 内联商品卡）
@@ -70,7 +71,7 @@ const segments = computed<ContentSegment[]>(() => {
       :data-testid="`cms-inline-product-${seg.product.id}`"
       @click="router.push(`/product/${seg.product.id}`)"
     >
-      <img v-if="seg.product.main_image" :src="seg.product.main_image" alt="" class="h-16 w-16 shrink-0 rounded object-cover" />
+      <AppImage v-if="seg.product.main_image" :src="seg.product.main_image" alt="" class="h-16 w-16 shrink-0 rounded object-cover" />
       <span class="min-w-0 flex-1">
         <span class="line-clamp-2 block text-xs text-slate-700">{{ seg.product.title }}</span>
         <span v-if="seg.product.subtitle" class="mt-0.5 line-clamp-1 block text-xs text-slate-400">{{ seg.product.subtitle }}</span>

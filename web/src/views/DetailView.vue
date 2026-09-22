@@ -16,6 +16,7 @@ import ShopFooter from '@/components/ShopFooter.vue'
 import ShopHeader from '@/components/ShopHeader.vue'
 import LoadingSpinner from '@/components/LoadingSpinner.vue'
 import ReviewSection from '@/components/ReviewSection.vue'
+import AppImage from '@/components/AppImage.vue'
 
 /**
  * 商品详情页（图集 + 规格/SKU 选择 + 价格库存 + 加购）
@@ -289,7 +290,7 @@ const emojiByIndex = ['👕', '🎧', '🥤', '⌨️', '👟', '🧴', '💻', 
           <!-- 左：图集 -->
           <div class="w-full max-w-md">
             <div class="flex h-96 items-center justify-center rounded-2xl bg-gradient-to-br from-[#f0f7ff] to-[#e6f4ff] text-8xl">
-              <img v-if="currentImage" :src="currentImage" class="h-full w-full rounded-2xl object-cover" alt="" />
+              <AppImage v-if="currentImage" :src="currentImage" class="h-full w-full rounded-2xl object-cover" alt="" />
               <span v-else>{{ emojiByIndex[hashIndex(product.id, emojiByIndex.length)] }}</span>
             </div>
             <div class="mt-3 flex gap-2">
@@ -299,7 +300,7 @@ const emojiByIndex = ['👕', '🎧', '🥤', '⌨️', '👟', '🧴', '💻', 
                 :class="currentImage === img ? 'border-[#1677ff]' : 'border-transparent opacity-70 hover:opacity-100'"
                 @click="currentImage = img"
               >
-                <img :src="img" class="h-full w-full object-cover" alt="" />
+                <AppImage :src="img" class="h-full w-full object-cover" alt="" />
               </button>
             </div>
           </div>
@@ -460,7 +461,7 @@ const emojiByIndex = ['👕', '🎧', '🥤', '⌨️', '👟', '🧴', '💻', 
               :data-testid="`product-news-${n.id}`"
               @click="router.push(`/news/${n.slug ?? n.id}`)"
             >
-              <img v-if="n.cover_image" :src="n.cover_image" alt="" class="h-14 w-14 shrink-0 rounded object-cover" />
+              <AppImage v-if="n.cover_image" :src="n.cover_image" alt="" class="h-14 w-14 shrink-0 rounded object-cover" />
               <div class="min-w-0 flex-1">
                 <p class="truncate text-sm text-slate-700">{{ n.title }}</p>
                 <p v-if="n.summary" class="mt-0.5 line-clamp-1 text-xs text-slate-400">{{ n.summary }}</p>

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import type { CmsPageBlock } from '@/api/cms'
+import AppImage from '@/components/AppImage.vue'
 
 /**
  * 区块 · 首屏横幅（CMS-203）
@@ -30,7 +31,7 @@ const isExternal = computed(() => /^https?:\/\//i.test(buttonLink.value))
 
 <template>
   <header v-if="title" class="relative h-56 overflow-hidden sm:h-72" data-testid="block-hero">
-    <img v-if="image" :src="image" alt="" class="h-full w-full object-cover" />
+    <AppImage v-if="image" :src="image" alt="" class="h-full w-full object-cover" />
     <div v-else class="h-full w-full bg-gradient-to-r from-[#1677ff] to-[#69b1ff]" />
     <div v-if="image" class="absolute inset-0 bg-black/35" />
 
