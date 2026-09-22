@@ -12,6 +12,7 @@ use App\Http\Controllers\Admin\AnnouncementController as AdminAnnouncementContro
 use App\Http\Controllers\Admin\AuthLogController;
 use App\Http\Controllers\Admin\ConfigController;
 use App\Http\Controllers\Admin\HomeBannerController as AdminHomeBannerController;
+use App\Http\Controllers\Admin\MediaController;
 use App\Http\Controllers\Admin\NavItemController;
 use App\Http\Controllers\Admin\CouponController as AdminCouponController;
 use App\Http\Controllers\Admin\DashboardController;
@@ -280,6 +281,13 @@ Route::middleware(['auth:sanctum', 'account.active'])->group(function () {
 
         // 图片上传（登录即可，商品相关权限在业务层校验）
         Route::post('/upload', [UploadController::class, 'store']);
+
+        // 媒体库（图片资产治理 P2，权限 media.*）—— replace 必须注册在 {id} 之前
+        Route::get('/media', [MediaController::class, 'index'])->middleware('permission:media.view');
+        Route::post('/media', [MediaController::class, 'store'])->middleware('permission:media.upload');
+        Route::patch('/media/{id}', [MediaController::class, 'update'])->middleware('permission:media.manage')->whereNumber('id');
+        Route::post('/media/{id}/replace', [MediaController::class, 'replace'])->middleware('permission:media.manage')->whereNumber('id');
+        Route::delete('/media/{id}', [MediaController::class, 'destroy'])->middleware('permission:media.manage')->whereNumber('id');
 
         // 分类管理 category.manage（API 文档 8.2）
         Route::get('/categories', [CategoryController::class, 'index'])->middleware('permission:category.manage');

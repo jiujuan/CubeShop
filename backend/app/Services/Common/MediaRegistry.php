@@ -196,6 +196,58 @@ class MediaRegistry
     }
 
     /**
+     * 替换文件内容但**保留原 path**（媒体库最有价值的操作）
+     *
+     * 换 banner 图 / 换商品主图时，业务表里存的那串相对路径一字不改，
+     * 因此所有引用方自动生效 —— 不需要改任何业务表。
+     *
+     * ⚠️ 副作用提醒：同 md5 复用的记录共享同一个物理文件（P0 去重机制），
+     * 替换会同时影响它们。这是「去重」的既有代价，接口层已在响应里带出 `reused_paths`。
+     *
+     * @return array{media: MediaFile, url: string, old_size: int, reused_paths: array<int, string>}
+     *
+     * @throws \RuntimeException 物理文件不可写时
+     */
+    public function replaceFile(MediaFile $media, UploadedFile $file): array
+    {
+        $disk = Storage::disk($media->disk);
+        $oldSize = (int) $media->size;
+
+        // 同 md5 的其它登记记录（去重复用者）
+        $reusedPaths = $media->md5 !== null
+            ? MediaFile::query()
+                ->where('md5', $media->md5)
+                ->where('path', '!=', $media->path)
+                ->pluck('path')
+                ->all()
+            : [];
+
+        $contents = (string) file_get_contents($file->getRealPath());
+        if ($disk->put($media->path, $contents) === false) {
+            throw new \RuntimeException('图片写入失败：'.$media->path);
+        }
+
+        $absolute = $disk->path($media->path);
+        [$width, $height] = $this->dimensions($absolute);
+
+        $media->update([
+            'md5' => $this->hashOf($absolute),
+            'mime' => @mime_content_type($absolute) ?: $media->mime,
+            'size' => @filesize($absolute) ?: 0,
+            'width' => $width,
+            'height' => $height,
+            'original_name' => $file->getClientOriginalName() ?: $media->original_name,
+        ]);
+
+        return [
+            'media' => $media->fresh() ?? $media,
+            'url' => $disk->url($media->path),
+            'old_size' => $oldSize,
+            'reused_paths' => $reusedPaths,
+        ];
+    }
+
+    /**
      * 重算引用计数
      *
      * @param  array<int, string>|null  $paths 指定 path 时只算这些（删除联动的局部重算）；null = 全量

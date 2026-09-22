@@ -78,6 +78,10 @@ class RolePermissionSeeder extends Seeder
         'wms.order.view',
         'wms.order.manage',
         'wms.return.manage',
+        // 媒体库（图片资产治理 P2）：浏览/使用、上传、管理（替换与删除）
+        'media.view',
+        'media.upload',
+        'media.manage',
     ];
 
     public function run(): void
@@ -139,6 +143,10 @@ class RolePermissionSeeder extends Seeder
             'wms.config.manage', 'wms.order.view', 'wms.order.manage', 'wms.return.manage',
             // 认证日志（登录/注册/登出，含失败明细）：运营可查看以协助排障
             'log.auth.view',
+            // 媒体库（图片资产治理 P2）：上传商品图/Banner 时必须能浏览与复用已有图片。
+            // ⚠️ media.manage（替换/删除）**不授予运营** —— 删除会影响所有引用方，
+            //    且误删后需等 30 天回收窗口，风险由超管承担更合适。
+            'media.view', 'media.upload',
         ]);
 
         // 客服（cs_agent）：只做客服工作台与帮助中心，不含任何经营数据（CS-117 缺陷 #4）
