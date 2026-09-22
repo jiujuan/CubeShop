@@ -303,6 +303,13 @@ const router = createRouter({
           meta: { title: '系统配置', menu: true, icon: 'Settings', permission: 'config.manage' },
         },
         {
+          // 媒体库（图片资产治理 P2）：浏览/复用/替换/回收候选清单
+          path: 'media',
+          name: 'media',
+          component: () => import('@/views/system/MediaLibraryView.vue'),
+          meta: { title: '媒体库', menu: true, icon: 'Images', permission: 'media.view' },
+        },
+        {
           path: 'operation-logs',
           name: 'operation-logs',
           component: () => import('@/views/system/OperationLogView.vue'),

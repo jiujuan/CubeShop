@@ -151,6 +151,7 @@ const menuGroups = computed<MenuGroup[]>(() => {
       title: '系统',
       items: [
         { path: '/configs', title: '系统配置', icon: 'Settings', permission: 'config.manage' },
+        { path: '/media', title: '媒体库', icon: 'Images', permission: 'media.view' },
         { path: '/operation-logs', title: '操作日志', icon: 'FileClock', permission: 'log.view' },
         { path: '/auth-logs', title: '认证日志', icon: 'KeyRound', permission: 'log.auth.view' },
         { path: '/accounts', title: '管理员账号', icon: 'UserCog', permission: 'account.manage' },

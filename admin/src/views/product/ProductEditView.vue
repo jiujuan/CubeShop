@@ -12,6 +12,7 @@ import {
 } from '@/api/attribute'
 import { getFreightTemplates, type FreightTemplateRow } from '@/api/shipping'
 import { Button } from '@/components/ui/button'
+import ImagePicker from '@/components/ImagePicker.vue'
 import { MdEditor } from 'md-editor-v3'
 import 'md-editor-v3/lib/style.css'
 
@@ -57,32 +58,30 @@ const form = ref({
 // ---------- 图片 ----------
 const mainImage = ref('')
 const detailImages = ref<string[]>([])
-const mainFileRef = ref<HTMLInputElement>()
-const detailFileRef = ref<HTMLInputElement>()
-const uploading = ref(false)
+/** 详情图上限（与原有 input 校验一致） */
+const DETAIL_LIMIT = 10
+/** 选图器（媒体库 P2）：统一「上传 + 从媒体库复用」入口 */
+const pickerOpen = ref(false)
+const pickerTarget = ref<'main' | 'detail'>('main')
 
-async function pickImage(file: File, target: 'main' | 'detail') {
-  uploading.value = true
-  try {
-    const { data } = await uploadImage(file)
-    if (target === 'main') mainImage.value = data.data.url
-    else if (detailImages.value.length < 10) detailImages.value.push(data.data.url)
-  } finally {
-    uploading.value = false
+function openPicker(target: 'main' | 'detail') {
+  pickerTarget.value = target
+  pickerOpen.value = true
+}
+
+function onPicked(urls: string[]) {
+  if (pickerTarget.value === 'main') {
+    mainImage.value = urls[0] ?? ''
+  } else {
+    for (const url of urls) {
+      if (detailImages.value.length >= DETAIL_LIMIT) break
+      if (!detailImages.value.includes(url)) detailImages.value.push(url)
+    }
   }
 }
-function onMainChange(e: Event) {
-  const input = e.target as HTMLInputElement | null
-  const file = input?.files?.[0]
-  if (file) pickImage(file, 'main')
-  if (input) input.value = ''
-}
-function onDetailChange(e: Event) {
-  const input = e.target as HTMLInputElement | null
-  const file = input?.files?.[0]
-  if (file) pickImage(file, 'detail')
-  if (input) input.value = ''
-}
+
+// 正文内联图（Markdown 编辑器）仍走它自己的上传钩子 onUploadImg：一次多张、插入即走，
+// 与选图器的「先看再选」交互不同，本阶段不接入媒体库（CMS 侧留给下一阶段）。
 
 // ---------- 属性模板 ----------
 /** 模板中的规格属性 / 参数属性 */
@@ -854,25 +853,32 @@ function cancel() {
           <div class="flex flex-wrap gap-10">
             <div>
               <p class="mb-2 text-slate-600">主图</p>
-              <button class="flex h-28 w-44 flex-col items-center justify-center gap-1 rounded-lg border-2 border-dashed border-slate-300 text-slate-400 transition-colors hover:border-[#1677ff] hover:text-[#1677ff]" @click="mainFileRef?.click()">
+              <button
+                class="flex h-28 w-44 flex-col items-center justify-center gap-1 rounded-lg border-2 border-dashed border-slate-300 text-slate-400 transition-colors hover:border-[#1677ff] hover:text-[#1677ff]"
+                data-testid="main-image-picker"
+                @click="openPicker('main')"
+              >
                 <img v-if="mainImage" :src="mainImage" class="h-full w-full rounded-lg object-cover" alt="" />
                 <template v-else>
                   <CloudUpload class="h-6 w-6" />
-                  <span class="text-[#1677ff]">上传主图</span>
+                  <span class="text-[#1677ff]">选择主图</span>
                 </template>
               </button>
-              <input ref="mainFileRef" type="file" accept="image/jpeg,image/png,image/webp" class="hidden" @change="onMainChange" />
             </div>
             <div>
-              <p class="mb-2 text-slate-600">详情图</p>
+              <p class="mb-2 text-slate-600">详情图（{{ detailImages.length }}/{{ DETAIL_LIMIT }}）</p>
               <div class="flex flex-wrap items-center gap-2">
                 <div v-for="(img, i) in detailImages" :key="img" class="group relative h-20 w-20 overflow-hidden rounded-lg border border-slate-200">
                   <img :src="img" class="h-full w-full object-cover" alt="" />
                   <button class="absolute inset-0 hidden items-center justify-center bg-black/40 text-white group-hover:flex" @click="detailImages.splice(i, 1)"><Trash2 class="h-4 w-4" /></button>
                 </div>
-                <button v-if="detailImages.length < 10" class="flex h-20 w-20 items-center justify-center rounded-lg border-2 border-dashed border-slate-300 text-slate-400 hover:border-[#1677ff] hover:text-[#1677ff]" @click="detailFileRef?.click()"><Plus class="h-5 w-5" /></button>
+                <button
+                  v-if="detailImages.length < DETAIL_LIMIT"
+                  class="flex h-20 w-20 items-center justify-center rounded-lg border-2 border-dashed border-slate-300 text-slate-400 hover:border-[#1677ff] hover:text-[#1677ff]"
+                  data-testid="detail-image-picker"
+                  @click="openPicker('detail')"
+                ><Plus class="h-5 w-5" /></button>
               </div>
-              <input ref="detailFileRef" type="file" accept="image/jpeg,image/png,image/webp" class="hidden" @change="onDetailChange" />
             </div>
           </div>
           <MdEditor
@@ -917,5 +923,14 @@ function cancel() {
         </div>
       </div>
     </div>
+
+    <!-- 图片选择器（媒体库 P2：上传 + 从媒体库复用）。主图为单选、详情图为多选 -->
+    <ImagePicker
+      v-model:open="pickerOpen"
+      module="products"
+      :multiple="pickerTarget === 'detail'"
+      :limit="DETAIL_LIMIT"
+      @select="onPicked"
+    />
   </div>
 </template>
