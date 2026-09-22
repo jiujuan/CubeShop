@@ -205,8 +205,12 @@ UploadedFile
 
 - `admin/src/views/system/MediaLibraryView.vue`：网格视图（缩略图）、搜索、模块筛选、"未使用"筛选、替换、软删；
 - `admin/src/components/ImagePicker.vue`：**统一选图入口**，内含「上传」与「从媒体库选择」两个 Tab；
-- 逐接入顺序：**Banner → 品牌 logo → 商品主图/相册 → CMS 区块图**（正文 Markdown 内联图放到最后，且优先级最低）；
-- 顺带补齐 `AppImage` 组件（懒加载 + 占位 + `onerror` 兜底）—— 现在 web 端是散用 `<img>` + 内联 `onerror`（`ProductCard.vue`、`CmsArticleBody.vue`、`BlockGallery.vue` 等）。
+  无 `media.view` 权限的账号（如纯商品录入岗）自动退化为纯上传、走既有 `/admin/upload`，行为与改造前一致；
+- 逐接入顺序：**商品主图/相册 → Banner → 品牌 logo → CMS 区块图**（正文 Markdown 内联图放到最后，且优先级最低）；
+- 顺带补齐 `AppImage` 组件（懒加载 + 占位 + `onerror` 兜底）—— 现在 web 端是散用 `<img>` + 内联 `onerror`（`ProductCard.vue`、`CmsArticleBody.vue`、`BlockGallery.vue` 等），归入 P3 范畴。
+
+> 首次落地只做了「媒体库页 + `ImagePicker` + 商品主图/相册接入」三件事（详见 §10.4）。
+> Banner / 品牌 / CMS 的选图器接入、以及 `AppImage` 统一兜底留待下一阶段。
 
 ---
 
@@ -311,4 +315,31 @@ Refund / CsTicketMessage / CsFaqArticle；User、SysUser 头像与支付凭证**
   单独把它们合并进来了 —— 否则相册图永远算作「在用」，进不了回收窗口；
 - `order_items.sku_image` 是快照，仍然享受 URL 换算（避免历史订单图裂），但**不参与 usage 统计**；
 - `payments.voucher_url` 是敏感凭证，按既定口径**不登记**进媒体库（也因此它的孤儿要靠人工）；
+
+### 10.4 落地情况（2026-09-23：P2 消费侧，第一刀落在商品选图器）
+
+P0/P1 上线后真实扫出：277 张登记、91 张在用、186 张孤儿（≈55MB）、27 组重复 MD5 ——
+孤儿率 2/3，证明「选图器复用 + 回收」是真痛点，故推进 P2。
+
+**本批交付（已实现范围）**
+
+| 层 | 产物 | 说明 |
+|---|---|---|
+| 后端 | 迁移 `2026_09_23_000116_sync_media_permissions` | 幂等把 `media.view/upload/manage` 同步进 `role_permissions`；`operator` 授 `view+upload`，`manage` 仅超管 |
+| 后端 | `App\Services\Common\MediaRegistry::replaceFile()` | 替换文件保留 `path`，复用同一 `media_files` 行 |
+| 后端 | `App\Http\Controllers\Admin\MediaController` | 五接口：`index`(分页+筛选) / `store`(上传登记) / `update`(改名·换模块) / `replace`(保 path) / `destroy`(软删，仍被引用则 403 拒绝) |
+| 后端 | 12 条 `AdminMediaApiTest` | 覆盖分页筛选、md5 复用、改名、替换保 path、软删拒绝、无权限 403；全量 pest 1555 passed |
+| 前端 | `admin/src/api/media.ts` | `getMediaList` / `uploadMedia` / `replaceMedia` / `deleteMedia` / `updateMedia` |
+| 前端 | `admin/src/components/ImagePicker.vue` | 双 Tab 选图器（`upload` / `library`），`v-model:open` + `@select(urls[])`，支持单选/多选+limit，权限降级为纯上传 |
+| 前端 | `admin/src/views/system/MediaLibraryView.vue` | 媒体库页：网格、搜索、模块筛选、未使用筛选、替换、软删 |
+| 前端 | 路由 `media` + 菜单「媒体库」 | 挂在 configs 段后，`permission: media.view` |
+| 前端 | `admin/src/views/product/ProductEditView.vue` | 主图/详情图改走 `ImagePicker`（删除裸 `<input type=file>`），保留 10 张上限与删除交互；Markdown 正文内联图仍走原 `onUploadImg` 钩子（不接入媒体库，留给 CMS 阶段） |
+
+**校验**：admin 侧 `vue-tsc -b` 0 错、`vitest` 306 passed；backend 侧 pest 1555 passed。
+
+**本批未做（明确留待下一阶段）**
+
+- Banner / 品牌 logo / CMS 区块图 的选图器接入（仍用原上传入口）；
+- `AppImage` 统一兜底组件；
+- CMS Markdown 内联图迁移（长期搁置，视 P2 收益再定）。
 - User / SysUser 头像未注册联动：账号删除是低频且高风险操作，头像回收暂由人工决定。
