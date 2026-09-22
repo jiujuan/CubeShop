@@ -5,6 +5,7 @@ use App\Models\CsFaqArticle;
 use App\Models\CsFaqCategory;
 use App\Models\Product;
 use App\Support\CmsListStyle;
+use App\Support\MediaUrl;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);
@@ -65,7 +66,7 @@ it('articles 列表按子栏目过滤且字段裁剪（不含正文，带封面�
     expect($list)->toHaveCount(2)
         ->and($list[0]['title'])->toBe('新品上市') // 热门优先
         ->and($list[0])->toHaveKey('cover_image')
-        ->and($list[0]['cover_image'])->toBe('/uploads/cms/news-a.jpg')
+        ->and($list[0]['cover_image'])->toBe(MediaUrl::to('/uploads/cms/news-a.jpg'))
         ->and($list[0])->not->toHaveKey('content'); // 列表不带正文
 });
 
@@ -241,7 +242,7 @@ it('detail 把内联商品给到 embedded_products，底部 products 去重', fu
     expect($res->json('data.embedded_products'))->toHaveCount(1)
         ->and($res->json('data.embedded_products.0.id'))->toBe($inlined->public_id)
         ->and($res->json('data.embedded_products.0.title'))->toBe('内联商品')
-        ->and($res->json('data.embedded_products.0.main_image'))->toBe('/storage/p/a.png')
+        ->and($res->json('data.embedded_products.0.main_image'))->toBe(MediaUrl::to('/storage/p/a.png'))
         ->and($res->json('data.products'))->toHaveCount(1)
         ->and($res->json('data.products.0.id'))->toBe($bottom->public_id);
 });

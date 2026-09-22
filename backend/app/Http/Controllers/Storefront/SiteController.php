@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Storefront;
 use App\Http\Controllers\Controller;
 use App\Services\Common\ConfigService;
 use App\Support\ApiResponse;
+use App\Support\MediaUrl;
 use Illuminate\Http\JsonResponse;
 
 /**
@@ -34,8 +35,9 @@ class SiteController extends Controller
     {
         return $this->success([
             'name' => $this->config->get('site.name') ?: self::DEFAULT_NAME,
-            'logo' => $this->config->get('site.logo', '') ?? '',
-            'logo_small' => $this->config->get('site.logo_small', '') ?? '',
+            // 数据库存相对路径，出口才拼域名（媒体治理 P0：避免域名写死进数据）
+            'logo' => MediaUrl::to($this->config->get('site.logo', '') ?? '') ?? '',
+            'logo_small' => MediaUrl::to($this->config->get('site.logo_small', '') ?? '') ?? '',
         ]);
     }
 }

@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Casts\MediaPath;
 use App\Models\Traits\HasPublicId;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -30,6 +31,8 @@ class OrderItem extends Model
         'total_amount' => 'decimal:2',
         'coupon_share' => 'decimal:2',
         'promotion_share' => 'decimal:2',
+        // 快照：下单时刻的主图字面值，只做 URL 拼装，不做 live 引用
+        'sku_image' => MediaPath::class,
     ];
 
     /** 该行实付（下单单价 × 数量 − 券分摊 − 满减分摊），退款按此计算 */

@@ -2,6 +2,8 @@
 
 namespace App\Models;
 
+use App\Casts\MediaPathList;
+use App\Models\Traits\ReleasesMediaOnDelete;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
@@ -13,6 +15,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  */
 class CsTicketMessage extends Model
 {
+    use ReleasesMediaOnDelete;
     public const SENDER_USER = 'user';
     public const SENDER_STAFF = 'staff';
     public const SENDER_SYSTEM = 'system';
@@ -36,7 +39,7 @@ class CsTicketMessage extends Model
     ];
 
     protected $casts = [
-        'images' => 'array',
+        'images' => MediaPathList::class,
         'is_internal' => 'boolean',
         'created_at' => 'datetime',
     ];

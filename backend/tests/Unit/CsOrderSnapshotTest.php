@@ -9,6 +9,7 @@ use App\Models\Shipping;
 use App\Models\ShippingTrace;
 use App\Models\User;
 use App\Services\Cs\CsTicketService;
+use App\Support\MediaUrl;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 
@@ -333,6 +334,7 @@ it('快照不再查询 products 表（旧实现用 Product::find 逐项补首图
             ->toBeFalse('订单快照不应查询 products 表：'.$entry['query']);
     }
 
-    // 商品图直接取订单明细快照（order_items.sku_image）
-    expect($this->service->orderSnapshot($ticket)['items'][0]['image'])->toBe('/storage/sku/A.png');
+    // 商品图直接取订单明细快照（order_items.sku_image）；出口由 MediaPath cast 拼上域名
+    expect($this->service->orderSnapshot($ticket)['items'][0]['image'])
+        ->toBe(MediaUrl::to('/storage/sku/A.png'));
 });

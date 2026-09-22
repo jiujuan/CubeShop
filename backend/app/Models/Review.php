@@ -2,7 +2,9 @@
 
 namespace App\Models;
 
+use App\Casts\MediaPathList;
 use App\Models\Traits\HasPublicId;
+use App\Models\Traits\ReleasesMediaOnDelete;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -12,7 +14,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  */
 class Review extends Model
 {
-    use HasPublicId;
+    use HasPublicId, ReleasesMediaOnDelete;
 
     protected $table = 'reviews';
 
@@ -42,7 +44,7 @@ class Review extends Model
     ];
 
     protected $casts = [
-        'images' => 'array',
+        'images' => MediaPathList::class,
         'is_anonymous' => 'boolean',
         'is_hidden' => 'boolean',
         'rating' => 'integer',

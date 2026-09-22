@@ -2,7 +2,9 @@
 
 namespace App\Models;
 
+use App\Casts\MediaPathList;
 use App\Models\Traits\HasPublicId;
+use App\Models\Traits\ReleasesMediaOnDelete;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
@@ -11,7 +13,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  */
 class Refund extends Model
 {
-    use HasPublicId;
+    use HasPublicId, ReleasesMediaOnDelete;
 
     public const STATUS_PENDING = 'pending';
     public const STATUS_APPROVED = 'approved';
@@ -55,8 +57,8 @@ class Refund extends Model
     protected $casts = [
         'amount' => 'decimal:2',
         'refund_details' => 'array',
-        'images' => 'array',
-        'admin_images' => 'array',
+        'images' => MediaPathList::class,
+        'admin_images' => MediaPathList::class,
         'return_details' => 'array',
         'return_received_details' => 'array',
         'return_received_at' => 'datetime',

@@ -2,6 +2,8 @@
 
 namespace App\Models;
 
+use App\Casts\MediaPath;
+use App\Models\Traits\ReleasesMediaOnDelete;
 use Illuminate\Database\Eloquent\Model;
 
 /**
@@ -9,6 +11,8 @@ use Illuminate\Database\Eloquent\Model;
  */
 class ProductImage extends Model
 {
+    use ReleasesMediaOnDelete;
+
     public $timestamps = false;
 
     protected $table = 'product_images';
@@ -16,5 +20,6 @@ class ProductImage extends Model
 
     protected $casts = [
         'created_at' => 'datetime',
+        'url' => MediaPath::class,
     ];
 }

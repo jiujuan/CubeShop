@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Casts\MediaPath;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -79,6 +80,7 @@ class Payment extends Model
         'paid_at' => 'datetime',
         'transferred_at' => 'datetime',
         'reviewed_at' => 'datetime',
+        'voucher_url' => MediaPath::class,
     ];
 
     /** 提交人身份域：买家（users）或管理员（sys_user） */

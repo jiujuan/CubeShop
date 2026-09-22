@@ -5,6 +5,7 @@ use App\Models\CsFaqArticle;
 use App\Models\CsFaqCategory;
 use App\Models\Product;
 use App\Services\Common\CaptchaService;
+use App\Support\MediaUrl;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);
@@ -183,7 +184,7 @@ it('文章详情返回独立编辑页所需的全部可写字段', function () {
     // 独立页回填依赖：category_id / slug / cover_image / seo_* / tags / sort / is_hot / product_ids
     expect($res->json('data.category_id'))->toBe($this->category->id)
         ->and($res->json('data.slug'))->toBe('detail-slug')
-        ->and($res->json('data.cover_image'))->toBe('/storage/c.png')
+        ->and($res->json('data.cover_image'))->toBe(MediaUrl::to('/storage/c.png'))
         ->and($res->json('data.seo_title'))->toBe('SEO 标题')
         ->and($res->json('data.seo_keywords'))->toBe('a,b')
         ->and($res->json('data.sort'))->toBe(3)

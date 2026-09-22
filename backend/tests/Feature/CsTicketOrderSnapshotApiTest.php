@@ -10,6 +10,7 @@ use App\Models\ShippingTrace;
 use App\Models\User;
 use App\Services\Common\CaptchaService;
 use App\Services\Cs\CsTicketService;
+use App\Support\MediaUrl;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);
@@ -254,7 +255,7 @@ it('⑦ 旧 order 节点保持兼容形状（order_no/status/pay_amount/created_
     expect(array_keys($legacy))->toBe(['order_no', 'status', 'pay_amount', 'created_at', 'product_image'])
         ->and($legacy['order_no'])->toBe($this->order->order_no)
         ->and($legacy['pay_amount'])->toBe('258.00')
-        ->and($legacy['product_image'])->toBe('/storage/sku/首图商品.png');
+        ->and($legacy['product_image'])->toBe(MediaUrl::to('/storage/sku/首图商品.png'));
 });
 
 // ---------- 集成 ⑧：脱敏 ----------

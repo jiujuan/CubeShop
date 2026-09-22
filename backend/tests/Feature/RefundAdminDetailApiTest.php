@@ -3,6 +3,7 @@
 use App\Models\Order;
 use App\Models\Refund;
 use App\Services\Common\CaptchaService;
+use App\Support\MediaUrl;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);
@@ -62,10 +63,12 @@ test('TC-RFD-DTL-001 申请携带凭证图片落库，详情接口返回商品�
     ], $auth)->assertOk();
 
     $refund = Refund::where('order_id', $order->id)->latest('id')->first();
-    expect($refund->images)->toBe([
-        '/storage/uploads/products/20260919/a.jpg',
-        '/storage/uploads/products/20260919/b.jpg',
-    ]);
+    // 库里存相对路径，读出来由 MediaPathList cast 拼上域名
+    expect($refund->getAttributes()['images'])->toBe('["uploads/products/20260919/a.jpg","uploads/products/20260919/b.jpg"]')
+        ->and($refund->images)->toBe([
+            MediaUrl::to('/storage/uploads/products/20260919/a.jpg'),
+            MediaUrl::to('/storage/uploads/products/20260919/b.jpg'),
+        ]);
 
     // 详情接口
     $res = test()->getJson('/api/admin/refunds/'.rfid($refund->id), $this->adminAuth);
@@ -111,7 +114,7 @@ test('TC-RFD-DTL-002 后台同意可附理由与说明图片', function () {
     $refund->refresh();
     expect($refund->status)->toBe(Refund::STATUS_SUCCESS)
         ->and($refund->admin_remark)->toBe('核对无误，同意退款')
-        ->and($refund->admin_images)->toBe(['/storage/uploads/products/20260919/ok.jpg'])
+        ->and($refund->admin_images)->toBe([MediaUrl::to('/storage/uploads/products/20260919/ok.jpg')])
         ->and($refund->processed_by)->not->toBeNull()
         ->and($order->fresh()->status)->toBe(Order::STATUS_REFUNDED);
 

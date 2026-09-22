@@ -24,6 +24,13 @@ Schedule::command('coupons:expire')->hourly()->withoutOverlapping();
 // 物流轨迹拉取（V1.1 二期 T-045）：每 30 分钟拉取在途运单轨迹；未配置渠道时命令内部安全跳过
 Schedule::command('shipping:pull-traces')->everyThirtyMinutes()->withoutOverlapping();
 
+// 图片资产扫描（媒体治理 P0）：每天登记磁盘文件并重算引用计数，便于孤儿识别
+Schedule::command('media:scan')->dailyAt('03:10')->withoutOverlapping();
+
+// 图片回收通知（媒体治理 P0）：每天早上列出「软删满 30 天且无引用」的清单。
+// ⚠️ 只通知不删除 —— 物理删除必须人工执行 `media:prune --force`（会二次确认）。
+Schedule::command('media:prune --notify')->dailyAt('03:20')->withoutOverlapping();
+
 // WMS 回调幂等登记清理（WMS 计划 P3 / Step 6）：每天 04:20 清理过期登记
 Schedule::command('wms:prune-callbacks')->dailyAt('04:20')->withoutOverlapping();
 

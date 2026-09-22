@@ -11,6 +11,7 @@ use App\Models\Product;
 use App\Models\User;
 use App\Services\Common\CaptchaService;
 use App\Services\Cs\CsTicketService;
+use App\Support\MediaUrl;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);
@@ -97,7 +98,7 @@ it('详情返回工单、用户脱敏摘要、订单摘要与可用操作', func
         ->and($res->json('data.user_summary.phone_masked'))->toBe('138****1234')
         ->and($res->json('data.user_summary.ticket_count'))->toBeGreaterThanOrEqual(1)
         ->and($res->json('data.order.order_no'))->toBe($this->order->order_no)
-        ->and($res->json('data.order.product_image'))->toBe('/storage/p/x.png')
+        ->and($res->json('data.order.product_image'))->toBe(MediaUrl::to('/storage/p/x.png'))
         ->and($res->json('data.actions'))->toHaveKeys(['can_reply', 'can_complete', 'can_close']);
 });
 

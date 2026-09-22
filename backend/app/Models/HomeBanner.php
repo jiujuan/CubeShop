@@ -2,7 +2,9 @@
 
 namespace App\Models;
 
+use App\Casts\MediaPath;
 use App\Models\Traits\HasPublicId;
+use App\Models\Traits\ReleasesMediaOnDelete;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 
@@ -18,7 +20,7 @@ use Illuminate\Database\Eloquent\Model;
  */
 class HomeBanner extends Model
 {
-    use HasPublicId;
+    use HasPublicId, ReleasesMediaOnDelete;
 
     public const POSITION_BANNER = 'banner';
     public const POSITION_PROMO = 'promo';
@@ -43,6 +45,7 @@ class HomeBanner extends Model
     protected $casts = [
         'sort_order' => 'integer',
         'is_enabled' => 'boolean',
+        'image' => MediaPath::class,
     ];
 
     public function positionLabel(): string

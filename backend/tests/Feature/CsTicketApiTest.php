@@ -9,6 +9,7 @@ use App\Models\OrderItem;
 use App\Models\Product;
 use App\Services\Cs\CsTicketService;
 use App\Services\Common\CaptchaService;
+use App\Support\MediaUrl;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);
@@ -148,7 +149,7 @@ it('详情含关联订单摘要与商品首图', function () {
     $order = $res->json('data.order');
     expect($order['order_no'])->toBe($this->order->order_no)
         ->and($order['pay_amount'])->toBe('100.00')
-        ->and($order['product_image'])->toBe('/storage/p/x.png');
+        ->and($order['product_image'])->toBe(MediaUrl::to('/storage/p/x.png'));
 });
 
 it('追加回复成功且自动回流 processing', function () {

@@ -6,6 +6,7 @@ use App\Models\CsFaqCategory;
 use App\Models\CsTicket;
 use App\Models\CsTicketMessage;
 use App\Models\CsTicketType;
+use App\Support\MediaUrl;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);
@@ -103,8 +104,11 @@ it('消息模型 casts 生效：images 数组、is_internal 布尔', function ()
         'is_internal' => 1,
     ]);
 
-    expect($message->images)->toBeArray()
-        ->and($message->images)->toBe(['/storage/cs/a.png'])
+    // MediaPathList cast 双重身份：库里存相对路径，读出来拼成绝对 URL（媒体治理 P0）
+    // 双重身份：库里存相对路径 'cs/a.png'，读出来拼成绝对 URL
+    expect($message->getAttributes()['images'])->toBe('["cs/a.png"]')
+        ->and($message->images)->toBeArray()
+        ->and($message->images)->toBe([MediaUrl::to('/storage/cs/a.png')])
         ->and($message->is_internal)->toBeTrue();
 });
 

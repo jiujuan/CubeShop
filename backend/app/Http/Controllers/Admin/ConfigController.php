@@ -8,6 +8,7 @@ use App\Services\Common\FileUploadService;
 use App\Services\Common\OperationLogService;
 use App\Support\ApiResponse;
 use App\Support\ConfigGroup;
+use App\Support\MediaUrl;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
@@ -18,6 +19,14 @@ class ConfigController extends Controller
 
     /** 站点 logo 上传存放模块（storage/app/public/uploads/site/{Ymd}） */
     private const SITE_LOGO_MODULE = 'site';
+
+    /**
+     * 存图片的配置键（媒体治理 P0）
+     *
+     * 这些键的值是小图片路径：**入库归一为相对路径**，出参时才拼域名，
+     * 否则「站点配置」会成为唯一还把 APP_URL 写死进数据的地方。
+     */
+    private const MEDIA_KEYS = ['site.logo', 'site.logo_small'];
 
     public function __construct(
         private readonly OperationLogService $operationLog,
@@ -36,7 +45,7 @@ class ConfigController extends Controller
         $configs = SystemConfig::orderBy('config_key')->get()
             ->map(fn (SystemConfig $c) => [
                 'config_key' => $c->config_key,
-                'config_value' => (string) ($c->config_value ?? ''),
+                'config_value' => $this->serializeValue($c),
                 'description' => $c->description,
                 'group' => ConfigGroup::labelOf($c->config_key),
                 'updated_at' => $c->updated_at?->format('Y-m-d H:i:s'),
@@ -84,8 +93,10 @@ class ConfigController extends Controller
         ]);
 
         foreach ($data['configs'] as $item) {
+            $raw = $item['config_value'] ?? '';
+
             SystemConfig::where('config_key', $item['config_key'])
-                ->update(['config_value' => $item['config_value'] ?? '']);
+                ->update(['config_value' => $this->normalizeValue((string) $item['config_key'], $raw)]);
         }
 
         // 配置缓存失效
@@ -101,5 +112,25 @@ class ConfigController extends Controller
         );
 
         return $this->success(null, '配置更新成功');
+    }
+
+    /** 出参：图片类配置键值拼成绝对 URL，供后台预览 */
+    private function serializeValue(SystemConfig $config): string
+    {
+        $value = (string) ($config->config_value ?? '');
+
+        return in_array($config->config_key, self::MEDIA_KEYS, true)
+            ? (MediaUrl::to($value) ?? '')
+            : $value;
+    }
+
+    /** 入库：图片类配置键值归一为相对路径，其余原样 */
+    private function normalizeValue(string $key, mixed $value): string
+    {
+        $value = $value === null ? '' : (string) $value;
+
+        return in_array($key, self::MEDIA_KEYS, true)
+            ? (MediaUrl::toPath($value) ?? '')
+            : $value;
     }
 }

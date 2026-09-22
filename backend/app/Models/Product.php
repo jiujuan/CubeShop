@@ -8,8 +8,12 @@ use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use App\Models\Traits\HasPublicId;
+use App\Models\Traits\ReleasesMediaOnDelete;
 use App\Support\HtmlSanitizer;
 use App\Support\MarkdownRenderer;
+use App\Support\MediaUrl;
+use App\Casts\MediaPath;
+use App\Casts\MediaRichText;
 
 /**
  * 商品主表
@@ -24,7 +28,7 @@ use App\Support\MarkdownRenderer;
  */
 class Product extends Model
 {
-    use SoftDeletes, HasPublicId;
+    use SoftDeletes, HasPublicId, ReleasesMediaOnDelete;
 
     protected $table = 'products';
     protected $fillable = [
@@ -44,6 +48,10 @@ class Product extends Model
         'weight' => 'integer',
         'freight_template_id' => 'integer',
         'is_home_recommended' => 'boolean',
+        // 媒体治理 P0：库里存相对路径，读写两端经 MediaUrl 换算（详见 App\Casts\MediaPath）
+        'main_image' => MediaPath::class,
+        'description' => MediaRichText::class,
+        'description_md' => MediaRichText::class,
     ];
 
     /**
@@ -60,10 +68,35 @@ class Product extends Model
                 return;
             }
 
-            $product->attributes['description'] = HtmlSanitizer::cleanHtml(
-                MarkdownRenderer::toHtml((string) $product->getAttribute('description_md'))
+            // 写原始 attributes 而不走 setter：派生产物不需要再过一次 cast；
+            // 但里面有内联图片，须归一成根相对，否则域名又被写死回库里。
+            $product->attributes['description'] = MediaUrl::normalizeEmbedded(
+                HtmlSanitizer::cleanHtml(
+                    MarkdownRenderer::toHtml((string) $product->getAttribute('description_md'))
+                )
             );
         });
+    }
+
+    /**
+     * 商品引用的图片 = 自身媒体列（主图 / 详情正文）+ 相册子表
+     *
+     * ⚠️ 相册行（`product_images`）在商品软删时**仍然存在**，若不一起解除，
+     * 相册图会一直被算作「在用」，永远进不了回收窗口。
+     *
+     * @return array<int, string>
+     */
+    public function referencedMediaPaths(): array
+    {
+        $paths = $this->mediaColumnPaths();
+
+        foreach ($this->images()->pluck('url') as $url) {
+            foreach (MediaUrl::extractPaths(is_string($url) ? $url : null) as $path) {
+                $paths[] = $path;
+            }
+        }
+
+        return array_values(array_unique(array_filter($paths)));
     }
 
     public function skus(): HasMany

@@ -2,9 +2,14 @@
 
 namespace App\Models;
 
+use App\Casts\MediaNested;
+use App\Casts\MediaPath;
+use App\Casts\MediaRichText;
 use App\Models\Product;
+use App\Models\Traits\ReleasesMediaOnDelete;
 use App\Support\HtmlSanitizer;
 use App\Support\MarkdownRenderer;
+use App\Support\MediaUrl;
 use App\Support\ProductEmbed;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -29,6 +34,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsToMany;
  */
 class CsFaqArticle extends Model
 {
+    use ReleasesMediaOnDelete;
     public const STATUS_DRAFT = 'draft';
     public const STATUS_PUBLISHED = 'published';
     public const STATUS_OFFLINE = 'offline';
@@ -55,9 +61,13 @@ class CsFaqArticle extends Model
         'helpful_count' => 'integer',
         'unhelpful_count' => 'integer',
         'published_at' => 'datetime',
-        'page_fields' => 'array',
-        'blocks' => 'array',
+        'page_fields' => MediaNested::class,
+        'blocks' => MediaNested::class,
         'tags' => 'array',
+        // 媒体治理 P0：封面图与正文内联图的相对路径换算（详见 App\Casts\MediaPath）
+        'cover_image' => MediaPath::class,
+        'content_md' => MediaRichText::class,
+        'content' => MediaRichText::class,
     ];
 
     public function category(): BelongsTo
@@ -145,9 +155,13 @@ class CsFaqArticle extends Model
                 return;
             }
 
-            $article->attributes['content'] = HtmlSanitizer::cleanHtml(
-                ProductEmbed::tokenize(
-                    MarkdownRenderer::toHtml((string) $article->getAttribute('content_md'))
+            // 写原始 attributes 而不走 setter：派生产物不需要再过一次 cast；
+            // 但正文里有内联图片，须归一成根相对，否则域名被写死回库里（媒体治理 P0）。
+            $article->attributes['content'] = MediaUrl::normalizeEmbedded(
+                HtmlSanitizer::cleanHtml(
+                    ProductEmbed::tokenize(
+                        MarkdownRenderer::toHtml((string) $article->getAttribute('content_md'))
+                    )
                 )
             );
         });
@@ -162,7 +176,7 @@ class CsFaqArticle extends Model
      */
     public function setContentAttribute(?string $value): void
     {
-        $this->attributes['content'] = HtmlSanitizer::clean($value);
+        $this->attributes['content'] = MediaUrl::normalizeEmbedded(HtmlSanitizer::clean($value));
     }
 
     public function scopePublished($query)
