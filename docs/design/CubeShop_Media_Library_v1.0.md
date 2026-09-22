@@ -339,7 +339,6 @@ P0/P1 上线后真实扫出：277 张登记、91 张在用、186 张孤儿（≈
 
 **本批未做（明确留待下一阶段）**
 
-- Banner / 品牌 logo / CMS 区块图 的选图器接入（仍用原上传入口）；
 - CMS Markdown 内联图迁移（长期搁置，视 P2 收益再定）。
 - User / SysUser 头像未注册联动：账号删除是低频且高风险操作，头像回收暂由人工决定。
 
@@ -361,3 +360,23 @@ P0/P1 上线后真实扫出：277 张登记、91 张在用、186 张孤儿（≈
 
 **校验**：admin `vue-tsc -b` 0 错 + `vitest` 306 passed；web `vue-tsc -b` 0 错、改动相关测试（cms-blocks 6 / cms-page+news 25 / account-center 7）隔离全过。
 web 全量并行偶发 `account-center` flaky（记忆已知：串行全过），与本次改动无关。
+
+### 10.6 落地情况（2026-09-23：Banner / 品牌 / CMS 区块 / CMS 封面 接入选图器）
+
+**策略：保留原上传入口 + 新增「从媒体库选择」**
+
+按需求「仍用原上传入口」，这四个入口**不替换**原上传控件，而是在其旁新增一个「从媒体库选择」按钮，
+打开 `ImagePicker`（上传 + 媒体库双 Tab）从已有资产复用图片。原上传行为（含 `uploadImage` / `uploadCmsImage`）
+完全保留，因此既有上传测试零改动。
+
+**改动点**
+
+- 首页广告位 `HomeBannerListView.vue`：保留 `file` 上传，新增「从媒体库选择」按钮 → `ImagePicker`（单选，`module=banners`），选中回填 `form.image`。
+- 品牌 `BrandView.vue`：保留 logo URL 文本框（原入口，可手填外部链接），新增缩略图预览 + 「从媒体库选择」按钮 → `ImagePicker`（单选，`module=brands`），选中回填 `form.logo`。
+- CMS 区块 `PageFieldForm.vue`：`image`（单图）/ `image_list`（多图）字段保留 `uploadCmsImage` 上传，各新增「从媒体库选择」按钮 → `ImagePicker`（`image` 单选、`image_list` 多选 `limit=20`，`module=cms`），选中回填对应字段。
+- CMS 文章封面 `CsFaqArticleEditView.vue`：保留封面上传 `file` 入口，新增「从媒体库选择」按钮 → `ImagePicker`（单选，`module=cms`），选中回填 `form.cover_image`。
+
+**权限降级**：四个入口的「从媒体库选择」按钮均带 `v-permission="'media.view'"`；
+无媒体库浏览权限的账号只看到原上传入口，与改造前一致，不被媒体库上线卡住。
+
+**校验**：admin `vue-tsc -b` 0 错 + `vitest` 306 passed（含受影响测试 `cs-article-edit` 29 / `cs-faq-blocks` 8 / `product-attribute` 16 / `marketing-admin` 10 全过）。
