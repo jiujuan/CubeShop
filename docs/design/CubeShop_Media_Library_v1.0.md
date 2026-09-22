@@ -207,10 +207,10 @@ UploadedFile
 - `admin/src/components/ImagePicker.vue`：**统一选图入口**，内含「上传」与「从媒体库选择」两个 Tab；
   无 `media.view` 权限的账号（如纯商品录入岗）自动退化为纯上传、走既有 `/admin/upload`，行为与改造前一致；
 - 逐接入顺序：**商品主图/相册 → Banner → 品牌 logo → CMS 区块图**（正文 Markdown 内联图放到最后，且优先级最低）；
-- 顺带补齐 `AppImage` 组件（懒加载 + 占位 + `onerror` 兜底）—— 现在 web 端是散用 `<img>` + 内联 `onerror`（`ProductCard.vue`、`CmsArticleBody.vue`、`BlockGallery.vue` 等），归入 P3 范畴。
+- 顺带补齐 `AppImage` 组件（web 端统一图片兜底：懒加载 `loading=lazy` + 加载占位 `bg-slate-100` + `onerror` 失败兜底显示中性占位图标，`class` 透传根元素）。
 
 > 首次落地只做了「媒体库页 + `ImagePicker` + 商品主图/相册接入」三件事（详见 §10.4）。
-> Banner / 品牌 / CMS 的选图器接入、以及 `AppImage` 统一兜底留待下一阶段。
+> Banner / 品牌 / CMS 的选图器接入留待下一阶段；`AppImage` 已在第二批落地（见 §10.5）。
 
 ---
 
@@ -340,6 +340,24 @@ P0/P1 上线后真实扫出：277 张登记、91 张在用、186 张孤儿（≈
 **本批未做（明确留待下一阶段）**
 
 - Banner / 品牌 logo / CMS 区块图 的选图器接入（仍用原上传入口）；
-- `AppImage` 统一兜底组件；
 - CMS Markdown 内联图迁移（长期搁置，视 P2 收益再定）。
 - User / SysUser 头像未注册联动：账号删除是低频且高风险操作，头像回收暂由人工决定。
+
+### 10.5 落地情况（2026-09-23：媒体库体验 + AppImage 统一兜底）
+
+**媒体库管理页体验**
+- 分页改用后台统一 `TablePagination`（与「商品列表」等列表页一致：页码折叠 + 跳页 + 统计文案），
+  去掉原来自写的「上一页 / N / 下一页」；
+- 缩略图点击 `openPreview` 弹出大图查看层（Teleport 到 body 的遮罩 + 大图 + 文件名，点遮罩/✕ 关闭）。
+
+**AppImage（web 端统一图片兜底）**
+- 新建 `web/src/components/AppImage.vue`：懒加载 `loading=lazy` + 加载占位 `bg-slate-100` +
+  `onerror` 失败兜底（显示中性 `ImageOff` 占位，不再裂图）；`class` / `data-testid` / `@click` 等透传到根元素，可作裸 `<img>` 的 drop-in 替换。
+- 已接入核心内容图：`ProductCard`（首页/搜索/收藏/购物车复用，影响面最大）、`CmsArticleBody`（正文内联商品卡）、
+  `BlockGallery` / `BlockHero` / `BlockTextImage`（CMS 区块）、`DetailView`（商品主图/相册/新闻封面）、
+  `NewsDetailView` / `NewsListView` / `NewsTagView`（新闻封面）。
+- **刻意未改**：`ShopHeader` 的 logo 已有「无图回落内置品牌图标」的兜底，改 AppImage 反而降级，保留原逻辑；
+  `v-html` 内的 CMS 正文图由后端白名单净化，不走组件。
+
+**校验**：admin `vue-tsc -b` 0 错 + `vitest` 306 passed；web `vue-tsc -b` 0 错、改动相关测试（cms-blocks 6 / cms-page+news 25 / account-center 7）隔离全过。
+web 全量并行偶发 `account-center` flaky（记忆已知：串行全过），与本次改动无关。
