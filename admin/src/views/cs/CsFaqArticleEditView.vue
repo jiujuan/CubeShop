@@ -4,6 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { ArrowLeft, Check, ChevronRight, CornerDownLeft, Save, X } from 'lucide-vue-next'
 import MarkdownEditor from '@/components/MarkdownEditor.vue'
 import LoadingSpinner from '@/components/LoadingSpinner.vue'
+import ImagePicker from '@/components/ImagePicker.vue'
 import {
   createCsFaqArticle, getCsFaqArticle, getCsFaqCategories, updateCsFaqArticle, uploadCmsImage,
   type CsFaqArticlePayload, type CsFaqCategoryRow,
@@ -215,6 +216,15 @@ function removeCover() {
   form.value.cover_image = null
 }
 
+// 封面：原上传入口保留；另提供「从媒体库选择」复用已有图片
+const coverPickerOpen = ref(false)
+function openCoverLibrary() {
+  coverPickerOpen.value = true
+}
+function onCoverPicked(urls: string[]) {
+  if (urls.length) form.value.cover_image = urls[0]
+}
+
 // ---------------- 加载 / 保存 ----------------
 
 async function load() {
@@ -388,6 +398,7 @@ onMounted(load)
               {{ coverUploading ? '上传中…' : '上传封面' }}
             </label>
             <button v-if="form.cover_image" type="button" class="w-fit text-[#ff4d4f] hover:underline" data-testid="cs-article-form-cover-remove" @click="removeCover">移除封面</button>
+            <button type="button" v-permission="'media.view'" class="w-fit rounded-md border border-slate-300 px-3 py-1.5 text-slate-600 hover:bg-slate-50" data-testid="cs-article-form-cover-library" @click="openCoverLibrary">从媒体库选择</button>
             <span class="text-xs text-slate-400">图文卡片新闻建议填；列表行新闻可不填</span>
           </div>
         </div>
@@ -512,5 +523,7 @@ onMounted(load)
         </button>
       </div>
     </div>
+
+    <ImagePicker v-model:open="coverPickerOpen" module="cms" @select="onCoverPicked" />
   </div>
 </template>

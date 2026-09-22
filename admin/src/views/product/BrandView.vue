@@ -8,6 +8,7 @@ import {
 import { Button } from '@/components/ui/button'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import TablePagination from '@/components/TablePagination.vue'
+import ImagePicker from '@/components/ImagePicker.vue'
 
 /**
  * 品牌管理（V1.1 E01 / T-011）
@@ -113,6 +114,15 @@ function goPage(page: number) {
   if (page < 1 || page > pagination.value.total_pages) return
   load(page)
 }
+
+// 品牌 logo：保留 URL 文本框（原入口），另提供「从媒体库选择」复用已有图片
+const pickerOpen = ref(false)
+function openLogoPicker() {
+  pickerOpen.value = true
+}
+function onLogoPicked(urls: string[]) {
+  if (urls.length) form.value.logo = urls[0]
+}
 </script>
 
 <template>
@@ -198,8 +208,21 @@ function goPage(page: number) {
             <input v-model="form.name" type="text" class="w-full rounded-md border border-slate-300 px-3 py-2 outline-none focus:border-[#1677ff]" />
           </div>
           <div>
-            <label class="mb-1 block text-slate-600">Logo URL</label>
-            <input v-model="form.logo" type="text" placeholder="选填" class="w-full rounded-md border border-slate-300 px-3 py-2 outline-none focus:border-[#1677ff]" />
+            <label class="mb-1 block text-slate-600">Logo</label>
+            <div class="flex items-start gap-3">
+              <img v-if="form.logo" :src="form.logo" class="h-10 w-10 shrink-0 rounded border border-slate-200 object-cover" alt="" data-testid="brand-form-logo-preview" />
+              <div v-else class="flex h-10 w-10 shrink-0 items-center justify-center rounded border border-dashed border-slate-300 text-xs text-slate-400">无</div>
+              <div class="flex flex-1 flex-col gap-1.5">
+                <input v-model="form.logo" type="text" placeholder="Logo URL（也可从媒体库选择）" class="w-full rounded-md border border-slate-300 px-3 py-2 outline-none focus:border-[#1677ff]" data-testid="brand-form-logo-input" />
+                <button
+                  type="button"
+                  v-permission="'media.view'"
+                  class="w-fit rounded-md border border-[#1677ff] px-3 py-1.5 text-[#1677ff] transition-colors hover:bg-[#eaf4ff]"
+                  data-testid="brand-form-library"
+                  @click="openLogoPicker"
+                >从媒体库选择</button>
+              </div>
+            </div>
           </div>
           <div class="flex gap-4">
             <div class="flex-1">
@@ -232,5 +255,7 @@ function goPage(page: number) {
       @confirm="onConfirm"
       @cancel="confirmState = null"
     />
+
+    <ImagePicker v-model:open="pickerOpen" module="brands" @select="onLogoPicked" />
   </div>
 </template>

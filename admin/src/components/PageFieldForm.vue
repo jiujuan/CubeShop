@@ -2,6 +2,7 @@
 import { ref } from 'vue'
 import { ArrowDown, ArrowUp, ImagePlus, Plus, Trash2, X } from 'lucide-vue-next'
 import MarkdownEditor from '@/components/MarkdownEditor.vue'
+import ImagePicker from '@/components/ImagePicker.vue'
 import { uploadCmsImage, type CmsPageField, type CsChannelOption } from '@/api/cs'
 
 /**
@@ -100,6 +101,25 @@ function removeImage(key: string, index: number) {
   const list = [...imageList(key)]
   list.splice(index, 1)
   setValue(key, list)
+}
+
+// 媒体库选图：原 uploadCmsImage 上传入口保留，另提供「从媒体库选择」复用已有图片
+const pickerOpen = ref(false)
+const pickerKey = ref('')
+const pickerMultiple = ref(false)
+function openLibrary(key: string, multiple: boolean) {
+  pickerKey.value = key
+  pickerMultiple.value = multiple
+  pickerOpen.value = true
+}
+function onPicked(urls: string[]) {
+  if (!pickerKey.value) return
+  if (pickerMultiple.value) {
+    setValue(pickerKey.value, [...imageList(pickerKey.value), ...urls])
+  } else {
+    setValue(pickerKey.value, urls[0] ?? '')
+  }
+  pickerKey.value = ''
 }
 
 // ---------- repeater ----------
@@ -236,6 +256,13 @@ function setRowValue(field: CmsPageField, index: number, subKey: string, value: 
             />
           </label>
           <button
+            type="button"
+            v-permission="'media.view'"
+            class="flex h-8 items-center gap-1.5 self-start rounded border border-slate-300 px-3 text-[13px] text-slate-600 hover:border-[#1677ff] hover:text-[#1677ff]"
+            :data-testid="`page-field-library-${field.key}`"
+            @click="openLibrary(field.key, false)"
+          >从媒体库选择</button>
+          <button
             v-if="val(field.key)"
             class="flex h-8 items-center gap-1.5 self-start rounded px-3 text-[13px] text-slate-500 hover:text-red-500"
             :data-testid="`page-field-clear-${field.key}`"
@@ -277,6 +304,13 @@ function setRowValue(field: CmsPageField, index: number, subKey: string, value: 
               @change="onImageListChange($event, field.key)"
             />
           </label>
+          <button
+            type="button"
+            v-permission="'media.view'"
+            class="flex h-20 w-20 items-center justify-center rounded border border-dashed border-slate-300 bg-slate-50 text-slate-400 hover:border-[#1677ff] hover:text-[#1677ff]"
+            :data-testid="`page-field-library-${field.key}`"
+            @click="openLibrary(field.key, true)"
+          >媒体库</button>
         </div>
       </div>
 
@@ -353,5 +387,7 @@ function setRowValue(field: CmsPageField, index: number, subKey: string, value: 
 
       <p v-if="field.hint" class="mt-1 text-[12px] text-slate-400">{{ field.hint }}</p>
     </div>
+
+    <ImagePicker v-model:open="pickerOpen" module="cms" :multiple="pickerMultiple" :limit="20" @select="onPicked" />
   </div>
 </template>

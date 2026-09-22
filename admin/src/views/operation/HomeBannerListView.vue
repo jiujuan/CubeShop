@@ -9,6 +9,7 @@ import { uploadImage } from '@/api/product'
 import { Button } from '@/components/ui/button'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import LoadingSpinner from '@/components/LoadingSpinner.vue'
+import ImagePicker from '@/components/ImagePicker.vue'
 
 /**
  * 首页广告位管理（P-HomeBanner，权限 home.manage）
@@ -146,6 +147,15 @@ async function onFileChange(event: Event) {
     uploading.value = false
     input.value = ''
   }
+}
+
+// 图片：原上传入口保留；另提供「从媒体库选择」复用已有图片（无 media.view 权限不显示该按钮）
+const pickerOpen = ref(false)
+function openLibrary() {
+  pickerOpen.value = true
+}
+function onPicked(urls: string[]) {
+  if (urls.length) form.value.image = urls[0]
 }
 
 async function save() {
@@ -365,6 +375,12 @@ async function confirmDelete() {
                   data-testid="banner-form-upload"
                   @click="pickImage"
                 >{{ uploading ? '上传中…' : '上传图片' }}</button>
+                <button
+                  v-permission="'media.view'"
+                  class="rounded-md border border-slate-300 px-3 py-2 text-slate-600 transition-colors hover:bg-slate-50"
+                  data-testid="banner-form-library"
+                  @click="openLibrary"
+                >从媒体库选择</button>
               </div>
             </div>
 
@@ -432,5 +448,7 @@ async function confirmDelete() {
       @confirm="confirmDelete"
       @cancel="deleteTarget = null"
     />
+
+    <ImagePicker v-model:open="pickerOpen" module="banners" @select="onPicked" />
   </div>
 </template>
