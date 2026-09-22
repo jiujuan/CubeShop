@@ -99,6 +99,12 @@ function confirm() {
   close()
 }
 
+/** 上传 Tab 中移除已上传的预览（多选场景；单选会自动关闭不会走到这里） */
+function removeSelected(url: string) {
+  const at = selected.value.indexOf(url)
+  if (at >= 0) selected.value.splice(at, 1)
+}
+
 // ---------------- 上传 ----------------
 const fileRef = ref<HTMLInputElement>()
 
@@ -217,7 +223,7 @@ function isSelected(url: string) {
         <!-- 上传 Tab -->
         <div
           v-if="tab === 'upload'"
-          class="flex flex-1 flex-col items-center justify-center gap-3 p-8"
+          class="flex flex-1 flex-col items-center gap-3 overflow-y-auto p-8"
           @dragover.prevent
           @drop="onDrop"
         >
@@ -238,6 +244,29 @@ function isSelected(url: string) {
             :multiple="multiple"
             @change="upload(($event.target as HTMLInputElement).files)"
           />
+
+          <!-- 上传预览：上传后在此看到小图，可移除（多选场景） -->
+          <div v-if="selected.length > 0" class="w-full max-w-md">
+            <p class="mb-2 text-[12px] text-slate-400">{{ multiple ? `已上传 ${selected.length} 张，可点 ✕ 移除` : '已上传' }}</p>
+            <div class="grid grid-cols-5 gap-2">
+              <div
+                v-for="url in selected"
+                :key="url"
+                class="group relative overflow-hidden rounded-md border border-slate-200 bg-slate-50"
+              >
+                <img :src="url" alt="" class="h-16 w-full object-cover" loading="lazy" />
+                <button
+                  v-if="multiple"
+                  class="absolute right-0.5 top-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-black/55 text-white opacity-0 transition-opacity group-hover:opacity-100"
+                  data-testid="picker-upload-thumb-remove"
+                  @click="removeSelected(url)"
+                >
+                  <X class="h-2.5 w-2.5" />
+                </button>
+              </div>
+            </div>
+          </div>
+
           <p v-if="!canBrowse" class="text-xs text-slate-400">当前账号无媒体库浏览权限，仅可上传新图。</p>
         </div>
 
