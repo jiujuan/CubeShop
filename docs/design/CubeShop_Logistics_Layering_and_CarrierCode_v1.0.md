@@ -2,7 +2,7 @@
 
 **版本**：v1.0
 **日期**：2026-09-22
-**状态**：已实施（编码归一随迁移 000113 落地）
+**状态**：已实施（编码归一随迁移 000113 落地；电子面单申请层 2026-09-23 新增，见 §9）
 **关联文档**：`CubeShop_WMS_Integration_Cainiao_JD_v1.0.md`（WMS 对接）、`../deployment/KUAIDI100_SETUP.md`（轨迹查询接入）
 
 ---
@@ -55,6 +55,27 @@
 ```
 
 **运单号是两层唯一的契约。** 快递100 不关心这个单号是管理员手敲的、还是菜鸟回传的，它只认"公司编码 + 单号"。
+
+---
+
+### 2.3 第三种能力：电子面单申请层（发货写回单号）
+
+前两层解决"怎么发、走到哪"。但"运单号从哪来"在快递100 签约前一直依赖 admin 手敲。电子面单申请层把这笔单号的**产生**也纳入统一渠道模型：
+
+| | WMS（仓配履约） | 电子面单申请（全局写） | 物流轨迹查询（全局读） |
+|---|---|---|---|
+| 管什么 | 库存/拣货/打包/出库 | 向快递方申请运单号 + 面单 | 运单走到哪了 |
+| 数据方向 | 写（按仓） | 写（全局） | 读（全局） |
+| 作用域 | 按仓 | 全局（一个渠道） | 全局（一个渠道） |
+| 渠道载体 | `wms_configs` | `system_configs.waybill.channel` | `system_configs.shipping.channel` |
+| 缺凭证 | fail-closed 阻断 | 降级为手动录入（Null 渠道） | 降级静默跳过（Null 渠道） |
+
+**关键设计：电子面单申请层与轨迹查询层是镜像对称的。** 两者共享同一套渠道抽象（`*ChannelInterface` + 一个编排 Service）、共享 `CarrierCode` 编码归一、共享 `config/services.php` + DB 运行时覆写机制，区别只在方向：
+
+- 轨迹查询：读第三方 → 落库 `traces`；
+- 电子面单：写第三方 → 回写 `shippings.tracking_no` / `waybill_*`。
+
+这种对称让"加一家快递公司"变成纯增量：新写一个 `*WaybillChannel` 类 + 在 `AppServiceProvider` 注册一个分支即可，不动编排层与发货入口。
 
 ---
 
@@ -211,6 +232,10 @@
 | 4 | `shipping_packages.carrier_code` 存仓方原值 | 用于对账溯源，不做转换 |
 | 5 | 拉取间隔 ≥ 30 分钟 | 快递100 会锁单（详见 KUAIDI100_SETUP.md） |
 | 6 | 新增编码务必先查 `CarrierCode` 而非直查模型 | 避免回落优先级被绕过 |
+| 7 | 电子面单渠道全局唯一且与轨迹查询对称 | 同属"单号契约"两端，按仓拆分无意义 |
+| 8 | Mock 渠道运单号必须确定性派生 | 防止并发/重试产生重复单号 |
+| 9 | 缺面单凭证降级为手动录入（Null）而非阻断 | 发货是主流程，与 WMS fail-closed 不同 |
+| 10 | `waybill.channel` 与 `shipping.channel` 各自独立配置 | 申请方与查询方可分别切换（如 mock 申请 + 真实查询） |
 
 ---
 
@@ -231,3 +256,79 @@
 | 编码映射迁移 | `backend/database/migrations/2026_09_22_000113_add_carrier_codes_to_express_companies.php` |
 | 字典种子 | `backend/database/seeders/ExpressCompanySeeder.php` |
 | 管理端字典页 | `admin/src/views/order/ExpressCompanyView.vue` |
+| **电子面单渠道接口** | `backend/app/Support/Shipping/WaybillChannelInterface.php` |
+| **电子面单请求 DTO** | `backend/app/Support/Shipping/WaybillRequest.php` |
+| **电子面单结果 DTO** | `backend/app/Support/Shipping/WaybillResult.php` |
+| **Mock 面单渠道** | `backend/app/Support/Shipping/MockWaybillChannel.php` |
+| **快递100 面单渠道** | `backend/app/Support/Shipping/Kuaidi100WaybillChannel.php` |
+| **Null 面单渠道** | `backend/app/Support/Shipping/NullWaybillChannel.php` |
+| **面单编排服务** | `backend/app/Services/Shipping/WaybillService.php` |
+| 面单字段迁移 | `backend/database/migrations/2026_09_23_000117_add_waybill_fields_to_shippings_table.php` |
+| **面单接口测试** | `backend/tests/Feature/WaybillIssuanceTest.php` |
+
+---
+
+## 9. 电子面单申请层实现（2026-09-23 新增）
+
+### 9.1 渠道抽象
+
+`WaybillChannelInterface`（镜像 `ShippingChannelInterface`）：
+
+```php
+interface WaybillChannelInterface {
+    public function issue(WaybillRequest $req): WaybillResult; // 申请运单
+    public function available(): bool;                        // 渠道是否可用
+    public function channelName(): string;                    // 渠道标识（mock / kuaidi100 / null）
+}
+```
+
+三个实现：
+
+| 渠道 | 类 | `available()` | `issue()` 行为 |
+|---|---|---|---|
+| mock | `MockWaybillChannel` | `true` | 产出**确定性**运单号 `MOCK` + `crc32(orderNo\|companyCode)`（十六进制大写），附 HTML 面单；本地/开发默认，无需签约即可跑通"发货 → 写回单号"全链路 |
+| kuaidi100 | `Kuaidi100WaybillChannel` | 需 `WAYBILL_KEY` + `WAYBILL_CUSTOMER` | 同轨迹查询签名 `md5(param.$key.$customer)`，POST `poll/order.do`，解析 `data.kuaidinum`（兜底顶层）+ 面单模板 |
+| null | `NullWaybillChannel` | `false` | 一律 `fail` → 编排层降级为"手动录入单号"，不阻断发货 |
+
+> **确定性纪律**：Mock 渠道的运单号由 `crc32` 种子派生，与 `MockChannel` 轨迹时间的确定性同一思路——避免并发/重试时产生重复运单号或重复插入。
+
+### 9.2 编排层 `WaybillService`
+
+`issueForOrder(Order $order, string $companyCode): WaybillResult`：
+
+- 收件人取自 `$order->address_snapshot`（姓名 / 电话 / 地址）；
+- 寄件人取自 `config('services.waybill.sender_*')`；
+- 重量取自 `config('services.waybill.default_weight_gram')`（默认 1000g）；
+- 公司编码经 `CarrierCode::forChannel($companyCode, CarrierCode::KUAIDI100)` 归一后下发。
+
+### 9.3 配置与运行时切换
+
+- `config/services.php` 新增 `waybill` 数组：`channel`（env `WAYBILL_CHANNEL`，默认 `mock`）、`key` / `customer`（复用 `SHIPPING_*` 凭证，**不入库**）、`order_url`、`timeout`、`default_weight_gram`、`sender_*`。
+- `AppServiceProvider` 按 `channel` 绑定 `WaybillChannelInterface`：`mock → MockWaybillChannel`、`kuaidi100 → Kuaidi100WaybillChannel`、其余 → `NullWaybillChannel`。
+- 运行时覆写：`applyWaybillChannelOverride()` 读 `system_configs.waybill.channel`（与 `shipping.channel` 同机制），`off` → 强制 Null；优先级高于 env 配置。
+
+### 9.4 发货入口钩子 `OrderService::shipForShipment()`
+
+签名新增末参 `?bool $issueWaybill = null`：
+
+| 传值 | 行为 |
+|---|---|
+| `null`（默认） | 跟随渠道可用性：渠道 `available()` 则自动申请，否则保留手动单号 |
+| `true` | 强制申请；渠道报错则抛 `BusinessException` 阻断发货 |
+| `false` | 手动模式：使用调用方传入的 `$trackingNo`，不申请面单 |
+
+**所有既有调用方（admin 发货、BatchShip、WMS 履约、`FulfillmentOrderService`）默认 `null` 且未改变行为**——即"签约前手敲单号"流程完全不受影响；只有显式开启的发货路径才会自动申请面单。
+
+### 9.5 落库字段（迁移 000117）
+
+`shippings` 新增三个面单专属字段：
+
+| 字段 | 类型 | 含义 |
+|---|---|---|
+| `waybill_channel` | string(20) nullable | 申请渠道标识（mock / kuaidi100 / …） |
+| `waybill_printed_at` | timestamp nullable | 申请成功时间 |
+| `waybill_data` | jsonb nullable | 第三方回执 / 面单原始数据 |
+
+> 注：`tracking_no` 已于迁移 `000034` 存在，故本次只补三个面单专属字段，避免冗余列。
+
+写回逻辑：申请成功后，`Shipping::create()` 落入 `tracking_no`（来自面单）、`waybill_channel`、`waybill_printed_at = now()`、`waybill_data = $raw`，并同步 `orders.tracking_no`。
