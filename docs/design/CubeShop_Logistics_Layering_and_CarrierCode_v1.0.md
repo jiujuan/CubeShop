@@ -381,3 +381,26 @@ interface WaybillChannelInterface {
 
 > 与轨迹查询渠道（`shipping.channel`、`000112`、`applyShippingChannelOverride`、`/shippings/channel`）完全对称；两者**相互独立**，可分别配置（如 mock 申请 + 真实查询）。密钥 key/customer 仍只在 `.env`（SHIPPING_CHANNEL_KEY / SHIPPING_CHANNEL_CUSTOMER）维护，不入库。
 
+### 9.8 历史 / 无模板运单补出（重打）
+
+功能上线前已发货、或走「手动录入运单号」的运单**没有** `waybill_data.print_template`，点「打印面单」会命中 `40022`。为让这类运单也能出纸，提供「补出 / 重打」能力——经**当前生效渠道**重新申请并写回模板（不新建发货行、不改订单状态）。
+
+**端点**：`POST /admin/shippings/{id}/waybill/reissue`（权限 `shipping.manage`）
+
+- 取 `shipping.channel` 当前生效渠道（`$this->waybillChannel`，已含 §9.7 的 DB 覆写）；`available()` 为假（Null / `off` / 未配置密钥）→ 直接 `40022`「当前面单渠道不可用或未配置，无法补出」。
+- `company_code` 缺失 → `40022`「运单缺少快递公司编码，无法补出」。
+- 调 `WaybillService::issueForOrder($order, $companyCode)` 出单，写回 `tracking_no / waybill_channel / waybill_printed_at / waybill_data`（含 `print_template`），并同步 `orders.tracking_no`；记操作日志 `reissue_waybill`。
+- 仅 `update` 既有 `shippings` 行，**不产生重复发货副作用**。
+
+**安全策略（真实渠道 vs Mock）**：
+
+- **Mock 渠道**：确定性（同 `orderNo|companyCode` 永远同一单号），补出安全、无费用；同一运单多次补出单号一致。
+- **真实渠道（快递100 等）**：重出将产生**新单号**、可能**计费**——属于有副作用操作，故前端 `reissueWaybillPrint(id)` 在调用前用 `window.confirm` 二次确认（提示「真实渠道可能产生新单号与计费」），由操作员显式承担。
+
+**前端入口（已完成）**：`waybillPrint.ts` 新增 `reissueWaybillPrint(id)`——先拉 `getWaybillChannel()` 取 `label / available`，不可用直接拦截；可用则按渠道类型给出确认文案，确认后 `reissueWaybill(id)` 再复用 `openWaybillPrint` 打开打印页。按钮落点（权限 `shipping.manage`）：
+
+- 订单详情页 `OrderDetailView` 物流卡「补出面单」（与「打印面单」并列）；
+- 物流监控 `ShippingMonitorView` 列表行「补出」+ 轨迹详情弹层「补出面单」。
+
+> 设计取舍：补出权限用 `shipping.manage`（与渠道切换同权），因其会改写运单号并重调第三方渠道，属运单基础设施操作；纯「打印已有模板」仍为 `order.view`。
+
