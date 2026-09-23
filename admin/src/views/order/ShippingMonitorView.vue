@@ -6,6 +6,8 @@ import {
   pullShipping,
   getShippingChannel,
   updateShippingChannel,
+  getWaybillChannel,
+  updateWaybillChannel,
   getShippingDetail,
   TRACE_STATUS_CLASS,
   TRACE_STATUS_LABELS,
@@ -38,6 +40,10 @@ const retryMsg = ref('')
 /** 当前轨迹查询渠道（只读回显；密钥不明文返回） */
 const channelInfo = ref<ShippingChannelInfo | null>(null)
 const switching = ref(false)
+
+/** 当前电子面单申请渠道（只读回显；密钥不明文返回），与查询渠道对称 */
+const waybillChannelInfo = ref<ShippingChannelInfo | null>(null)
+const switchingWaybill = ref(false)
 
 /** 运单轨迹详情弹层：与用户端订单页物流信息同口径 */
 const detail = ref<ShippingDetail | null>(null)
@@ -97,6 +103,16 @@ async function loadChannel() {
   }
 }
 
+/** 读取当前电子面单申请渠道（失败只留空，不阻断看板） */
+async function loadWaybillChannel() {
+  try {
+    const { data } = await getWaybillChannel()
+    waybillChannelInfo.value = data.data
+  } catch {
+    waybillChannelInfo.value = null
+  }
+}
+
 /**
  * 切换查询渠道（权限 shipping.manage）
  *
@@ -110,6 +126,22 @@ async function switchChannel(value: string) {
     await loadChannel()
   } finally {
     switching.value = false
+  }
+}
+
+/**
+ * 切换电子面单申请渠道（权限 shipping.manage）
+ *
+ * 与 switchChannel 对称：只切渠道本身，密钥仍在 .env 维护。
+ */
+async function switchWaybillChannel(value: string) {
+  if (! waybillChannelInfo.value || switchingWaybill.value) return
+  switchingWaybill.value = true
+  try {
+    await updateWaybillChannel(value)
+    await loadWaybillChannel()
+  } finally {
+    switchingWaybill.value = false
   }
 }
 
@@ -137,6 +169,7 @@ function goPage(page: number) {
 onMounted(() => {
   load()
   loadChannel()
+  loadWaybillChannel()
 })
 </script>
 
@@ -183,6 +216,46 @@ onMounted(() => {
         · 授权 customer：<span>{{ channelInfo.customer_configured ? '已配置' : '未配置' }}</span>
         —— key / customer 属凭证，仅在 <code class="rounded bg-white px-1">.env</code> 维护
         （SHIPPING_CHANNEL_KEY / SHIPPING_CHANNEL_CUSTOMER），不在后台填写。
+      </p>
+    </div>
+
+    <!-- 当前电子面单申请渠道：只读回显 + 切换（切换需 shipping.manage）；与查询渠道对称 -->
+    <div
+      v-if="waybillChannelInfo"
+      class="mb-4 rounded-lg border border-slate-200 bg-slate-50 p-3 text-[13px]"
+      data-testid="waybill-channel-card"
+    >
+      <div class="flex flex-wrap items-center gap-2">
+        <span class="text-slate-500">当前面单渠道</span>
+        <span class="font-medium text-slate-800" data-testid="waybill-channel-label">{{ waybillChannelInfo.label }}</span>
+        <span
+          class="rounded px-2 py-0.5 text-xs"
+          :class="waybillChannelInfo.available ? 'bg-green-50 text-green-600' : 'bg-amber-50 text-amber-600'"
+          data-testid="waybill-channel-available"
+        >
+          {{ waybillChannelInfo.available ? '可出单' : '不可用' }}
+        </span>
+        <span class="text-xs text-slate-400" data-testid="waybill-channel-source">
+          {{ waybillChannelInfo.source === 'database' ? '后台配置' : '环境配置（.env）' }}
+        </span>
+
+        <select
+          v-permission="'shipping.manage'"
+          class="ml-auto rounded-md border border-slate-300 px-2 py-1 text-xs outline-none focus:border-[#1677ff] disabled:opacity-50"
+          data-testid="waybill-channel-switch"
+          :value="waybillChannelInfo.configured"
+          :disabled="switchingWaybill"
+          @change="switchWaybillChannel(($event.target as HTMLSelectElement).value)"
+        >
+          <option v-for="opt in waybillChannelInfo.options" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
+        </select>
+      </div>
+      <p class="mt-1.5 text-xs leading-5 text-slate-400">
+        发货时是否自动出电子面单：选「本地演示（Mock）」可在未签约情况下跑通「发货→写回单号/面单」；
+        「快递100」需已签约且配置密钥；「关闭」则强制手动录入。<br />
+        密钥：<span data-testid="waybill-channel-key">{{ waybillChannelInfo.key_configured ? '已配置' : '未配置' }}</span>
+        · 授权 customer：<span>{{ waybillChannelInfo.customer_configured ? '已配置' : '未配置' }}</span>
+        —— 凭证仅在 <code class="rounded bg-white px-1">.env</code> 维护，不在后台填写。
       </p>
     </div>
 

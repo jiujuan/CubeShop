@@ -555,6 +555,16 @@ export function updateShippingChannel(channel: string) {
   return request.put<ApiResult<{ configured: string; channel: string | null }>>('/admin/shippings/channel', { channel })
 }
 
+/** 获取电子面单申请渠道（GET /admin/shippings/waybill-channel，权限 order.view） */
+export function getWaybillChannel() {
+  return request.get<ApiResult<ShippingChannelInfo>>('/admin/shippings/waybill-channel')
+}
+
+/** 切换电子面单申请渠道（PUT /admin/shippings/waybill-channel，权限 shipping.manage）；密钥仍走 .env */
+export function updateWaybillChannel(channel: string) {
+  return request.put<ApiResult<{ configured: string; channel: string | null }>>('/admin/shippings/waybill-channel', { channel })
+}
+
 /** 运单轨迹详情（GET /admin/shippings/{id}，权限 order.view）—— 与用户端订单物流同口径 */
 export interface ShippingDetail {
   id: number
