@@ -13,10 +13,11 @@ import {
   type ShippingChannelInfo,
   type ShippingDetail,
 } from '@/api/order'
-import { ExternalLink, ListOrdered, RefreshCw, Search } from 'lucide-vue-next'
+import { ExternalLink, ListOrdered, Printer, RefreshCw, Search } from 'lucide-vue-next'
 import { Button } from '@/components/ui/button'
 import LoadingSpinner from '@/components/LoadingSpinner.vue'
 import TablePagination from '@/components/TablePagination.vue'
+import { openWaybillPrint } from '@/utils/waybillPrint'
 
 /**
  * 物流监控看板（V1.1 T-047，E03；列表权限 order.view，重试权限 order.ship）
@@ -250,6 +251,14 @@ onMounted(() => {
                 <ListOrdered class="h-3 w-3" /> 轨迹
               </button>
               <button
+                v-permission="'order.view'"
+                class="flex items-center gap-0.5 hover:underline"
+                :data-testid="`monitor-print-${row.id}`"
+                @click="openWaybillPrint(row.id)"
+              >
+                <Printer class="h-3 w-3" /> 面单
+              </button>
+              <button
                 v-permission="'order.ship'"
                 class="flex items-center gap-0.5 hover:underline disabled:opacity-50"
                 :disabled="pullingId !== null"
@@ -329,7 +338,14 @@ onMounted(() => {
           最近失败：{{ detail.last_fail_message }}（累计 {{ detail.pull_fail_count }} 次）
         </p>
 
-        <div class="mt-5 flex justify-end">
+        <div class="mt-5 flex justify-end gap-2">
+          <Button
+            v-permission="'order.view'"
+            data-testid="detail-print"
+            @click="openWaybillPrint(detail.id)"
+          >
+            <Printer class="mr-1 h-4 w-4" /> 打印面单
+          </Button>
           <Button variant="outline" data-testid="detail-close" @click="detail = null">关闭</Button>
         </div>
       </template>

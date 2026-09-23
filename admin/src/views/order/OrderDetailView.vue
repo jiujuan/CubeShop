@@ -16,9 +16,10 @@ import {
   type OrderItemView,
   type OrderLogRow,
 } from '@/api/order'
-import { ArrowLeft, MapPin, Package, Ticket, Truck, Wallet } from 'lucide-vue-next'
+import { ArrowLeft, MapPin, Package, Printer, Ticket, Truck, Wallet } from 'lucide-vue-next'
 import { Button } from '@/components/ui/button'
 import LoadingSpinner from '@/components/LoadingSpinner.vue'
+import { openWaybillPrint } from '@/utils/waybillPrint'
 
 /**
  * 后台订单详情页（/orders/:id）
@@ -401,9 +402,21 @@ onMounted(async () => {
 
       <!-- 物流信息与轨迹时间线 -->
       <div class="rounded-lg bg-white p-5 shadow-sm" data-testid="shipping-card">
-        <h3 class="mb-3 flex items-center gap-1.5 text-sm font-medium text-slate-700">
-          <Truck class="h-4 w-4 text-slate-400" /> 物流信息
-        </h3>
+        <div class="mb-3 flex items-center justify-between">
+          <h3 class="flex items-center gap-1.5 text-sm font-medium text-slate-700">
+            <Truck class="h-4 w-4 text-slate-400" /> 物流信息
+          </h3>
+          <Button
+            v-if="shippingInfo"
+            v-permission="'order.view'"
+            variant="outline"
+            size="sm"
+            data-testid="print-waybill"
+            @click="openWaybillPrint(shippingInfo.id)"
+          >
+            <Printer class="mr-1 h-4 w-4" /> 打印面单
+          </Button>
+        </div>
         <template v-if="shippingInfo">
           <div class="mb-3 flex flex-wrap items-center gap-x-6 gap-y-1 text-[13px]">
             <span><span class="text-slate-400">快递公司：</span>{{ shippingInfo.company_name }}</span>
