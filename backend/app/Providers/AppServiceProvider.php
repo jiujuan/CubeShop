@@ -34,6 +34,15 @@ class AppServiceProvider extends ServiceProvider
                 default => new \App\Support\Shipping\NullWaybillChannel(),
             };
         });
+
+        // 站内搜索引擎解析（V1.2 S1-06）：引擎选择的唯一真源
+        // Service 只依赖它，从而不必 import 任何引擎具体类（§5.1 约束 1）
+        $this->app->singleton(\App\Support\Search\SearchEngineResolver::class);
+
+        // 默认引擎：按配置选择，不可用时降级到 LIKE
+        $this->app->bind(\App\Support\Search\ProductSearchEngine::class, function () {
+            return $this->app->make(\App\Support\Search\SearchEngineResolver::class)->primary();
+        });
     }
 
     /**
@@ -110,6 +119,29 @@ class AppServiceProvider extends ServiceProvider
     }
 
     /**
+     * 站内搜索引擎：后台配置（system_configs.search.engine）覆盖 .env
+     *
+     * 与 applyShippingChannelOverride 同机制，一处差异：这里的 `off` 是**有意义的取值**
+     * （强制走 LIKE 降级），不像 shipping 的 `off` 等价于清空 —— 所以原样写入不转 null。
+     * 留空表示跟随 .env 的 SEARCH_ENGINE（默认自动：PG 可用则用，否则降级）。
+     */
+    private function applySearchEngineOverride(): void
+    {
+        try {
+            $override = trim((string) (app(\App\Services\Common\ConfigService::class)->get('search.engine') ?? ''));
+        } catch (\Throwable) {
+            // 系统表未建立（安装/迁移前）或数据库不可用时，保持 env 配置
+            return;
+        }
+
+        if ($override === '') {
+            return;
+        }
+
+        config(['services.search.engine' => $override]);
+    }
+
+    /**
      * Bootstrap any application services.
      */
     public function boot(): void
@@ -117,6 +149,7 @@ class AppServiceProvider extends ServiceProvider
         $this->assertPaymentSecurityConfig();
         $this->applyShippingChannelOverride();
         $this->applyWaybillChannelOverride();
+        $this->applySearchEngineOverride();
 
         // 超级管理员绕过全部权限校验：角色定义上超管即拥有所有权限，
         // 避免后续新增权限码时因未同步授权而导致超管被误判为无权限（V1.1 reports 403 问题）
