@@ -25,6 +25,15 @@ class AppServiceProvider extends ServiceProvider
                 default => new \App\Support\Shipping\NullChannel(),
             };
         });
+
+        // 电子面单申请渠道（出单侧，与轨迹查询对称，V1.2）：按配置切换，留空 = NullWaybillChannel 降级
+        $this->app->bind(\App\Support\Shipping\WaybillChannelInterface::class, function () {
+            return match (config('services.waybill.channel')) {
+                'mock' => new \App\Support\Shipping\MockWaybillChannel(),
+                'kuaidi100' => new \App\Support\Shipping\Kuaidi100WaybillChannel(),
+                default => new \App\Support\Shipping\NullWaybillChannel(),
+            };
+        });
     }
 
     /**

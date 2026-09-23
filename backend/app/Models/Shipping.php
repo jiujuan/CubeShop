@@ -25,11 +25,14 @@ class Shipping extends Model
     protected $fillable = [
         'order_id', 'company_code', 'company_name', 'tracking_no', 'phone',
         'trace_status', 'pull_fail_count', 'last_fail_message', 'shipped_at', 'delivered_at',
+        'waybill_channel', 'waybill_printed_at', 'waybill_data',
     ];
 
     protected $casts = [
         'shipped_at' => 'datetime',
         'delivered_at' => 'datetime',
+        'waybill_printed_at' => 'datetime',
+        'waybill_data' => 'array',
     ];
 
     public function order(): BelongsTo

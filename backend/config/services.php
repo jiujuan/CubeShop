@@ -63,4 +63,27 @@ return [
         'max_failures' => (int) env('SHIPPING_MAX_FAILURES', 5),
     ],
 
+    /*
+    |--------------------------------------------------------------------------
+    | 电子面单申请渠道（出单侧，与轨迹查询 shipping 平行，V1.2）
+    |--------------------------------------------------------------------------
+    |
+    | channel：留空 = 降级（NullWaybillChannel，发货回落手动录入）；mock = 本地演示；
+    | kuaidi100 等真实渠道实现 WaybillChannelInterface 后在此切换。
+    | 密钥复用 SHIPPING_CHANNEL_KEY/CUSTOMER（同一快递100 账号，凭证不入库）。
+    | 后台可用 system_configs.waybill.channel 覆盖（与 shipping.channel 同机制）。
+    |
+    */
+    'waybill' => [
+        'channel' => env('WAYBILL_CHANNEL'),
+        'key' => env('SHIPPING_CHANNEL_KEY'),
+        'customer' => env('SHIPPING_CHANNEL_CUSTOMER'),
+        'order_url' => env('WAYBILL_ORDER_URL', 'https://poll.kuaidi100.com/poll/order.do'),
+        'timeout' => (int) env('WAYBILL_TIMEOUT', 8),
+        'default_weight_gram' => (int) env('WAYBILL_DEFAULT_WEIGHT_GRAM', 1000),
+        'sender_name' => env('WAYBILL_SENDER_NAME', 'CubeShop 仓'),
+        'sender_phone' => env('WAYBILL_SENDER_PHONE', ''),
+        'sender_address' => env('WAYBILL_SENDER_ADDRESS', ''),
+    ],
+
 ];

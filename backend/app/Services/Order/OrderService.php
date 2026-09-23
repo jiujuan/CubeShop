@@ -360,7 +360,11 @@ class OrderService
      *
      * - `paid → shipped` 状态机流转复用 transitionTo（重复发货/非法状态由其拒绝）；
      * - 同一事务内写 `shippings`（公司名称快照）并回填 `orders.express_company`/`tracking_no`；
-     * - 运单号唯一约束（同公司组合唯一）由表级索引兜底，业务层先行校验给友好错误。
+     * - 运单号唯一约束（同公司组合唯一）由表级索引兜底，业务层先行校验给友好错误；
+     * - 电子面单（V1.2 出单侧）：`$issueWaybill=true` 或「跟随且渠道可用」时调 WaybillService 出单，
+     *   把返回的运单号写回（覆盖入参 `$trackingNo`）；渠道不可用（Null）时回落手动录入，不阻断。
+     *
+     * @param  bool|null  $issueWaybill  null=跟随渠道可用性自动（可用则出单）；true=强制出单（失败报错）；false=手动（用入参单号）
      */
     public function shipForShipment(
         Order $order,
@@ -370,8 +374,9 @@ class OrderService
         ?string $reason = null,
         ?int $operatorId = null,
         string $operatorType = OrderLog::OPERATOR_ADMIN,
+        ?bool $issueWaybill = null,
     ): Order {
-        $shipped = DB::transaction(function () use ($order, $companyCode, $companyName, $trackingNo, $reason, $operatorId, $operatorType) {
+        $shipped = DB::transaction(function () use ($order, $companyCode, $companyName, $trackingNo, $reason, $operatorId, $operatorType, $issueWaybill) {
             $result = $this->transitionTo(
                 $order,
                 Order::STATUS_SHIPPED,
@@ -381,20 +386,43 @@ class OrderService
                 $operatorType,
             );
 
+            $finalTrackingNo = $trackingNo;
+            $waybillChannel = null;
+            $waybillPrintedAt = null;
+            $waybillData = null;
+
+            // 出单侧：仅当明确要求（true）或「跟随且渠道可用」时申请电子面单；
+            // 渠道不可用（Null / 未配置密钥）时回落手动录入，避免阻断发货。
+            $channel = app(\App\Support\Shipping\WaybillChannelInterface::class);
+            $shouldIssue = $issueWaybill === true || ($issueWaybill === null && $channel->available());
+            if ($shouldIssue && $channel->available()) {
+                $wb = app(\App\Services\Shipping\WaybillService::class)->issueForOrder($result, $companyCode);
+                if (! $wb->success) {
+                    throw BusinessException::badRequest('电子面单申请失败：'.$wb->message);
+                }
+                $finalTrackingNo = $wb->trackingNo;
+                $waybillChannel = $channel->channelName();
+                $waybillPrintedAt = now();
+                $waybillData = $wb->raw;
+            }
+
             Shipping::create([
                 'order_id' => $result->id,
                 'company_code' => $companyCode,
                 'company_name' => $companyName,
-                'tracking_no' => $trackingNo,
+                'tracking_no' => $finalTrackingNo,
                 // 手机号快照：顺丰/中通轨迹查询必填，随发货一起固化（同 company_name 快照口径）
                 'phone' => $this->consigneePhone($result),
                 'trace_status' => Shipping::TRACE_PENDING,
                 'shipped_at' => $result->shipped_at ?? now(),
+                'waybill_channel' => $waybillChannel,
+                'waybill_printed_at' => $waybillPrintedAt,
+                'waybill_data' => $waybillData,
             ]);
 
             // 冗余双号（列表/导出直接用）
             $result->express_company = $companyName;
-            $result->tracking_no = $trackingNo;
+            $result->tracking_no = $finalTrackingNo;
             $result->save();
 
             return $result;
