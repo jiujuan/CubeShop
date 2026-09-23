@@ -368,3 +368,16 @@ interface WaybillChannelInterface {
 `toast` 由新增极简 `useToast` / `ToastHost`（挂载于 `App.vue`）统一渲染，失败路径优雅降级。
 
 **仍待办**：批量打印（循环拉取 `format=json` 再合并排版）；PDF/ZPL 导出（加 dompdf / browsershot 属可选增强）。
+
+### 9.7 渠道后台切换（运行期覆写，与轨迹查询对称）
+
+发货时「是否自动出电子面单」是**全局渠道**，由 `config/services.php` 的 `waybill.channel` 决定，但允许运营在后台切换而**不必改 .env 重启**：
+
+- **迁移 000118**：在 `system_configs` 插入 `waybill.channel = ''`（firstOrCreate 语义，不覆盖后台已改值）。
+- **运行期覆写**：`AppServiceProvider::applyWaybillChannelOverride()`（boot 阶段）读 `system_configs.waybill.channel` 覆盖 `config('services.waybill.channel')`——`''` 跟随 env、`off` 强制 Null（手动录入）、其余直接覆写。
+- **查看端点**：`GET /admin/shippings/waybill-channel`（权限 `order.view`）回显 `configured / channel / source(env|database) / available / options`，密钥不明文返回。
+- **切换端点**：`PUT /admin/shippings/waybill-channel`（权限 `shipping.manage`）写入 `system_configs` 并即时 `config([...])` 生效，记操作日志 `switch_waybill_channel`；非法渠道返回 `40000`。
+- **前端入口**（已完成）：物流监控 `ShippingMonitorView` 在「当前查询渠道」卡下方新增「当前面单渠道」卡，镜像查询渠道卡——只读回显 + `shipping.manage` 下拉切换；`order.ts` 新增 `getWaybillChannel()` / `updateWaybillChannel()`。
+
+> 与轨迹查询渠道（`shipping.channel`、`000112`、`applyShippingChannelOverride`、`/shippings/channel`）完全对称；两者**相互独立**，可分别配置（如 mock 申请 + 真实查询）。密钥 key/customer 仍只在 `.env`（SHIPPING_CHANNEL_KEY / SHIPPING_CHANNEL_CUSTOMER）维护，不入库。
+
