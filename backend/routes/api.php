@@ -61,6 +61,7 @@ use App\Http\Controllers\Storefront\PromotionController as StorefrontPromotionCo
 use App\Http\Controllers\Storefront\NavController as StorefrontNavController;
 use App\Http\Controllers\Storefront\NewsController as StorefrontNewsController;
 use App\Http\Controllers\Storefront\ProductController as StorefrontProductController;
+use App\Http\Controllers\Storefront\SearchController as StorefrontSearchController;
 use App\Http\Controllers\Storefront\SiteController as StorefrontSiteController;
 use App\Http\Controllers\Wms\WmsCallbackController;
 use Illuminate\Support\Facades\Route;
@@ -82,6 +83,14 @@ Route::prefix('products')->group(function () {
     // V1.1 F01（T-015）：商品评价列表与汇总（匿名可访问）
     Route::get('/{id}/reviews', [ReviewController::class, 'productReviews']);
     Route::get('/{id}', [StorefrontProductController::class, 'show']);
+});
+
+// 站内搜索（V1.2 S1-07，无需登录）：/search 为新增富入口，/products 保留原参数语义
+// ⚠️ /suggest 与 /hot 必须显式声明，避免将来加 /{keyword} 之类的通配时把它们吃掉
+Route::prefix('search')->group(function () {
+    Route::get('/', [StorefrontSearchController::class, 'index']);
+    Route::get('/suggest', [StorefrontSearchController::class, 'suggest']);
+    Route::get('/hot', [StorefrontSearchController::class, 'hot']);
 });
 
 // 前台顶部导航（后台「导航管理」编排，公开无需登录）

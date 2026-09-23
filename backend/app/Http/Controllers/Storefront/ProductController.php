@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Resources\ProductResource;
 use App\Models\Category;
 use App\Models\Product;
+use App\Services\Product\ProductSearchService;
 use App\Support\ApiResponse;
 use App\Support\PublicId;
 use App\Exceptions\BusinessException;
@@ -19,89 +20,24 @@ class ProductController extends Controller
 {
     use ApiResponse;
 
-    /** 商品列表 / 搜索 GET /products */
-    public function index(Request $request): JsonResponse
+    /**
+     * 商品列表 / 搜索 GET /products
+     *
+     * V1.2 站内搜索：内部改走 `ProductSearchService`（与 `GET /search` 同一条链路），
+     * **对外行为保持不变**——参数、排序、分页结构、SEC-04 的 total 管控全部逐字一致，
+     * 只把关键词匹配从「整串 LIKE」换成「引擎检索 + 相关度排序」。
+     *
+     * ⚠️ 兼容要点：未显式传 `sort` 时回落 `newest`（旧实现是 `sort desc, id desc`），
+     * 不能因为换了链路就悄悄变成相关度排序 —— 相关度是 `GET /search` 的默认行为。
+     */
+    public function index(Request $request, ProductSearchService $search): JsonResponse
     {
-        $q = Product::query()
-            ->where('status', 1)
-            ->with('category:id,name')
-            ->addSelect([
-                'products.*',
-                'total_stock' => \App\Models\ProductSku::query()
-                    ->selectRaw('coalesce(sum(i.stock),0)')
-                    ->join('inventories as i', 'i.sku_id', '=', 'product_skus.id')
-                    ->whereColumn('product_skus.product_id', 'products.id')
-                    ->limit(1),
-            ]);
+        $page = $search->search(SearchController::criteriaFrom($request, true), $request->ip());
 
-        if ($keyword = trim((string) $request->query('keyword'))) {
-            $q->where(function ($query) use ($keyword) {
-                $query->where('title', 'like', "%{$keyword}%")
-                    ->orWhere('subtitle', 'like', "%{$keyword}%");
-            });
-        }
-        // P2-11：分类对外只暴露 public_id；入参接受 public_id 或历史 int 主键
-        if ($rawCategoryId = $request->query('category_id')) {
-            $categoryId = PublicId::resolve(PublicId::SCOPE_CATEGORY, $rawCategoryId);
-            if ($categoryId !== null) {
-                $categoryIds = [$categoryId];
-                foreach (Category::where('parent_id', $categoryId)->pluck('id') as $childId) {
-                    $categoryIds[] = $childId;
-                }
-                $q->whereIn('category_id', $categoryIds);
-            }
-        }
-        if ($minPrice = $request->query('min_price')) {
-            $q->where('price', '>=', (float) $minPrice);
-        }
-        if ($maxPrice = $request->query('max_price')) {
-            $q->where('price', '<=', (float) $maxPrice);
-        }
-
-        // V1.1 E01 / T-014：品牌筛选（P2-11：brand_id 接受 public_id 或历史 int 主键）
-        if ($rawBrandId = $request->query('brand_id')) {
-            $brandId = PublicId::resolve(PublicId::SCOPE_BRAND, $rawBrandId);
-            if ($brandId !== null) {
-                $q->where('brand_id', $brandId);
-            }
-        }
-
-        // V1.1 E01 / T-014：属性筛选
-        // 语义：同一属性内多值为 OR，跨属性为 AND
-        // 参数格式：attribute_values[]=<attribute_id>:<value>
-        $pairs = (array) $request->query('attribute_values', []);
-        $byAttribute = [];
-        foreach ($pairs as $pair) {
-            if (! is_string($pair) || ! str_contains($pair, ':')) {
-                continue;
-            }
-            [$attributeId, $value] = explode(':', $pair, 2);
-            $attributeId = (int) $attributeId;
-            if ($attributeId <= 0 || $value === '') {
-                continue;
-            }
-            $byAttribute[$attributeId][] = $value;
-        }
-        foreach ($byAttribute as $attributeId => $values) {
-            $q->whereHas('attributeValues', function ($sub) use ($attributeId, $values) {
-                $sub->where('attribute_id', $attributeId)->whereIn('value', array_unique($values));
-            });
-        }
-
-        $sort = $request->query('sort', 'newest');
-        match ($sort) {
-            'price_asc' => $q->orderBy('price'),
-            'price_desc' => $q->orderByDesc('price'),
-            'sales_desc' => $q->orderByDesc('sales_count'),
-            default => $q->orderByDesc('sort')->orderByDesc('id'),
-        };
-
-        $paginator = $q->paginate((int) $request->query('page_size', 20));
-
-        // P2-11：统一走 ProductResource（id 改为 public_id，关联分类/品牌同样去 int 主键）
-        $paginator->getCollection()->transform(fn ($p) => new ProductResource($p));
-
-        return $this->paginated($paginator);
+        return $this->success([
+            'list' => $page->items->map(fn ($product) => new ProductResource($product))->all(),
+            'pagination' => $page->pagination($this->shouldExposeTotal()),
+        ]);
     }
 
     /**
@@ -115,7 +51,7 @@ class ProductController extends Controller
 
         $product = $productId === null ? null : Product::query()
             ->where('status', 1)
-            ->with(['skus.inventory', 'images', 'category:id,name', 'brand:id,name', 'attributeValues.attribute:id,name,type'])
+            ->with(['skus.inventory', 'images', 'category:id,public_id,name', 'brand:id,public_id,name', 'attributeValues.attribute:id,name,type'])
             ->find($productId);
 
         if (! $product) {
@@ -183,7 +119,7 @@ class ProductController extends Controller
         $list = Product::query()
             ->where('status', 1)
             ->where('is_home_recommended', true)
-            ->with('category:id,name')
+            ->with('category:id,public_id,name')
             ->orderByDesc('sort')
             ->orderByDesc('created_at')
             ->orderByDesc('id')
