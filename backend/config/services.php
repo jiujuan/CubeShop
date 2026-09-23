@@ -86,4 +86,27 @@ return [
         'sender_address' => env('WAYBILL_SENDER_ADDRESS', ''),
     ],
 
+    /*
+    |--------------------------------------------------------------------------
+    | 站内搜索（V1.2 S1）
+    |--------------------------------------------------------------------------
+    |
+    | 阶段一走 PG 原生全文检索（`products.search_vector` 生成列 + GIN），
+    | 阶段二换 Meilisearch/ES 时只换引擎实现，这里的开关不动。
+    |
+    | index_taxonomy_names：品牌名/分类名是否计入索引。默认开 —— 搜「小米」「沙发」
+    | 这类词时品牌/分类是最强召回信号；关掉后改品牌/分类名不再需要级联重算商品。
+    |
+    | engine：留空 = 自动（PG 全文检索，不可用时降级 LIKE）；`off`/`like` = 强制走 LIKE 降级。
+    | 阶段二 `meilisearch` / `elasticsearch` 在此切换，业务代码不动。
+    |
+    | 其余键（fallback_enabled / cache_ttl）随 S1-09 一起接入，
+    | 并由 system_configs.search.* 在运行时覆写（与 shipping.channel 同机制）。
+    |
+    */
+    'search' => [
+        'engine' => env('SEARCH_ENGINE'),
+        'index_taxonomy_names' => (bool) env('SEARCH_INDEX_TAXONOMY_NAMES', true),
+    ],
+
 ];

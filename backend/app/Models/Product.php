@@ -14,6 +14,7 @@ use App\Support\MarkdownRenderer;
 use App\Support\MediaUrl;
 use App\Casts\MediaPath;
 use App\Casts\MediaRichText;
+use App\Support\Search\SearchIndexWriter;
 
 /**
  * 商品主表
@@ -64,18 +65,59 @@ class Product extends Model
     protected static function booted(): void
     {
         static::saving(function (self $product): void {
-            if (! $product->isDirty('description_md')) {
-                return;
+            if ($product->isDirty('description_md')) {
+                // 写原始 attributes 而不走 setter：派生产物不需要再过一次 cast；
+                // 但里面有内联图片，须归一成根相对，否则域名又被写死回库里。
+                $product->attributes['description'] = MediaUrl::normalizeEmbedded(
+                    HtmlSanitizer::cleanHtml(
+                        MarkdownRenderer::toHtml((string) $product->getAttribute('description_md'))
+                    )
+                );
             }
 
-            // 写原始 attributes 而不走 setter：派生产物不需要再过一次 cast；
-            // 但里面有内联图片，须归一成根相对，否则域名又被写死回库里。
-            $product->attributes['description'] = MediaUrl::normalizeEmbedded(
-                HtmlSanitizer::cleanHtml(
-                    MarkdownRenderer::toHtml((string) $product->getAttribute('description_md'))
-                )
-            );
+            if (self::shouldRebuildSearchFields($product)) {
+                // 外键换了但关联还是旧缓存 —— 不丢掉就会拿旧品牌/旧分类的名字写进索引
+                if ($product->isDirty('brand_id')) {
+                    $product->unsetRelation('brand');
+                }
+
+                if ($product->isDirty('category_id')) {
+                    $product->unsetRelation('category');
+                }
+
+                $writer = app(SearchIndexWriter::class);
+
+                $product->attributes['search_title'] = $writer->buildTitleField($product);
+                $product->attributes['search_body'] = $writer->buildBodyField($product);
+            }
         });
+    }
+
+    /**
+     * 本次保存是否需要重算检索列
+     *
+     * 只在「检索列的来源变了」时才重算 —— 改价格/改状态/改库存这类高频保存不该
+     * 白跑一遍分词 + 4 次关联预加载。
+     *
+     * ⚠️ 三个来源**不在这里**：SKU 编码、参数值、品牌/分类的**名字**。
+     * - SKU 与参数值写在各自的子表，且后台是先存商品、后写子表（保存时它们还没落库），
+     *   由 `Admin\ProductController` 在事务末尾统一 `reindex()` 一次；
+     * - 品牌名/分类名变更走 `ReindexProductsByBrandOrCategory` 级联 Job。
+     *
+     * 三者之外还有兜底：`search:reindex` 每日校准一次，最坏情况索引陈旧不超过一天。
+     */
+    private static function shouldRebuildSearchFields(self $product): bool
+    {
+        if (! $product->exists) {
+            return true;
+        }
+
+        if ($product->isDirty(['title', 'subtitle', 'keywords', 'brand_id', 'category_id'])) {
+            return true;
+        }
+
+        // 存量行（迁移 000120 之前的、或被清空的）借任何一次保存补上，不必等定时校准
+        return $product->getAttribute('search_title') === null;
     }
 
     /**

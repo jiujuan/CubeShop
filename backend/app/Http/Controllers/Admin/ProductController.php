@@ -16,6 +16,7 @@ use App\Models\ProductSku;
 use App\Services\Common\OperationLogService;
 use App\Services\Product\ProductAttributeService;
 use App\Support\ApiResponse;
+use App\Support\Search\SearchIndexWriter;
 use Illuminate\Database\QueryException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -122,6 +123,10 @@ class ProductController extends Controller
                 $product->price = $this->refreshDisplayPrice($product);
                 $product->save();
 
+                // 检索索引含 SKU 编码与参数值，两者都在商品主行保存之后才落库，
+                // 因此事务末尾统一重算一次（模型 saving 钩子覆盖不到这部分来源）
+                app(SearchIndexWriter::class)->reindex($product);
+
                 return $product;
             });
         } catch (QueryException $e) {
@@ -175,6 +180,9 @@ class ProductController extends Controller
 
                 $product->price = $this->refreshDisplayPrice($product);
                 $product->save();
+
+                // 同上：SKU 与参数值在商品主行保存之后落库，事务末尾统一重算检索列
+                app(SearchIndexWriter::class)->reindex($product);
             });
         } catch (QueryException $e) {
             if ($this->isSkuCodeUniqueViolation($e)) {
