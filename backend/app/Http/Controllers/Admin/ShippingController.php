@@ -191,6 +191,100 @@ class ShippingController extends Controller
     }
 
     /**
+     * 打印电子面单（与出单侧配套；权限 order.view）
+     * GET /admin/shippings/{id}/waybill?format=html|json
+     *
+     * 返回自包含的可打印 HTML 页面（默认），或 format=json 返回结构化模板供程序化消费。
+     * 面单内容取自 shippings.waybill_data（发货时已落库 print_template），离线重打不依赖第三方。
+     */
+    public function waybillPrint(Request $request, int $id)
+    {
+        $shipping = Shipping::query()->with('order:id,order_no')->find($id);
+        if (! $shipping) {
+            return $this->fail('物流记录不存在', 40004);
+        }
+
+        $template = $shipping->resolvePrintTemplate();
+        if ($template === null) {
+            return $this->fail('该运单无可打印面单（未申请电子面单或渠道未返回面单数据）', 40022);
+        }
+
+        if (($request->query('format') ?? 'html') === 'json') {
+            return $this->success([
+                'tracking_no' => $shipping->tracking_no,
+                'company_name' => $shipping->company_name,
+                'company_code' => $shipping->company_code,
+                'channel' => $shipping->waybill_channel,
+                'printed_at' => $shipping->waybill_printed_at?->toDateTimeString(),
+                'template' => $template,
+            ]);
+        }
+
+        $this->operationLog->record(
+            $request->user()->id,
+            'order',
+            'print_waybill',
+            'shipping',
+            $shipping->id,
+            ['tracking_no' => $shipping->tracking_no, 'channel' => $shipping->waybill_channel],
+        );
+
+        return response($this->renderPrintPage($shipping, $template))
+            ->header('Content-Type', 'text/html; charset=utf-8');
+    }
+
+    /**
+     * 渲染自包含打印页（含打印按钮 + 面单内容 + 打印样式）
+     */
+    private function renderPrintPage(Shipping $shipping, string $template): string
+    {
+        $tracking = htmlspecialchars((string) ($shipping->tracking_no ?? ''), ENT_QUOTES);
+        $company = htmlspecialchars((string) ($shipping->company_name ?? ''), ENT_QUOTES);
+        $orderNo = htmlspecialchars((string) ($shipping->order?->order_no ?? ''), ENT_QUOTES);
+        $channel = htmlspecialchars((string) ($shipping->waybill_channel ?? ''), ENT_QUOTES);
+        $printedAt = $shipping->waybill_printed_at?->format('Y-m-d H:i') ?? '';
+
+        return <<<HTML
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>电子面单 {$tracking}</title>
+<style>
+  @page { size: 100mm 150mm; margin: 6mm; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; background: #fff; color: #111;
+    font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; }
+  .wb-toolbar { position: fixed; top: 0; left: 0; right: 0; z-index: 9;
+    display: flex; gap: 12px; align-items: center; padding: 10px 16px;
+    background: #f5f5f5; border-bottom: 1px solid #ddd; }
+  .wb-toolbar button { padding: 6px 16px; border: 1px solid #1677ff; background: #1677ff;
+    color: #fff; border-radius: 6px; cursor: pointer; font-size: 14px; }
+  .wb-toolbar .wb-meta { font-size: 12px; color: #666; }
+  .wb-sheet { padding: 12px; }
+  .wb-label { border: 1px dashed #bbb; border-radius: 8px; padding: 12px; min-height: 120mm; }
+  .wb-label img { max-width: 100%; display: block; }
+  @media print {
+    .wb-toolbar { display: none !important; }
+    .wb-sheet { padding: 0; }
+  }
+</style>
+</head>
+<body>
+  <div class="wb-toolbar">
+    <button type="button" onclick="window.print()">打印面单</button>
+    <span class="wb-meta">运单号 {$tracking} ｜ 承运 {$company} ｜ 渠道 {$channel} ｜ 订单 {$orderNo} ｜ 出单 {$printedAt}</span>
+  </div>
+  <div class="wb-sheet">
+    <div class="wb-label">{$template}</div>
+  </div>
+</body>
+</html>
+HTML;
+    }
+
+    /**
      * 当前轨迹查询渠道（V1.1 三期；权限 order.view）
      * GET /admin/shippings/channel
      *

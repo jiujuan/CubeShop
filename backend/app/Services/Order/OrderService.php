@@ -403,7 +403,12 @@ class OrderService
                 $finalTrackingNo = $wb->trackingNo;
                 $waybillChannel = $channel->channelName();
                 $waybillPrintedAt = now();
-                $waybillData = $wb->raw;
+                // 面单打印数据：把可打印模板（labelData）一并落库，保证后续「重打」离线可用；
+                // 不依赖再次调用第三方（重打不应产生新单号/费用）。
+                $waybillData = $wb->raw ?? [];
+                if ($wb->labelData !== null) {
+                    $waybillData['print_template'] = $wb->labelData;
+                }
             }
 
             Shipping::create([

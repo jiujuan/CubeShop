@@ -64,4 +64,73 @@ class Shipping extends Model
 
         return $fallback !== '' ? $fallback : null;
     }
+
+    /**
+     * 解析可打印面单 HTML（供后台「打印面单」端点离线重打）
+     *
+     * 取值优先级：
+     *  1. waybill_data.print_template（发货出单时由 labelData 落库，最权威）；
+     *  2. 快递100 旧结构 data.printTemplate / printTemplateBase64 兜底；
+     *  3. 均无 → 返回 null（手动录入或渠道未返回面单数据的运单）。
+     *
+     * 返回内容可能含 base64（图片 / HTML），由 {@see normalizePrintContent} 规整为可嵌入 HTML。
+     */
+    public function resolvePrintTemplate(): ?string
+    {
+        $data = is_array($this->waybill_data) ? $this->waybill_data : [];
+
+        $top = $data['print_template'] ?? null;
+        if (is_string($top) && $top !== '') {
+            return $this->normalizePrintContent($top);
+        }
+
+        // 快递100 旧结构兜底（data 子对象内）
+        $inner = $data['data'] ?? $data;
+        $candidate = ($inner['printTemplate'] ?? null)
+            ?? ($inner['printTemplateBase64'] ?? null)
+            ?? ($data['printTemplate'] ?? null);
+        if (is_string($candidate) && $candidate !== '') {
+            return $this->normalizePrintContent($candidate);
+        }
+
+        return null;
+    }
+
+    /**
+     * 把面单原始内容规整为可安全嵌入打印页的 HTML
+     *
+     * - base64（printTemplateBase64 变体）：解码后按图片 / HTML / 文本分流；
+     * - HTML：原样返回（快递100 云打印模板自带脚本，按预期渲染）；
+     * - 其它文本：转义后包 <pre>。
+     */
+    private function normalizePrintContent(string $raw): string
+    {
+        $trimmed = trim($raw);
+
+        // 纯 base64（无空白、仅 base64 字符）：尝试解码（快递100 printTemplateBase64 变体）
+        if (preg_match('/^[A-Za-z0-9+\/=]+$/', $trimmed)) {
+            $decoded = base64_decode($trimmed, true);
+            if ($decoded !== false && $decoded !== '') {
+                $trimmed = $decoded;
+            }
+        }
+
+        $trimmed = trim($trimmed);
+
+        // 二进制图片头（PNG / JPEG）→ 包成 data URI <img>
+        if (str_starts_with($trimmed, "\x89PNG") || str_starts_with($trimmed, "\xFF\xD8\xFF")) {
+            $mime = str_starts_with($trimmed, "\x89PNG") ? 'image/png' : 'image/jpeg';
+            $uri = 'data:'.$mime.';base64,'.base64_encode($trimmed);
+
+            return sprintf('<img src="%s" alt="waybill" style="max-width:100%%">', $uri);
+        }
+
+        // HTML 片段 / 文档：原样嵌入
+        if (str_starts_with($trimmed, '<')) {
+            return $trimmed;
+        }
+
+        // 纯文本兜底
+        return sprintf('<pre style="white-space:pre-wrap;font-family:monospace">%s</pre>', htmlspecialchars($trimmed, ENT_QUOTES));
+    }
 }
