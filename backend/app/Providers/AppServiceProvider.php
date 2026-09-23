@@ -86,12 +86,37 @@ class AppServiceProvider extends ServiceProvider
     }
 
     /**
+     * 电子面单申请渠道：后台配置（system_configs.waybill.channel）覆盖 .env
+     *
+     * 与 applyShippingChannelOverride 完全对称——运营可在后台切换发货时是否自动出单，
+     * 不必改 .env 重启。留空表示跟随 .env 的 WAYBILL_CHANNEL。
+     * ⚠️ 密钥（key/customer）不入库，仍走 .env（凭证扩散风险高于便利性收益）。
+     */
+    private function applyWaybillChannelOverride(): void
+    {
+        try {
+            $override = trim((string) (app(\App\Services\Common\ConfigService::class)->get('waybill.channel') ?? ''));
+        } catch (\Throwable) {
+            // 系统表未建立（安装/迁移前）或数据库不可用时，保持 env 配置
+            return;
+        }
+
+        if ($override === '') {
+            return;
+        }
+
+        // off = 强制手动录入（覆盖 env 中已配置的渠道，不出电子面单）
+        config(['services.waybill.channel' => $override === 'off' ? null : $override]);
+    }
+
+    /**
      * Bootstrap any application services.
      */
     public function boot(): void
     {
         $this->assertPaymentSecurityConfig();
         $this->applyShippingChannelOverride();
+        $this->applyWaybillChannelOverride();
 
         // 超级管理员绕过全部权限校验：角色定义上超管即拥有所有权限，
         // 避免后续新增权限码时因未同步授权而导致超管被误判为无权限（V1.1 reports 403 问题）

@@ -9,6 +9,7 @@ use App\Services\Common\OperationLogService;
 use App\Services\Shipping\TracePullService;
 use App\Support\Shipping\Kuaidi100Channel;
 use App\Support\Shipping\ShippingChannelInterface;
+use App\Support\Shipping\WaybillChannelInterface;
 use Illuminate\Http\Request;
 use App\Support\ApiResponse;
 use Illuminate\Http\JsonResponse;
@@ -24,6 +25,9 @@ class ShippingController extends Controller
 
     /** 渠道配置项（后台可切换；密钥仍走 .env，不入库） */
     public const CHANNEL_CONFIG_KEY = 'shipping.channel';
+
+    /** 电子面单申请渠道配置项（与 CHANNEL_CONFIG_KEY 对称） */
+    public const WAYBILL_CHANNEL_CONFIG_KEY = 'waybill.channel';
 
     /**
      * 可选渠道：'' 表示跟随 .env，off 表示强制关闭
@@ -47,6 +51,7 @@ class ShippingController extends Controller
         private readonly TracePullService $tracePull,
         private readonly ConfigService $config,
         private readonly OperationLogService $operationLog,
+        private readonly WaybillChannelInterface $waybillChannel,
     ) {
     }
 
@@ -351,6 +356,73 @@ HTML;
         return $this->success(
             ['configured' => $channel, 'channel' => $channel === 'off' ? null : $channel],
             $channel === '' ? '已恢复为跟随环境配置' : '物流渠道已切换',
+        );
+    }
+
+    /**
+     * 当前电子面单申请渠道（V1.2；权限 order.view）
+     * GET /admin/shippings/waybill-channel
+     *
+     * ⚠️ 只回显「密钥是否已配置」，不返回 key/customer 明文。
+     * 与 channel() 对称——区别在方向（此处是「发货时能否自动出单」）。
+     */
+    public function waybillChannel(): JsonResponse
+    {
+        $configured = trim((string) ($this->config->get(self::WAYBILL_CHANNEL_CONFIG_KEY) ?? ''));
+        $effective = $configured === 'off' ? null : $configured;
+        $effective = $effective !== '' ? $effective : config('services.waybill.channel');
+
+        return $this->success([
+            // 后台配置值：'' 表示跟随 .env
+            'configured' => $configured,
+            // 实际生效渠道（null = 未启用，发货走手动录入）
+            'channel' => $effective,
+            'label' => $effective === null ? '手动录入（未启用电子面单）' : (self::CHANNEL_LABELS[$effective] ?? $effective),
+            'source' => $configured === '' ? 'env' : 'database',
+            // 渠道能否真正发起申请（密钥齐备）
+            'available' => $this->waybillChannel->available(),
+            'key_configured' => trim((string) config('services.waybill.key')) !== '',
+            'customer_configured' => trim((string) config('services.waybill.customer')) !== '',
+            'options' => self::CHANNEL_OPTIONS,
+        ]);
+    }
+
+    /**
+     * 切换电子面单申请渠道（V1.2；权限 shipping.manage）
+     * PUT /admin/shippings/waybill-channel  body: { channel: ''|kuaidi100|mock|off }
+     *
+     * 写入 system_configs 并即时生效（AppServiceProvider 每次启动用 DB 值覆盖 config）。
+     * 密钥不在此处维护：key/customer 仍需在 .env 配置（凭证不入库）。
+     */
+    public function updateWaybillChannel(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            // present + nullable：'' 是合法值（跟随 env），而 ConvertEmptyStringsToNull 会转成 null
+            'channel' => ['present', 'nullable', 'string', 'max:20'],
+        ]);
+
+        $channel = trim((string) ($data['channel'] ?? ''));
+
+        if (! in_array($channel, array_column(self::CHANNEL_OPTIONS, 'value'), true)) {
+            return $this->fail('不支持的电子面单渠道', 40000, ['allowed' => array_column(self::CHANNEL_OPTIONS, 'value')]);
+        }
+
+        $this->config->set(self::WAYBILL_CHANNEL_CONFIG_KEY, $channel);
+        // 当前请求立即生效，无需等到下次启动
+        config(['services.waybill.channel' => $channel === 'off' ? null : $channel]);
+
+        $this->operationLog->record(
+            $request->user()->id,
+            'shipping',
+            'switch_waybill_channel',
+            'system_configs',
+            null,
+            ['waybill.channel' => $channel === '' ? '(跟随 .env)' : $channel],
+        );
+
+        return $this->success(
+            ['configured' => $channel, 'channel' => $channel === 'off' ? null : $channel],
+            $channel === '' ? '已恢复为跟随环境配置' : '电子面单渠道已切换',
         );
     }
 }

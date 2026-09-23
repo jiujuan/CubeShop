@@ -27,6 +27,7 @@ final class ConfigGroup
         'review' => '评价与通知',
         'notify' => '评价与通知',
         'shipping' => '物流配送',
+        'waybill' => '物流配送',
     ];
 
     /** 未登记前缀的兜底分组 */

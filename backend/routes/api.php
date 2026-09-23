@@ -362,6 +362,9 @@ Route::middleware(['auth:sanctum', 'account.active'])->group(function () {
         // ⚠️ /shippings/channel 与 /shippings/{id} 必须注册在 {id} 之前，否则被当作 id 匹配
         Route::get('/shippings/channel', [\App\Http\Controllers\Admin\ShippingController::class, 'channel'])->middleware('permission:order.view');
         Route::put('/shippings/channel', [\App\Http\Controllers\Admin\ShippingController::class, 'updateChannel'])->middleware('permission:shipping.manage');
+        // 电子面单申请渠道（V1.2，与查询渠道对称）：静态路径，注册在 {id} 之前
+        Route::get('/shippings/waybill-channel', [\App\Http\Controllers\Admin\ShippingController::class, 'waybillChannel'])->middleware('permission:order.view');
+        Route::put('/shippings/waybill-channel', [\App\Http\Controllers\Admin\ShippingController::class, 'updateWaybillChannel'])->middleware('permission:shipping.manage');
         // 电子面单打印端点（V1.2 出单侧配套）：离线重打，不依赖第三方
         Route::get('/shippings/{id}/waybill', [\App\Http\Controllers\Admin\ShippingController::class, 'waybillPrint'])->middleware('permission:order.view')->whereNumber('id');
         Route::get('/shippings/{id}', [\App\Http\Controllers\Admin\ShippingController::class, 'show'])->middleware('permission:order.view')->whereNumber('id');
