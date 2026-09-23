@@ -425,4 +425,76 @@ HTML;
             $channel === '' ? '已恢复为跟随环境配置' : '电子面单渠道已切换',
         );
     }
+
+    /**
+     * 补出 / 重打电子面单（V1.2；权限 shipping.manage）
+     * POST /admin/shippings/{id}/waybill/reissue
+     *
+     * 用于历史运单（未申请过电子面单 / 手动录入）或无模板运单的补打：
+     * - 经当前生效的面单渠道重新申请，写回 tracking_no / waybill_*（含 print_template）；
+     * - Mock 渠道确定性（同 orderNo 同号），安全可重出、无费用；
+     * - 真实渠道（快递100）重出将产生新单号、可能计费 —— 由前端二次确认拦截。
+     * - 重出不应产生「重复发货」副作用：不写 shippings 新行、不改订单状态。
+     */
+    public function reissueWaybill(Request $request, int $id): JsonResponse
+    {
+        $shipping = Shipping::query()->with('order')->find($id);
+        if (! $shipping) {
+            return $this->fail('物流记录不存在', 40004);
+        }
+
+        $order = $shipping->order;
+        if (! $order) {
+            return $this->fail('运单无关联订单，无法补出', 40004);
+        }
+
+        // 当前生效渠道（已含 AppServiceProvider 的 DB 覆写；不可用=Null/off/未配置密钥）
+        $channel = $this->waybillChannel;
+        if (! $channel->available()) {
+            return $this->fail('当前面单渠道不可用或未配置，无法补出', 40022);
+        }
+
+        $companyCode = trim((string) ($shipping->company_code ?? ''));
+        if ($companyCode === '') {
+            return $this->fail('运单缺少快递公司编码，无法补出', 40022);
+        }
+
+        $result = app(\App\Services\Shipping\WaybillService::class)->issueForOrder($order, $companyCode);
+        if (! $result->success) {
+            return $this->fail('电子面单补出失败：'.$result->message, 40022);
+        }
+
+        $labelData = $result->labelData ?? '';
+        $waybillData = is_array($result->raw) ? $result->raw : (json_decode((string) $result->raw, true) ?? []);
+        if (is_string($labelData) && $labelData !== '') {
+            // 把可打印模板一并落库，保证后续「打印面单」离线可用（不依赖再次调用第三方）
+            $waybillData['print_template'] = $labelData;
+        }
+
+        $shipping->update([
+            'tracking_no' => $result->trackingNo,
+            'waybill_channel' => $channel->channelName(),
+            'waybill_printed_at' => now(),
+            'waybill_data' => $waybillData,
+        ]);
+
+        // 同步冗余双号（列表/导出直接用）
+        if ($order->tracking_no !== $result->trackingNo) {
+            $order->update(['tracking_no' => $result->trackingNo]);
+        }
+
+        $this->operationLog->record(
+            $request->user()->id,
+            'shipping',
+            'reissue_waybill',
+            'shipping',
+            $shipping->id,
+            ['tracking_no' => $result->trackingNo, 'channel' => $channel->channelName(), 'company_code' => $companyCode],
+        );
+
+        return $this->success(
+            ['tracking_no' => $result->trackingNo, 'channel' => $channel->channelName()],
+            '面单已补出',
+        );
+    }
 }

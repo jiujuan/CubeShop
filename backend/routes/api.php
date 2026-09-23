@@ -367,6 +367,8 @@ Route::middleware(['auth:sanctum', 'account.active'])->group(function () {
         Route::put('/shippings/waybill-channel', [\App\Http\Controllers\Admin\ShippingController::class, 'updateWaybillChannel'])->middleware('permission:shipping.manage');
         // 电子面单打印端点（V1.2 出单侧配套）：离线重打，不依赖第三方
         Route::get('/shippings/{id}/waybill', [\App\Http\Controllers\Admin\ShippingController::class, 'waybillPrint'])->middleware('permission:order.view')->whereNumber('id');
+        // 补出 / 重打电子面单（V1.2）：历史/无模板运单经当前渠道重新申请，写回模板
+        Route::post('/shippings/{id}/waybill/reissue', [\App\Http\Controllers\Admin\ShippingController::class, 'reissueWaybill'])->middleware('permission:shipping.manage')->whereNumber('id');
         Route::get('/shippings/{id}', [\App\Http\Controllers\Admin\ShippingController::class, 'show'])->middleware('permission:order.view')->whereNumber('id');
         Route::get('/shippings', [\App\Http\Controllers\Admin\ShippingController::class, 'index'])->middleware('permission:order.view');
 
