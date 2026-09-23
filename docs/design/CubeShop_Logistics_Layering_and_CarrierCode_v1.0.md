@@ -332,3 +332,28 @@ interface WaybillChannelInterface {
 > 注：`tracking_no` 已于迁移 `000034` 存在，故本次只补三个面单专属字段，避免冗余列。
 
 写回逻辑：申请成功后，`Shipping::create()` 落入 `tracking_no`（来自面单）、`waybill_channel`、`waybill_printed_at = now()`、`waybill_data = $raw`，并同步 `orders.tracking_no`。
+
+### 9.6 面单打印端点（离线重打）
+
+发货出单时，`OrderService` 已把可打印模板（`WaybillResult.labelData`）一并落库到 `waybill_data.print_template`，因此「重打」**不依赖再次调用第三方**（重打不应产生新单号 / 费用）。
+
+**端点**：`GET /admin/shipping/{id}/waybill?format=html|json`（权限 `order.view`，与 `show` 一致）
+
+| 形态 | 行为 |
+|---|---|
+| `format=html`（默认） | 返回自包含打印页：顶部打印按钮 + 面单内容 + `@media print` 样式（隐藏工具栏），`Content-Type: text/html`；客服在新标签打开后直接「打印面单」 |
+| `format=json` | 返回结构化模板 `{ tracking_no, company_name, company_code, channel, printed_at, template }`，供程序化消费（如批量打印 / 转 PDF） |
+
+**模板解析**（`Shipping::resolvePrintTemplate()`）取值优先级：
+
+1. `waybill_data.print_template`（出单时落库，最权威）；
+2. 快递100 旧结构 `data.printTemplate` / `printTemplateBase64` 兜底；
+3. 均无 → 返回 `null`，端点报 `40022`（手动录入或渠道未返回面单数据的运单）。
+
+`normalizePrintContent()` 把原始内容规整为可嵌入 HTML：
+
+- HTML 片段 / 文档 → 原样嵌入（快递100 云打印模板自带脚本，按预期渲染）；
+- base64 → 解码后按图片（`data:` URI `<img>`）/ HTML / 纯文本（`<pre>` 转义）分流；
+- 纯文本 → `<pre>` 转义兜底。
+
+**接入 admin UI 的下一步**：在订单 / 物流详情页加「打印面单」按钮，打开 `GET .../waybill`（新标签）即可；批量打印可循环拉取 `format=json` 再合并排版。
