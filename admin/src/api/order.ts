@@ -560,6 +560,13 @@ export function getWaybillChannel() {
   return request.get<ApiResult<ShippingChannelInfo>>('/admin/shippings/waybill-channel')
 }
 
+/** 补出 / 重打电子面单（POST /admin/shippings/{id}/waybill/reissue，权限 shipping.manage） */
+export function reissueWaybill(id: number) {
+  return request.post<ApiResult<{ tracking_no: string; channel: string }>>(
+    `/admin/shippings/${id}/waybill/reissue`,
+  )
+}
+
 /** 切换电子面单申请渠道（PUT /admin/shippings/waybill-channel，权限 shipping.manage）；密钥仍走 .env */
 export function updateWaybillChannel(channel: string) {
   return request.put<ApiResult<{ configured: string; channel: string | null }>>('/admin/shippings/waybill-channel', { channel })

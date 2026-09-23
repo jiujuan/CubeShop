@@ -19,7 +19,7 @@ import { ExternalLink, ListOrdered, Printer, RefreshCw, Search } from 'lucide-vu
 import { Button } from '@/components/ui/button'
 import LoadingSpinner from '@/components/LoadingSpinner.vue'
 import TablePagination from '@/components/TablePagination.vue'
-import { openWaybillPrint } from '@/utils/waybillPrint'
+import { openWaybillPrint, reissueWaybillPrint } from '@/utils/waybillPrint'
 
 /**
  * 物流监控看板（V1.1 T-047，E03；列表权限 order.view，重试权限 order.ship）
@@ -332,6 +332,14 @@ onMounted(() => {
                 <Printer class="h-3 w-3" /> 面单
               </button>
               <button
+                v-permission="'shipping.manage'"
+                class="flex items-center gap-0.5 hover:underline"
+                :data-testid="`monitor-reissue-${row.id}`"
+                @click="reissueWaybillPrint(row.id)"
+              >
+                <RefreshCw class="h-3 w-3" /> 补出
+              </button>
+              <button
                 v-permission="'order.ship'"
                 class="flex items-center gap-0.5 hover:underline disabled:opacity-50"
                 :disabled="pullingId !== null"
@@ -412,6 +420,14 @@ onMounted(() => {
         </p>
 
         <div class="mt-5 flex justify-end gap-2">
+          <Button
+            v-permission="'shipping.manage'"
+            variant="outline"
+            data-testid="detail-reissue"
+            @click="reissueWaybillPrint(detail.id)"
+          >
+            <RefreshCw class="mr-1 h-4 w-4" /> 补出面单
+          </Button>
           <Button
             v-permission="'order.view'"
             data-testid="detail-print"
