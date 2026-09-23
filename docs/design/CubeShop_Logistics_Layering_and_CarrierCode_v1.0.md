@@ -337,7 +337,7 @@ interface WaybillChannelInterface {
 
 发货出单时，`OrderService` 已把可打印模板（`WaybillResult.labelData`）一并落库到 `waybill_data.print_template`，因此「重打」**不依赖再次调用第三方**（重打不应产生新单号 / 费用）。
 
-**端点**：`GET /admin/shipping/{id}/waybill?format=html|json`（权限 `order.view`，与 `show` 一致）
+**端点**：`GET /admin/shippings/{id}/waybill?format=html|json`（权限 `order.view`，与 `show` 一致）
 
 | 形态 | 行为 |
 |---|---|
@@ -356,4 +356,15 @@ interface WaybillChannelInterface {
 - base64 → 解码后按图片（`data:` URI `<img>`）/ HTML / 纯文本（`<pre>` 转义）分流；
 - 纯文本 → `<pre>` 转义兜底。
 
-**接入 admin UI 的下一步**：在订单 / 物流详情页加「打印面单」按钮，打开 `GET .../waybill`（新标签）即可；批量打印可循环拉取 `format=json` 再合并排版。
+**admin UI 接入（已完成）**：后台 SPA 用 Bearer Token 认证，`window.open(endpointUrl)` 直链不会带 Token，故新增 `openWaybillPrint(id)` 工具——
+1. 同步 `window.open('', '_blank')` 拿到句柄（必须在用户手势调用栈内，规避弹窗拦截）；
+2. 经已认证的 `request` 拉取 `…/waybill`（`responseType: blob`）；
+3. 成功（`text/html`）`document.write` 进新标签页；失败（如 `40022` 无模板，返回 JSON）则关闭空白页并 `toast` 提示。
+
+按钮落点（权限 `order.view`）：
+- 订单详情页 `OrderDetailView` 物流信息卡右上角「打印面单」；
+- 物流监控 `ShippingMonitorView` 列表行操作「面单」+ 轨迹详情弹层底部「打印面单」。
+
+`toast` 由新增极简 `useToast` / `ToastHost`（挂载于 `App.vue`）统一渲染，失败路径优雅降级。
+
+**仍待办**：批量打印（循环拉取 `format=json` 再合并排版）；PDF/ZPL 导出（加 dompdf / browsershot 属可选增强）。
