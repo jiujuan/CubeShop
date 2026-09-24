@@ -7,6 +7,7 @@ use App\Support\Search\FallbackLikeEngine;
 use App\Support\Search\PostgresFtsEngine;
 use App\Support\Search\ProductSearchEngine;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
 uses(RefreshDatabase::class);
@@ -19,8 +20,8 @@ uses(RefreshDatabase::class);
  * 2. 配置写错（未实现的引擎名）**不能让搜索整体炸掉**；
  * 3. `system_configs.search.engine` 能覆盖 `.env`，与 shipping.channel 同机制。
  *
- * ⚠️ 测试固定跑 SQLite，`PostgresFtsEngine` 在这里恒不可用，所以「降级」是必然而非偶然
- * —— 这正好是降级链路最容易被验证的环境。
+ * ⚠️ 引擎解析跟随**当前连接驱动**：SQLite 下 `PostgresFtsEngine` 恒不可用，「降级」是
+ * 必然而非偶然（降级链路最容易被验证的环境）；PG 回归库上则应解析出 PG 引擎本体。
  */
 beforeEach(function () {
     $this->originalEngine = config('services.search.engine');
@@ -46,9 +47,13 @@ test('TC-SEARCH-S1-05-022 绑定解析出的实现一定是 ProductSearchEngine'
     expect(app(ProductSearchEngine::class))->toBeInstanceOf(ProductSearchEngine::class);
 });
 
-test('TC-SEARCH-S1-05-023 SQLite 下默认（PG 不可用）降级为 LIKE 引擎', function () {
-    expect(app(PostgresFtsEngine::class)->isAvailable())->toBeFalse()
-        ->and(app(ProductSearchEngine::class))->toBeInstanceOf(FallbackLikeEngine::class);
+test('TC-SEARCH-S1-05-023 默认绑定跟随驱动：SQLite 降级 LIKE，PG 解析出 PG 引擎', function () {
+    $isPgsql = DB::connection()->getDriverName() === 'pgsql';
+
+    expect(app(PostgresFtsEngine::class)->isAvailable())->toBe($isPgsql)
+        ->and(app(ProductSearchEngine::class))->toBeInstanceOf(
+            $isPgsql ? PostgresFtsEngine::class : FallbackLikeEngine::class
+        );
 });
 
 test('TC-SEARCH-S1-05-024 engine=off 强制走 LIKE 降级', function () {
@@ -57,11 +62,16 @@ test('TC-SEARCH-S1-05-024 engine=off 强制走 LIKE 降级', function () {
     expect(app(ProductSearchEngine::class))->toBeInstanceOf(FallbackLikeEngine::class);
 });
 
-test('TC-SEARCH-S1-05-025 显式指定 postgres 但不可用时仍降级，不抛异常', function () {
+test('TC-SEARCH-S1-05-025 显式指定 postgres：不可用时静默降级不抛异常', function () {
     config(['services.search.engine' => 'postgres']);
 
+    $isPgsql = DB::connection()->getDriverName() === 'pgsql';
+
     // 降级是静默的：运营在 SQLite/未迁移的库上配了 pgsql 也只影响排序与召回，不影响可用性
-    expect(app(ProductSearchEngine::class))->toBeInstanceOf(FallbackLikeEngine::class);
+    // （PG 回归库上前提反转：postgres 本身可用，应解析出 PG 引擎而非降级）
+    expect(app(ProductSearchEngine::class))->toBeInstanceOf(
+        $isPgsql ? PostgresFtsEngine::class : FallbackLikeEngine::class
+    );
 });
 
 test('TC-SEARCH-S1-05-026 未实现的引擎名（阶段二）不炸，回落默认链路', function () {

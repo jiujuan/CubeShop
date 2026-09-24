@@ -6,16 +6,18 @@ use App\Models\Product;
 use App\Support\Search\PostgresFtsEngine;
 use App\Support\Search\SearchCriteria;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 
 uses(RefreshDatabase::class);
 
 /**
  * PG 全文检索引擎（站内搜索 S1-04）
  *
- * ⚠️ 测试固定跑 SQLite，`search_vector` 生成列在这里**不存在**，因此：
- * - 与向量有关的真行为由 S1-11 的 PG 特性测试 cover（开发期已在真库手工验过）；
- * - 这里能钉住的是**不依赖 PG 的部分**：tsquery 字面量构造（最容易出语法/注入问题的地方）、
- *   可用性判定、联想、移除、以及「不可用时必须抛异常而不是静默返回空」这条约定。
+ * ⚠️ 可用性判定跟随**当前连接驱动**：SQLite 下 `search_vector` 生成列不存在恒不可用；
+ * PG 回归库（phpunit.pgsql.xml）驱动与生成列均就绪则可用。与向量有关的真行为由
+ * S1-11 的 PG 特性测试 cover（开发期已在真库手工验过）；两种驱动下共同钉住的是：
+ * tsquery 字面量构造（最容易出语法/注入问题的地方）、可用性判定的驱动条件、
+ * 联想、移除、以及「不可用时必须抛异常而不是静默返回空」这条约定。
  */
 beforeEach(function () {
     PostgresFtsEngine::flushAvailabilityCache();
@@ -23,12 +25,19 @@ beforeEach(function () {
     $this->engine = app(PostgresFtsEngine::class);
 });
 
-test('TC-SEARCH-S1-04-011 SQLite 下判定不可用（驱动不符，绑定层据此降级）', function () {
-    expect($this->engine->isAvailable())->toBeFalse()
+test('TC-SEARCH-S1-04-011 可用性判定跟随驱动：非 pgsql 判不可用，pgsql + 生成列就绪判可用', function () {
+    $isPgsql = DB::connection()->getDriverName() === 'pgsql';
+
+    expect($this->engine->isAvailable())->toBe($isPgsql)
         ->and($this->engine->name())->toBe('postgres');
 });
 
 test('TC-SEARCH-S1-04-012 不可用时 search 抛异常而非静默返回空', function () {
+    if ($this->engine->isAvailable()) {
+        // PG 回归库上前提不成立（驱动与生成列都就绪）；「不可用」语义由 SQLite 环境回归钉住
+        $this->markTestSkipped('当前驱动即 pgsql 且生成列已建，无可用的不可用场景');
+    }
+
     // 静默返回空会表现为「搜什么都搜不到」，是最难排查的故障形态，必须响亮地失败
     $this->engine->search(SearchCriteria::fromArray(['keyword' => '北欧沙发']));
 })->throws(RuntimeException::class);

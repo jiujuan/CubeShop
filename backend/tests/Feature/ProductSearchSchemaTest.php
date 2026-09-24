@@ -185,12 +185,11 @@ test('TC-SEARCH-S1-02-010 截断以整 token 为粒度，不切半个词', funct
         $chars[] = mb_chr(0x4E00 + $i, 'UTF-8');
     }
 
-    $product = Product::create([
-        'category_id' => $this->category->id,
-        'title' => implode('', $chars),
-        'price' => '1.00',
-        'status' => 1,
-    ]);
+    // ⚠️ 超长 title 只在内存里设置、不落库：products.title 是 varchar(255)，PG 严格长度
+    // 检查会让直接 create 抛 22001（SQLite 静默放行 —— PG 回归 2026-09-24 修正的跨库假设）。
+    // buildTitleField 只读 title 属性，内存态即可测截断。
+    $product = $this->product;
+    $product->title = implode('', $chars);
 
     $field = $this->writer->buildTitleField($product);
 

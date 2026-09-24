@@ -11,6 +11,7 @@ use App\Services\Product\ProductSearchService;
 use App\Support\Search\SearchCriteria;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Queue;
 
 uses(RefreshDatabase::class);
@@ -18,8 +19,9 @@ uses(RefreshDatabase::class);
 /**
  * 商品检索服务（站内搜索 S1-06）
  *
- * 设计文档 §4.4 / §4.6 / §4.7 / §6。跑在 SQLite 上 —— 此时引擎恒为 `FallbackLikeEngine`，
- * 于是「搜索」这条链第一次能在不依赖 PG 的环境里端到端跑通。
+ * 设计文档 §4.4 / §4.6 / §4.7 / §6。跑在 SQLite 上时引擎恒为 `FallbackLikeEngine`，
+ * 「搜索」这条链第一次能在不依赖 PG 的环境里端到端跑通；PG 回归库上则是 PG 引擎本体
+ * —— 引擎名断言跟随驱动（PG 回归 2026-09-24 修正硬编码假设）。
  *
  * 钉住的四件事：**缓存**、**降级链编排**、**重排**、**词频投递**，
  * 外加一条最容易写错的约定 —— `total` 必须是**筛选后**的总数。
@@ -66,7 +68,9 @@ test('TC-SEARCH-S1-06-002 有关键词：命中并按相关度排序（标题命
 
     expect($page->total)->toBe(2)
         ->and($page->items->first()->id)->toBe($titleHit->id)
-        ->and($page->engine)->toBe('like');
+        ->and($page->engine)->toBe(
+            DB::connection()->getDriverName() === 'pgsql' ? 'postgres' : 'like'
+        );
 });
 
 test('TC-SEARCH-S1-06-003 total 是筛选后的总数，不是引擎命中数', function () {

@@ -14,7 +14,9 @@ use App\Models\Product;
  * —— bigram 对单字无意义，参不参与都一样，不如省掉一轮 tsvector 计算。
  *
  * 三条刻意的边界：
- * 1. **只查 `title` / `subtitle`**，与改造前 `/products?keyword=` 的 LIKE 逐字同语义。
+ * 1. **只查 `title` / `subtitle`**，与改造前 `/products?keyword=` 的 LIKE 逐字同语义
+ *    （唯一差异：两侧包 `lower()`，把 SQLite LIKE 的 ASCII 大小写不敏感显式带给 PG
+ *    —— 跨驱动行为一致，英文关键词不会在 PG 上悄悄少召回）。
  *    不查 `keywords` / 品牌 / 分类名 —— 那些是 PG 索引域的增量，加进来会静默改变既有
  *    接口的行为（召回变超集），而降级引擎的职责是「不白屏、不劣化」，不是「追平 PG 召回」。
  *    真要追平，等 Service 层把 `/search` 换成 PG 引擎即可，降级路径不必对齐。
@@ -180,9 +182,13 @@ final class FallbackLikeEngine implements ProductSearchEngine
                 foreach ($terms as $index => $term) {
                     $pattern = '%'.SearchSuggester::escapeLike($term).'%';
 
+                    // lower() 两侧各包一层：SQLite 的 LIKE 对 ASCII 天然不敏感，PG 的 LIKE
+                    // 大小写敏感 —— 不包的话英文关键词「iphone」在 PG 降级链路会召回缺失
+                    // （PG 回归 2026-09-24 定级 P1）。lower() 两种驱动都有，行为收敛为
+                    // 「大小写不敏感」，与 S1-05-005 的契约一致；pattern 本身已小写归一。
                     $clause = function ($query) use ($pattern): void {
-                        $query->whereRaw("title LIKE ? ESCAPE '\\'", [$pattern])
-                            ->orWhereRaw("subtitle LIKE ? ESCAPE '\\'", [$pattern]);
+                        $query->whereRaw("lower(title) LIKE lower(?) ESCAPE '\\'", [$pattern])
+                            ->orWhereRaw("lower(subtitle) LIKE lower(?) ESCAPE '\\'", [$pattern]);
                     };
 
                     // 第一个词永远是 AND（它要跟 status=1 并列），后续按 mode 决定连接符
