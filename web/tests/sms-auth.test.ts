@@ -207,9 +207,9 @@ describe('注册页：短信验证码模式', () => {
     await mountAt(RegisterView, '/register')
     await waitFor(() => expect(screen.getByTestId('register-sms-field')).toBeTruthy())
 
-    await fireEvent.update(screen.getByPlaceholderText('用户名 / 手机号'), 'bob')
-    await fireEvent.update(screen.getByPlaceholderText('密码（≥8 位，含字母和数字）'), 'Passw0rd1')
-    await fireEvent.update(screen.getByPlaceholderText('确认密码'), 'Passw0rd1')
+    // 免密注册：验证码 tab 只填手机号 + 短信验证码，不再出现用户名/密码输入
+    expect(screen.queryByPlaceholderText('密码（≥8 位，含字母和数字）')).toBeNull()
+
     await fireEvent.update(screen.getByTestId('sms-phone'), '13800138000')
     await fireEvent.update(screen.getByTestId('sms-code'), '123456')
     await fireEvent.click(screen.getByTestId('register-submit'))
@@ -220,6 +220,64 @@ describe('注册页：短信验证码模式', () => {
     expect(payload.phone).toBe('13800138000')
     expect(payload.sms_code).toBe('123456')
     expect(payload.code).toBeUndefined()
+    // 免密：不提交用户名与密码（账号即手机号，密码由服务端生成）
+    expect(payload.username).toBeUndefined()
+    expect(payload.password).toBeUndefined()
+  })
+
+  it('TC-SMS-REG-01b 短信就绪时显示双 tab 且默认落在「验证码注册」', async () => {
+    getVerifyModeMock.mockResolvedValue({
+      data: { data: { scene: 'register', mode: 'sms', code_length: 6, reason: null } },
+    })
+
+    await mountAt(RegisterView, '/register')
+    await waitFor(() => expect(screen.getByTestId('register-tabs')).toBeTruthy())
+
+    // 默认选中验证码注册（后台设了短信就优先走短信）
+    expect(screen.getByTestId('register-tab-sms').className).toContain('bg-white')
+    expect(screen.getByTestId('register-tab-password').className).not.toContain('bg-white')
+  })
+
+  it('TC-SMS-REG-01c 切到「密码注册」tab 后走图形验证码通道', async () => {
+    getVerifyModeMock.mockResolvedValue({
+      data: { data: { scene: 'register', mode: 'sms', code_length: 6, reason: null } },
+    })
+
+    await mountAt(RegisterView, '/register')
+    await waitFor(() => expect(screen.getByTestId('register-tabs')).toBeTruthy())
+
+    await fireEvent.click(screen.getByTestId('register-tab-password'))
+    await waitFor(() => expect(screen.getByPlaceholderText('密码（≥8 位，含字母和数字）')).toBeTruthy())
+    expect(screen.queryByTestId('register-sms-field')).toBeNull()
+
+    await fireEvent.update(screen.getByPlaceholderText('用户名 / 手机号'), 'bob')
+    await fireEvent.update(screen.getByPlaceholderText('密码（≥8 位，含字母和数字）'), 'Passw0rd1')
+    await fireEvent.update(screen.getByPlaceholderText('确认密码'), 'Passw0rd1')
+    await fireEvent.update(screen.getByTestId('register-captcha-code'), VALID_CAPTCHA)
+    await fireEvent.click(screen.getByTestId('register-submit'))
+
+    await waitFor(() => expect(registerMock).toHaveBeenCalled())
+
+    const payload = registerMock.mock.calls[0][0] as Record<string, string>
+    expect(payload.username).toBe('bob')
+    expect(payload.password).toBe('Passw0rd1')
+    expect(payload.sms_code).toBeUndefined()
+  })
+
+  it('TC-SMS-REG-01d 验证码注册手机号非法时本地拦截，不发请求', async () => {
+    getVerifyModeMock.mockResolvedValue({
+      data: { data: { scene: 'register', mode: 'sms', code_length: 6, reason: null } },
+    })
+
+    await mountAt(RegisterView, '/register')
+    await waitFor(() => expect(screen.getByTestId('register-sms-field')).toBeTruthy())
+
+    await fireEvent.update(screen.getByTestId('sms-phone'), '123')
+    await fireEvent.update(screen.getByTestId('sms-code'), '123456')
+    await fireEvent.click(screen.getByTestId('register-submit'))
+
+    expect(registerMock).not.toHaveBeenCalled()
+    await waitFor(() => expect(screen.getByTestId('register-error').textContent).toContain('请输入正确的手机号'))
   })
 
   it('TC-SMS-REG-02 短信不可用时仍走图形验证码（回归）', async () => {

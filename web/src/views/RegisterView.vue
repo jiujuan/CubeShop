@@ -13,12 +13,15 @@ import SmsCodeField from '@/components/SmsCodeField.vue'
 /**
  * 用户端注册页
  *
+ * 两种注册方式（与登录页同一套 tab 形态）：
+ * - 密码注册：用户名 + 密码 + 图形验证码，始终可用；
+ * - 验证码注册：手机号 + 短信验证码，**免密**——账号即手机号，密码由服务端生成，
+ *   注册后凭「手机号 + 短信验证码」登录或重置密码。
+ *
  * 密码规则与后端保持一致（SEC-05：≥8 位且同时含字母与数字 + 弱口令黑名单），
  * 提交前先本地拦截，避免用户只看到一句「参数校验失败」却不知道错在哪个字段。
  *
- * 验证码有两种形态，由后端 `/auth/verify-mode` 决定（后台配好短信即走短信验证码）：
- * - 图形验证码（5 位）：默认形态，也是**发送短信验证码的防刷闸门**，不会被移除；
- * - 短信验证码（6 位）：后台启用且就绪时使用，位数由后端下发，不写死。
+ * ⚠️ 图形验证码两种方式都保留：密码注册作为人机校验，验证码注册作为**发码的防刷闸门**。
  */
 const router = useRouter()
 const auth = useAuthStore()
@@ -39,10 +42,12 @@ const captcha = ref<Captcha | null>(null)
 const smsCode = ref('')
 const verifyMode = ref<'sms' | 'captcha'>('captcha')
 const codeLength = ref(CAPTCHA_LENGTH)
+const activeTab = ref<'password' | 'sms'>('password')
 const loading = ref(false)
 const errorMsg = ref('')
 
-const isSmsMode = computed(() => verifyMode.value === 'sms')
+const smsAvailable = computed(() => verifyMode.value === 'sms')
+const isSmsTab = computed(() => smsAvailable.value && activeTab.value === 'sms')
 
 async function refreshCaptcha() {
   captchaCode.value = ''
@@ -56,30 +61,45 @@ async function refreshCaptcha() {
   }
 }
 
-/** 拉取当前场景该用哪种验证码；失败不阻断注册（默认退回图形验证码） */
+/** 拉取当前场景该用哪种验证码；失败不阻断注册（默认退回密码注册 + 图形验证码） */
 async function loadVerifyMode() {
   try {
     const { data } = await getVerifyMode('register')
     verifyMode.value = data.data.mode
     codeLength.value = data.data.code_length
+
+    // 短信就绪时默认落在「验证码注册」（后台设了短信就优先走短信）
+    if (data.data.mode === 'sms') {
+      activeTab.value = 'sms'
+    }
   } catch {
     verifyMode.value = 'captcha'
     codeLength.value = CAPTCHA_LENGTH
   }
 }
 
-/** 后端判定短信不可用时切回图形验证码，保证注册流程不中断 */
+/** 后端判定短信不可用时切回密码注册，保证注册流程不中断 */
 async function onSmsFallback() {
   verifyMode.value = 'captcha'
   codeLength.value = CAPTCHA_LENGTH
+  activeTab.value = 'password'
   await refreshCaptcha()
+}
+
+async function switchTab(tab: 'password' | 'sms') {
+  activeTab.value = tab
+  errorMsg.value = ''
+  // 密码注册需要图形验证码；短信模式下首屏不拉，切过去时才补一张
+  if (tab === 'password' && !captcha.value) {
+    await refreshCaptcha()
+  }
 }
 
 onMounted(async () => {
   await loadVerifyMode()
 
-  // 短信模式下图形验证码由 SmsCodeField 自带（用于发码防刷），这里不必再取一张
-  if (!isSmsMode.value) {
+  // 验证码注册 tab 的图形验证码由 SmsCodeField 自带（用于发码防刷），这里只在密码注册时取
+  if (!isSmsTab.value) {
     await refreshCaptcha()
   }
 })
@@ -91,59 +111,73 @@ function firstFieldError(errors?: Record<string, string[]>): string | null {
     const msg = errors[field]?.[0]
     if (msg) return msg
   }
-  const rest = Object.values(errors).find((list) => list?.length)
-  return rest?.[0] ?? null
+  return Object.values(errors).find((list) => list?.length)?.[0] ?? null
 }
 
-async function submit() {
+/** 密码注册：用户名 + 密码 + 图形验证码，成功返回 token */
+async function submitByPassword(): Promise<string | false> {
   if (!username.value.trim() || !password.value) {
     errorMsg.value = '请填写完整注册信息'
-    return
+    return false
   }
   if (password.value !== confirm.value) {
     errorMsg.value = '两次输入的密码不一致'
-    return
+    return false
   }
   if (!PASSWORD_RULE.test(password.value)) {
     errorMsg.value = '密码至少 8 位，且需同时包含字母和数字'
-    return
+    return false
+  }
+  if (captchaCode.value.trim().length !== CAPTCHA_LENGTH) {
+    errorMsg.value = `请输入 ${CAPTCHA_LENGTH} 位验证码`
+    return false
+  }
+  if (!captcha.value) {
+    errorMsg.value = '验证码未加载成功，请点击验证码图片刷新后再试'
+    return false
   }
 
-  const payload: Record<string, string> = {
+  const { data } = await register({
     username: username.value.trim(),
     password: password.value,
     password_confirmation: confirm.value,
+    captcha_id: captcha.value.captcha_id,
+    code: captchaCode.value.trim().toUpperCase(),
+  })
+
+  return data.data.token
+}
+
+/** 验证码注册：手机号 + 短信验证码，免密（账号即手机号） */
+async function submitBySmsCode(): Promise<string | false> {
+  if (!/^1[3-9]\d{9}$/.test(phone.value.trim())) {
+    errorMsg.value = '请输入正确的手机号'
+    return false
+  }
+  if (smsCode.value.trim().length !== codeLength.value) {
+    errorMsg.value = `请输入 ${codeLength.value} 位短信验证码`
+    return false
   }
 
-  if (isSmsMode.value) {
-    if (!/^1[3-9]\d{9}$/.test(phone.value.trim())) {
-      errorMsg.value = '请输入正确的手机号'
-      return
-    }
-    if (smsCode.value.trim().length !== codeLength.value) {
-      errorMsg.value = `请输入 ${codeLength.value} 位短信验证码`
-      return
-    }
-    payload.phone = phone.value.trim()
-    payload.sms_code = smsCode.value.trim()
-  } else {
-    if (captchaCode.value.trim().length !== CAPTCHA_LENGTH) {
-      errorMsg.value = `请输入 ${CAPTCHA_LENGTH} 位验证码`
-      return
-    }
-    if (!captcha.value) {
-      errorMsg.value = '验证码未加载成功，请点击验证码图片刷新后再试'
-      return
-    }
-    payload.captcha_id = captcha.value.captcha_id
-    payload.code = captchaCode.value.trim().toUpperCase()
-  }
+  const { data } = await register({
+    phone: phone.value.trim(),
+    sms_code: smsCode.value.trim(),
+  })
 
+  return data.data.token
+}
+
+async function submit() {
   loading.value = true
   errorMsg.value = ''
   try {
-    const { data } = await register(payload)
-    auth.setToken(data.data.token)
+    const token = isSmsTab.value ? await submitBySmsCode() : await submitByPassword()
+
+    if (token === false) {
+      return
+    }
+
+    auth.setToken(token)
     await auth.fetchUser().catch(() => null)
     router.replace('/')
   } catch (e) {
@@ -153,7 +187,7 @@ async function submit() {
     } else {
       errorMsg.value = e instanceof Error ? e.message : '注册失败'
     }
-    if (!isSmsMode.value) {
+    if (!isSmsTab.value) {
       await refreshCaptcha()
     }
   } finally {
@@ -184,22 +218,24 @@ async function submit() {
     <div class="w-full max-w-sm rounded-2xl bg-white p-8 shadow-lg">
       <h1 class="mb-6 text-center text-lg font-semibold text-slate-800">注册账号</h1>
 
-      <div class="space-y-4 text-sm">
-        <input
-          v-model="username" type="text" placeholder="用户名 / 手机号"
-          class="h-11 w-full rounded-lg border border-slate-200 px-3 outline-none focus:border-[#1677ff]"
-        />
-        <input
-          v-model="password" type="password" placeholder="密码（≥8 位，含字母和数字）"
-          class="h-11 w-full rounded-lg border border-slate-200 px-3 outline-none focus:border-[#1677ff]"
-        />
-        <input
-          v-model="confirm" type="password" placeholder="确认密码"
-          class="h-11 w-full rounded-lg border border-slate-200 px-3 outline-none focus:border-[#1677ff]"
-        />
+      <div v-if="smsAvailable" class="mb-5 grid grid-cols-2 gap-2 rounded-lg bg-slate-100 p-1" data-testid="register-tabs">
+        <button
+          type="button" data-testid="register-tab-password"
+          class="h-9 rounded-md text-sm transition-colors"
+          :class="!isSmsTab ? 'bg-white font-medium text-slate-800 shadow-sm' : 'text-slate-500'"
+          @click="switchTab('password')"
+        >密码注册</button>
+        <button
+          type="button" data-testid="register-tab-sms"
+          class="h-9 rounded-md text-sm transition-colors"
+          :class="isSmsTab ? 'bg-white font-medium text-slate-800 shadow-sm' : 'text-slate-500'"
+          @click="switchTab('sms')"
+        >验证码注册</button>
+      </div>
 
+      <div class="space-y-4 text-sm">
         <SmsCodeField
-          v-if="isSmsMode"
+          v-if="isSmsTab"
           v-model:phone="phone"
           v-model:code="smsCode"
           scene="register"
@@ -207,22 +243,40 @@ async function submit() {
           data-testid="register-sms-field"
           @fallback="onSmsFallback"
         />
+        <p v-if="isSmsTab" class="-mt-1 text-xs text-slate-400">
+          无需设置密码：账号即手机号，注册后可用短信验证码登录。
+        </p>
 
-        <div v-else class="flex gap-2">
+        <template v-else>
           <input
-            v-model="captchaCode" type="text" :maxlength="CAPTCHA_LENGTH" placeholder="验证码"
-            data-testid="register-captcha-code"
-            class="h-11 w-36 rounded-lg border border-slate-200 px-3 text-center tracking-widest outline-none focus:border-[#1677ff]"
+            v-model="username" type="text" placeholder="用户名 / 手机号"
+            class="h-11 w-full rounded-lg border border-slate-200 px-3 outline-none focus:border-[#1677ff]"
           />
-          <button
-            type="button" data-testid="register-captcha-image"
-            class="flex h-11 w-[140px] shrink-0 items-center justify-center overflow-hidden rounded-lg bg-slate-50 hover:opacity-80"
-            @click="refreshCaptcha"
-          >
-            <img v-if="captcha" :src="captcha.image" alt="验证码" class="h-full w-auto" />
-            <span v-else class="text-xs text-slate-400">加载中...</span>
-          </button>
-        </div>
+          <input
+            v-model="password" type="password" placeholder="密码（≥8 位，含字母和数字）"
+            class="h-11 w-full rounded-lg border border-slate-200 px-3 outline-none focus:border-[#1677ff]"
+          />
+          <input
+            v-model="confirm" type="password" placeholder="确认密码"
+            class="h-11 w-full rounded-lg border border-slate-200 px-3 outline-none focus:border-[#1677ff]"
+          />
+
+          <div class="flex gap-2">
+            <input
+              v-model="captchaCode" type="text" :maxlength="CAPTCHA_LENGTH" placeholder="验证码"
+              data-testid="register-captcha-code"
+              class="h-11 w-36 rounded-lg border border-slate-200 px-3 text-center tracking-widest outline-none focus:border-[#1677ff]"
+            />
+            <button
+              type="button" data-testid="register-captcha-image"
+              class="flex h-11 w-[140px] shrink-0 items-center justify-center overflow-hidden rounded-lg bg-slate-50 hover:opacity-80"
+              @click="refreshCaptcha"
+            >
+              <img v-if="captcha" :src="captcha.image" alt="验证码" class="h-full w-auto" />
+              <span v-else class="text-xs text-slate-400">加载中...</span>
+            </button>
+          </div>
+        </template>
 
         <p v-if="errorMsg" data-testid="register-error" class="rounded-md bg-red-50 px-3 py-2 text-xs text-red-500">{{ errorMsg }}</p>
 
