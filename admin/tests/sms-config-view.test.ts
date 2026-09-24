@@ -307,3 +307,48 @@ describe('短信渠道配置页 SmsConfigView（短信渠道计划 第一期）'
     expect(getSmsLogsMock.mock.calls[1][0]).toMatchObject({ status: 'failed', page: 1 })
   })
 })
+
+describe('短信渠道配置页：场景已勾选却不生效时给出原因', () => {
+  it('列出未生效场景与中文原因，未勾选的场景不列入', async () => {
+    const fixture = configFixture()
+    getSmsConfigMock.mockResolvedValue({
+      data: {
+        code: 0,
+        data: {
+          ...fixture,
+          switches: { enabled: true, code_scenes: ['register'], code_templates: {}, scenes_auto: false },
+          scene_status: {
+            register: { ready: false, reason: 'template_missing', reason_text: '未填写验证码模板 CODE' },
+            reset_password: { ready: false, reason: 'scene_not_enabled', reason_text: '该场景未勾选' },
+          },
+        },
+      },
+    })
+
+    const wrapper = await mountView()
+    const block = wrapper.find('[data-testid="sms-scenes-blocked"]')
+
+    expect(block.exists()).toBe(true)
+    expect(block.text()).toContain('注册')
+    expect(block.text()).toContain('未填写验证码模板 CODE')
+    // 未勾选的场景没有「不生效」可言，不该出现在提示里
+    expect(block.text()).not.toContain('重置密码')
+  })
+
+  it('场景全部就绪时不显示未生效提示', async () => {
+    const fixture = configFixture()
+    getSmsConfigMock.mockResolvedValue({
+      data: {
+        code: 0,
+        data: {
+          ...fixture,
+          switches: { enabled: true, code_scenes: ['register'], code_templates: { register: 'SMS_1' }, scenes_auto: false },
+          scene_status: { register: { ready: true, reason: null, reason_text: null } },
+        },
+      },
+    })
+
+    const wrapper = await mountView()
+    expect(wrapper.find('[data-testid="sms-scenes-blocked"]').exists()).toBe(false)
+  })
+})

@@ -85,6 +85,17 @@ const switchesDirty = computed(() => {
   )
 })
 
+// 已勾选、但判定不通过的场景：这些场景前台会静默回退图形验证码，
+// 不显示出来管理员只能靠猜（这正是「勾了却没生效」的根源）
+const blockedScenes = computed(() => {
+  if (!config.value) return []
+  const scenes = config.value.options.scenes
+  return Object.keys(scenes)
+    .filter((key) => editScenes.value.includes(key))
+    .map((key) => ({ key, label: scenes[key], ...(config.value!.scene_status?.[key] ?? { ready: true }) }))
+    .filter((item) => !item.ready)
+})
+
 const savingSwitches = ref(false)
 
 async function saveSwitches() {
@@ -308,6 +319,18 @@ const statusClass: Record<string, string> = {
           >
             当前为自动模式：配好服务商账号后，系统会自动勾选已配模板的场景。你一旦手动提交，此后就完全由你决定。
           </p>
+          <div
+            v-if="blockedScenes.length"
+            class="mt-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-[12px] text-amber-800"
+            data-testid="sms-scenes-blocked"
+          >
+            <p class="font-medium">以下场景已勾选，但当前不会走短信验证码（前台会回退图形验证码）：</p>
+            <ul class="mt-1 space-y-0.5">
+              <li v-for="item in blockedScenes" :key="item.key">
+                · {{ item.label }} —— {{ item.reason_text ?? item.reason ?? '未就绪' }}
+              </li>
+            </ul>
+          </div>
         </div>
 
         <div class="mt-4 space-y-2">

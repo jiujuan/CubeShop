@@ -58,10 +58,21 @@ export interface SmsSwitches {
   scenes_auto: boolean
 }
 
+export interface SmsSceneStatus {
+  /** 该场景现在能否真的走短信验证码 */
+  ready: boolean
+  /** 不能时的原因码（如 template_missing） */
+  reason: string | null
+  /** 原因的中文说明，直接给用户看 */
+  reason_text: string | null
+}
+
 export interface SmsConfigData {
   channels: SmsChannelRow[]
   active: SmsActiveInfo
   switches: SmsSwitches
+  /** 场景 key => 就绪度（勾了却不生效时，页面据此说明原因） */
+  scene_status: Record<string, SmsSceneStatus>
   options: {
     /** 场景 key => 中文名（页面多选与后端校验共用同一份白名单） */
     scenes: Record<string, string>
