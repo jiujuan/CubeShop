@@ -301,6 +301,13 @@ const statusClass: Record<string, string> = {
               {{ label }}
             </label>
           </div>
+          <p
+            v-if="config.switches.scenes_auto"
+            class="mt-2 text-[12px] text-slate-400"
+            data-testid="sms-scenes-auto-tip"
+          >
+            当前为自动模式：配好服务商账号后，系统会自动勾选已配模板的场景。你一旦手动提交，此后就完全由你决定。
+          </p>
         </div>
 
         <div class="mt-4 space-y-2">

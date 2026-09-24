@@ -54,6 +54,8 @@ export interface SmsSwitches {
   code_scenes: string[]
   /** 场景 → 模板 CODE（阿里云账号级别的 SMS_xxxxxx） */
   code_templates: Record<string, string>
+  /** true = 管理员从未手动设置过场景，配好服务商账号后系统会自动勾选；手动提交一次后转为 false */
+  scenes_auto: boolean
 }
 
 export interface SmsConfigData {
