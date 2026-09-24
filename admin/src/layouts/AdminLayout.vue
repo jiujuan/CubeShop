@@ -3,7 +3,7 @@ import { computed, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import {
   BarChart3, BookOpen, Box, Calculator, ChevronDown, ChevronRight, ChevronsLeft, ChevronsRight, ClipboardList, CreditCard, FileClock, FolderTree, History, Images, KeyRound,
-  Search, LayoutDashboard, Layers, LayoutList, LifeBuoy, ListTree, LogOut, MapPinned, Menu, MessageSquare, Megaphone, Package, RotateCcw, ScrollText, Settings, ShieldCheck,   SquareUser, Tags, Truck, UploadCloud, UserCog, UserRound, Users, Wallet, Warehouse, Ticket, Undo2, Activity, Diff,
+  Send, Search, LayoutDashboard, Layers, LayoutList, LifeBuoy, ListTree, LogOut, MapPinned, Menu, MessageSquare, Megaphone, Package, RotateCcw, ScrollText, Settings, ShieldCheck,   SquareUser, Tags, Truck, UploadCloud, UserCog, UserRound, Users, Wallet, Warehouse, Ticket, Undo2, Activity, Diff,
 } from 'lucide-vue-next'
 import { useAuthStore } from '@/stores/auth'
 
@@ -65,6 +65,7 @@ const icons: Record<string, unknown> = {
   Activity,
   Diff,
   KeyRound,
+  Send,
   Search,
 }
 
@@ -155,6 +156,7 @@ const menuGroups = computed<MenuGroup[]>(() => {
         { path: '/configs', title: '系统配置', icon: 'Settings', permission: 'config.manage' },
         { path: '/media', title: '媒体库', icon: 'Images', permission: 'media.view' },
         { path: '/search-config', title: '搜索配置', icon: 'Search', permission: 'search.manage' },
+        { path: '/sms-config', title: '短信渠道', icon: 'Send', permission: 'sms.view' },
         { path: '/operation-logs', title: '操作日志', icon: 'FileClock', permission: 'log.view' },
         { path: '/auth-logs', title: '认证日志', icon: 'KeyRound', permission: 'log.auth.view' },
         { path: '/accounts', title: '管理员账号', icon: 'UserCog', permission: 'account.manage' },

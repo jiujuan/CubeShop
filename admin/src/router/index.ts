@@ -318,6 +318,14 @@ const router = createRouter({
           meta: { title: '搜索配置', menu: true, icon: 'Search', permission: 'search.manage' },
         },
         {
+          // 短信渠道（短信渠道计划 第一期）：凭证配置 / 启用切换 / 测试发送 / 发送记录
+          // 超管专属（sms.view + sms.manage）：短信凭证等同于“花钱的钥匙”，风险由超管承担
+          path: 'sms-config',
+          name: 'sms-config',
+          component: () => import('@/views/system/SmsConfigView.vue'),
+          meta: { title: '短信渠道', menu: true, icon: 'Send', permission: 'sms.view' },
+        },
+        {
           path: 'operation-logs',
           name: 'operation-logs',
           component: () => import('@/views/system/OperationLogView.vue'),
