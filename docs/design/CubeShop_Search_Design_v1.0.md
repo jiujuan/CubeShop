@@ -396,10 +396,19 @@ search_synonyms: id, from_word, to_words(jsonb), status, timestamps
 ```
 查询前按 `from_word → to_words` 展开成 OR 组。后台维护（权限 `search.manage`）。
 
-**状态**：S1-07 未做（设计里标为可选）。降级链第 3 步（同义词展开）因此暂缺，
-目前是「AND 零结果 → 直接 OR 放宽」。补做时落点在 `ProductSearchService::searchByKeyword()`：
-零结果后按 `from_word → to_words` 展开再查一次，命中则 `relaxed=true`。
-建表 `000122_create_search_synonyms_table`，权限 `search.manage` 随 S1-09 一起给。
+**状态**：✅ S1-10 已补做（迁移 `000123_create_search_synonyms_table`，权限 `search.manage` 复用）。
+- 表 `search_synonyms`：`from_word`（unique，**归一化+小写入库**）+ `to_words`（jsonb，JSON_UNESCAPED_UNICODE，
+  默认 cast 会把中文转义成 \uXXXX 导致后台按 to 词 LIKE 筛不到 —— 用 Attribute 显式序列化）。
+- 展开逻辑落点：`ProductSearchService::synonymResult()` —— 原查询 AND→OR 均零结果后，
+  子串命中规则的 from_word 逐候选重查（`SYNONYM_MAX_QUERIES=5` 熔断），命中并联合并、`relaxed=true`。
+- 开关 `search.synonyms_enabled`（默认开，只影响查询侧，改完即生效无需重建索引）。
+- 后台 CRUD：`GET/POST/PUT/DELETE /admin/search/synonyms`（admin `SearchSynonymController`）。
+
+### 4.8.1 联想限流（S1-10 补做）
+
+`/search/suggest` 挂 `throttle:search-suggest`（AppServiceProvider 注册）：同 IP 每分钟
+`SEARCH_SUGGEST_RATE_LIMIT`（默认 30，env 可配，**不走 system_configs** —— 改频率是运维操作）。
+rate limiter key 带 `suggest|` 前缀，与 auth/order 等同名 IP 维度互不串号。
 
 ### 4.9 服务层：`ProductSearchService`（S1-06）
 
@@ -577,7 +586,7 @@ search_synonyms: id, from_word, to_words(jsonb), status, timestamps
 | S1-07 | 控制器与路由 `/search`、`/search/suggest`、`/search/hot` + `/products` 改走服务层 | 1 | ✅ 完成 |
 | S1-08 | ✅ `search:reindex`（`--chunk/--sleep/--ids/--no-bump`，幂等）+ 每日 03:40 调度 + 后台配置 4 接口（`GET/PUT /admin/search/config`、`GET /admin/search/keywords`、`POST /admin/search/reindex`）；真 PG 端到端已验证 | 0.5 |
 | S1-09 | ✅ 全部完成：权限码 `search.manage`（迁移 000122 + seeder）、`ConfigGroup` 登记、后台配置页（admin `SearchConfigView.vue`：引擎卡片/运行参数/热搜词/重建索引，入口 `/search-config`，vitest 9 例）| 0.5 |
-| S1-10 | 前端：联想下拉、搜索页头部信息、空结果推荐 | 1.5 |
+| S1-10 | ✅ 前端：ShopHeader 联想下拉（200ms 防抖 + mousedown 接管）、BrowseView keyword 模式改走 `/search`（relaxed 提示/相关分类 chip/零结果推荐位）；后端同义词 000123 + 建议限流一并补做 | 1.5 |
 | S1-11 | 测试（单元 + 契约 + PG 特性）+ 万级商品性能验证 | 1 |
 | | **后端小计** | **~7** |
 | | **前端小计** | **~2.5** |

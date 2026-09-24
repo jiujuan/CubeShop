@@ -10,6 +10,7 @@ import {
   getAttributes, getBrands, getCategories, getProducts,
   type AttributeOption, type BrandOption, type CategoryNode, type ProductBrief,
 } from '@/api/shop'
+import { searchProducts, type SearchMeta, type SearchSort } from '@/api/search'
 import type { PublicPagination } from '@/api/types'
 import ProductCard from '@/components/ProductCard.vue'
 import FilterRows from '@/components/FilterRows.vue'
@@ -27,7 +28,9 @@ const route = useRoute()
 const router = useRouter()
 
 const keyword = ref((route.query.keyword as string) || '')
-const categoryId = ref<string | undefined>(route.params.id ? String(route.params.id) : undefined)
+const categoryId = ref<string | undefined>(route.params.id
+  ? String(route.params.id)
+  : (route.query.category_id ? String(route.query.category_id) : undefined))
 const sort = ref((route.query.sort as string) || 'newest')
 const categories = ref<CategoryNode[]>([])
 const list = ref<ProductBrief[]>([])
@@ -35,6 +38,9 @@ const list = ref<ProductBrief[]>([])
 const pagination = ref<PublicPagination>({ page: 1, page_size: 20, total: null, total_pages: null, has_more: false })
 const loading = ref(false)
 const viewMode = ref<'grid' | 'list'>('grid')
+
+/** V1.2 S1-10：keyword 模式走 /search，带 meta（放宽提示 / 相关分类 / 零结果推荐位） */
+const searchMeta = ref<SearchMeta | null>(null)
 
 /** 价格区间筛选 */
 const priceFilterOpen = ref(false)
@@ -123,7 +129,9 @@ async function loadFilters() {
 async function load(page = 1) {
   loading.value = true
   try {
-    const { data } = await getProducts({
+    // 参数在两条链路上保持逐字一致：/search 是 /search 关键词富入口，
+    // /products 保留原语义（无关键词浏览，V1.2 前的线上行为不动）
+    const params = {
       keyword: keyword.value || undefined,
       category_id: categoryId.value,
       min_price: minPrice.value ? Number(minPrice.value) : undefined,
@@ -133,7 +141,25 @@ async function load(page = 1) {
       sort: sort.value,
       page,
       page_size: 20,
-    })
+    }
+
+    if (keyword.value) {
+      // sort 的 UI 取值集是 /search 的子集（newest/price_asc/price_desc/sales_desc），
+      // 但 ref 初始化成 string，这里收紧到 SearchSort —— 未知值后端本就回落 newest
+      const { data } = await searchProducts({
+        ...params,
+        keyword: keyword.value,
+        sort: sort.value as SearchSort,
+      })
+      list.value = data.data.list
+      pagination.value = data.data.pagination
+      searchMeta.value = data.data.meta ?? null
+      return
+    }
+
+    searchMeta.value = null
+
+    const { data } = await getProducts(params)
     list.value = data.data.list
     pagination.value = data.data.pagination
   } finally {
@@ -141,11 +167,19 @@ async function load(page = 1) {
   }
 }
 
+/** 相关分类 chip 点击：未选 → 带 category_id 收敛；已选中 → 清除收敛（URL 驱动，可分享） */
+function toggleSearchCategory(id: string) {
+  const query: Record<string, string> = { keyword: keyword.value }
+  if (categoryId.value !== id) query.category_id = id
+  router.push({ path: '/search', query })
+}
+
 watch(
   () => route.fullPath,
   async () => {
     keyword.value = (route.query.keyword as string) || ''
-    categoryId.value = route.params.id ? String(route.params.id) : undefined
+    categoryId.value = (route.params.id ? String(route.params.id) : undefined)
+      ?? (route.query.category_id ? String(route.query.category_id) : undefined)
     sort.value = (route.query.sort as string) || 'newest'
     priceFilterOpen.value = false
     attrGroupsExpanded.value = false
@@ -408,6 +442,31 @@ function clearAllFilters() {
             <p v-else class="mt-2 text-[13px] text-slate-400" data-testid="browse-heading-brands-empty">暂无品牌</p>
           </div>
 
+          <!-- V1.2 S1-10：放宽匹配提示（后端 search.expose_debug 开启时返回 relaxed） -->
+          <div
+            v-if="searchMeta?.relaxed"
+            class="mb-3 rounded-lg bg-[#fffbe6] px-4 py-2 text-[13px] text-[#ad8b00]"
+            data-testid="search-relaxed"
+          >没有完全匹配的结果，已为你放宽匹配条件</div>
+
+          <!-- V1.2 S1-10：相关分类聚合（命中商品的高频分类，点击收敛范围） -->
+          <div
+            v-if="searchMeta?.related_categories?.length"
+            class="mb-3 flex flex-wrap items-center gap-2 text-[13px]"
+            data-testid="search-related-categories"
+          >
+            <span class="text-slate-400">相关分类</span>
+            <button
+              v-for="c in searchMeta.related_categories" :key="c.id"
+              class="rounded-full border px-3 py-0.5 transition-colors"
+              :class="categoryId === c.id
+                ? 'border-[#1677ff] bg-[#e6f4ff] text-[#1677ff]'
+                : 'border-slate-200 text-slate-600 hover:border-[#1677ff] hover:text-[#1677ff]'"
+              :data-testid="`search-related-category-${c.id}`"
+              @click="toggleSearchCategory(c.id)"
+            >{{ c.name }}（{{ c.count }}）</button>
+          </div>
+
           <!-- 排序工具栏 -->
           <div class="mb-3 flex flex-wrap items-center gap-2 text-sm">
             <button
@@ -566,8 +625,22 @@ function clearAllFilters() {
 
           <LoadingSpinner v-if="loading" class="py-16" />
 
+          <!-- 零结果推荐位（V1.2 S1-10，降级链第 4 步：不白屏） -->
+          <template v-if="!list.length && !loading && (searchMeta?.recommendations?.length ?? 0) > 0">
+            <div class="mb-3 flex items-center gap-2 text-sm text-slate-500" data-testid="search-recommendations-title">
+              <Sparkles class="h-4 w-4 text-[#ff8a00]" />
+              没有找到相关商品，为你推荐这些
+            </div>
+            <div class="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-4" data-testid="search-recommendations">
+              <ProductCard
+                v-for="p in searchMeta!.recommendations" :key="p.id"
+                :product="p" :tag="tagOf(p)" layout="vertical"
+              />
+            </div>
+          </template>
+
           <!-- 空状态 -->
-          <div v-if="!list.length && !loading" class="flex flex-col items-center rounded-xl bg-white py-20 text-slate-400" data-testid="browse-empty">
+          <div v-if="!list.length && !loading && !(searchMeta?.recommendations?.length)" class="flex flex-col items-center rounded-xl bg-white py-20 text-slate-400" data-testid="browse-empty">
             <PackageOpen class="mb-3 h-12 w-12 text-slate-300" />
             <p class="text-sm">暂无分类商品</p>
             <button

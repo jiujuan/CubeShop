@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { Bell, ChevronDown, ClipboardList, Clock, Heart, House, MapPin, Package, ShoppingCart, SquareUser, Ticket, UserRound, Volume2 } from 'lucide-vue-next'
 import { getCategories, getNav, type CategoryNode, type NavItem } from '@/api/shop'
+import { getSuggest } from '@/api/search'
 import { getAnnouncements, type AnnouncementListItem } from '@/api/announcement'
 import NotificationBell from '@/components/NotificationBell.vue'
 import { useAuthStore } from '@/stores/auth'
@@ -25,6 +26,52 @@ const cart = useCartStore()
 /** 站点名称与大小 logo（后台「系统设置 → 站点信息」可改，改完刷新即生效） */
 const site = useSiteStore()
 const keyword = ref('')
+
+/* ---------- 联想下拉（V1.2 S1-10） ----------
+ * 输入防抖 200ms 后打 /search/suggest（后端同 IP 每分钟限流，别裸打）。
+ * 候选点击用 mousedown.prevent：在 input blur 之前接住，blur 收起逻辑不会误杀点击。
+ */
+const SUGGEST_DEBOUNCE = 200
+const suggestOpen = ref(false)
+const suggestItems = ref<string[]>([])
+let suggestTimer: ReturnType<typeof setTimeout> | null = null
+let suggestSeq = 0  // 竞态序号：慢响应回来自动作废，不盖新词的结果
+
+function closeSuggest() {
+  suggestOpen.value = false
+}
+
+function chooseSuggest(word: string) {
+  keyword.value = word
+  closeSuggest()
+  search()
+}
+
+watch(keyword, (raw) => {
+  const q = raw.trim()
+
+  if (suggestTimer) clearTimeout(suggestTimer)
+
+  if (q === '') {
+    suggestItems.value = []
+    closeSuggest()
+    return
+  }
+
+  suggestTimer = setTimeout(async () => {
+    const seq = ++suggestSeq
+    try {
+      const { data } = await getSuggest(q, 8)
+      // 只认最后一次输入的响应
+      if (seq !== suggestSeq) return
+      suggestItems.value = data.data
+      suggestOpen.value = data.data.length > 0
+    } catch {
+      /* 联想失败静默收起：搜索框主功能不受牵连 */
+      if (seq === suggestSeq) closeSuggest()
+    }
+  }, SUGGEST_DEBOUNCE)
+})
 const categories = ref<CategoryNode[]>([])
 /**
  * 顶部导航条目（后台「导航管理」编排，位置由 sort 决定）
@@ -76,6 +123,7 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
   if (rotateTimer) clearInterval(rotateTimer)
+  if (suggestTimer) clearTimeout(suggestTimer)
 })
 
 /** 登录态变化 / 加购后刷新角标 */
@@ -91,6 +139,9 @@ defineExpose({ refreshCartCount })
 function search() {
   router.push({ path: '/search', query: keyword.value.trim() ? { keyword: keyword.value.trim() } : {} })
 }
+
+// 离开当前页 / 换词后下拉收起
+watch(() => route.fullPath, closeSuggest)
 
 function goCategory(id: string) {
   router.push(`/category/${id}`)
@@ -211,15 +262,38 @@ async function handleLogout() {
       </RouterLink>
 
       <!-- 搜索（min-w-0：允许 flex 收缩到内容宽度以下，避免把右侧入口挤出视口） -->
-      <div class="flex h-10 min-w-0 max-w-xl flex-1 items-center rounded-full border-2 border-[#1677ff] pl-3 sm:pl-4" data-testid="search-box">
-        <input
-          v-model="keyword" type="text" placeholder="搜索商品"
-          class="h-full w-full min-w-0 flex-1 bg-transparent text-sm outline-none"
-          @keyup.enter="search"
-        />
-        <button class="flex h-full w-11 shrink-0 items-center justify-center rounded-r-full bg-[#1677ff] text-white hover:bg-[#4096ff] sm:w-16" @click="search">
-          <svg viewBox="0 0 24 24" class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7" /><path d="m20 20-3.5-3.5" /></svg>
-        </button>
+      <div class="relative h-10 min-w-0 max-w-xl flex-1" data-testid="search-box">
+        <div class="flex h-10 items-center rounded-full border-2 border-[#1677ff] pl-3 sm:pl-4">
+          <input
+            v-model="keyword" type="text" placeholder="搜索商品"
+            class="h-full w-full min-w-0 flex-1 bg-transparent text-sm outline-none"
+            data-testid="search-input"
+            @keyup.enter="search"
+            @focus="suggestItems.length && (suggestOpen = true)"
+            @blur="closeSuggest"
+          />
+          <button class="flex h-full w-11 shrink-0 items-center justify-center rounded-r-full bg-[#1677ff] text-white hover:bg-[#4096ff] sm:w-16" @click="search">
+            <svg viewBox="0 0 24 24" class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7" /><path d="m20 20-3.5-3.5" /></svg>
+          </button>
+        </div>
+
+        <!-- 联想下拉：绝对定位浮层，不占布局（min-w-0 收缩时也不能把右侧入口挤走） -->
+        <ul
+          v-if="suggestOpen && suggestItems.length"
+          class="absolute left-0 right-0 top-11 z-30 overflow-hidden rounded-xl border border-slate-100 bg-white py-1 shadow-lg"
+          data-testid="header-suggest"
+        >
+          <li v-for="(word, i) in suggestItems" :key="word">
+            <button
+              class="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-slate-700 hover:bg-slate-50 hover:text-[#1677ff]"
+              :data-testid="`header-suggest-item-${i}`"
+              @mousedown.prevent="chooseSuggest(word)"
+            >
+              <svg viewBox="0 0 24 24" class="h-3.5 w-3.5 shrink-0 text-slate-300" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7" /><path d="m20 20-3.5-3.5" /></svg>
+              <span class="truncate">{{ word }}</span>
+            </button>
+          </li>
+        </ul>
       </div>
 
       <!-- 购物车 / 用户 -->
