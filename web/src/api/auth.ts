@@ -84,9 +84,9 @@ export function loginBySmsCode(data: { phone: string; sms_code: string }) {
 
 /** 注册（API 文档 2.1；短信模式下传 phone + sms_code，图形模式下传 captcha_id + code） */
 export function register(data: {
-  username: string
-  password: string
-  password_confirmation: string
+  username?: string
+  password?: string
+  password_confirmation?: string
   phone?: string
   sms_code?: string
   captcha_id?: string

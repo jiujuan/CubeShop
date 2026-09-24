@@ -60,7 +60,7 @@ async function loadVerifyMode() {
     verifyMode.value = data.data.mode
     codeLength.value = data.data.code_length
 
-    // 短信就绪时默认落在「验证码登录」（后台设了短信就优先走短信）
+    // 短信就绪时默认落在「手机登录」（后台设了短信就优先走短信）
     if (data.data.mode === 'sms') {
       activeTab.value = 'sms'
     }
@@ -189,7 +189,7 @@ async function submit() {
           class="h-9 rounded-md text-sm transition-colors"
           :class="isSmsTab ? 'bg-white font-medium text-slate-800 shadow-sm' : 'text-slate-500'"
           @click="activeTab = 'sms'"
-        >验证码登录</button>
+        >手机登录</button>
       </div>
 
       <div class="space-y-4 text-sm">

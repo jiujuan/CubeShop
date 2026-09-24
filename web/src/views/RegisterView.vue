@@ -3,7 +3,7 @@ import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { Package } from 'lucide-vue-next'
 import {
-  CAPTCHA_LENGTH, SMS_CODE_LENGTH, getCaptcha, getVerifyMode, register, type Captcha,
+  CAPTCHA_LENGTH, getCaptcha, getVerifyMode, register, type Captcha,
 } from '@/api/auth'
 import { ApiBusinessError } from '@/api/request'
 import { useAuthStore } from '@/stores/auth'
@@ -15,13 +15,13 @@ import SmsCodeField from '@/components/SmsCodeField.vue'
  *
  * 两种注册方式（与登录页同一套 tab 形态）：
  * - 密码注册：用户名 + 密码 + 图形验证码，始终可用；
- * - 验证码注册：手机号 + 短信验证码，**免密**——账号即手机号，密码由服务端生成，
+ * - 手机注册（短信验证码）：手机号 + 短信验证码，**免密**——账号即手机号，密码由服务端生成，
  *   注册后凭「手机号 + 短信验证码」登录或重置密码。
  *
  * 密码规则与后端保持一致（SEC-05：≥8 位且同时含字母与数字 + 弱口令黑名单），
  * 提交前先本地拦截，避免用户只看到一句「参数校验失败」却不知道错在哪个字段。
  *
- * ⚠️ 图形验证码两种方式都保留：密码注册作为人机校验，验证码注册作为**发码的防刷闸门**。
+ * ⚠️ 图形验证码两种方式都保留：密码注册作为人机校验，手机注册作为**发码的防刷闸门**。
  */
 const router = useRouter()
 const auth = useAuthStore()
@@ -68,7 +68,7 @@ async function loadVerifyMode() {
     verifyMode.value = data.data.mode
     codeLength.value = data.data.code_length
 
-    // 短信就绪时默认落在「验证码注册」（后台设了短信就优先走短信）
+    // 短信就绪时默认落在「手机注册」（后台设了短信就优先走短信）
     if (data.data.mode === 'sms') {
       activeTab.value = 'sms'
     }
@@ -230,7 +230,7 @@ async function submit() {
           class="h-9 rounded-md text-sm transition-colors"
           :class="isSmsTab ? 'bg-white font-medium text-slate-800 shadow-sm' : 'text-slate-500'"
           @click="switchTab('sms')"
-        >验证码注册</button>
+        >手机注册</button>
       </div>
 
       <div class="space-y-4 text-sm">
