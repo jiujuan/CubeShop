@@ -4,7 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import {
   ArrowUpDown, Bike, ChevronDown, ChevronRight, ChevronUp,
   Flame, Gem, Headphones, Home as HomeIcon, House, LayoutGrid, List, PackageOpen,
-  Shirt, SlidersHorizontal, Smartphone, Sparkles, X,
+  SearchX, Shirt, SlidersHorizontal, Smartphone, Sparkles, X,
 } from 'lucide-vue-next'
 import {
   getAttributes, getBrands, getCategories, getProducts,
@@ -336,6 +336,15 @@ const iconOf = (i: number) => rootIcons[i % rootIcons.length]
 /** 是否存在任何筛选条件（含价格） */
 const hasAnyFilter = computed(() => filterCount.value > 0 || hasPriceFilter.value)
 
+/** 加载完成但零结果：隐藏品牌区与排序工具栏，页面收敛为提示 + 推荐/空态 */
+const isNoResult = computed(() => !loading.value && list.value.length === 0)
+
+/** 搜索页（keyword 模式）：无论有无结果都不提供分类筛选/排序（结果由搜索词决定） */
+const isKeywordSearch = computed(() => !!keyword.value)
+
+/** 品牌、排序工具栏与筛选面板的显隐：搜索页一律隐藏；分类浏览仅零结果时隐藏 */
+const filtersVisible = computed(() => !isNoResult.value && !isKeywordSearch.value)
+
 function clearAllFilters() {
   clearPriceFilter()
   clearFilters()
@@ -424,22 +433,25 @@ function clearAllFilters() {
               </template>
             </div>
 
-            <div v-if="brands.length" class="mt-3 flex items-start gap-2.5" data-testid="browse-heading-brands">
-              <span class="shrink-0 pt-0.5 text-[13px] text-slate-400">品牌</span>
-              <!-- 品牌多时收起为 4 行，「更多/收起」展开（超 8 行滚动） -->
-              <FilterRows test-id="heading-brands">
-                <button
-                  v-for="b in brands" :key="b.id"
-                  class="rounded-full border px-3 py-0.5 text-[13px] transition-colors"
-                  :class="isBrandSelected(b.id)
-                    ? 'border-[#1677ff] bg-[#e6f4ff] text-[#1677ff]'
-                    : 'border-slate-200 text-slate-600 hover:border-[#1677ff] hover:text-[#1677ff]'"
-                  :data-testid="`heading-brand-${b.id}`"
-                  @click="toggleBrand(b.id)"
-                >{{ b.name }}</button>
-              </FilterRows>
-            </div>
-            <p v-else class="mt-2 text-[13px] text-slate-400" data-testid="browse-heading-brands-empty">暂无品牌</p>
+            <!-- 搜索页 / 零结果时隐藏品牌列表（无商品可筛） -->
+            <template v-if="filtersVisible">
+              <div v-if="brands.length" class="mt-3 flex items-start gap-2.5" data-testid="browse-heading-brands">
+                <span class="shrink-0 pt-0.5 text-[13px] text-slate-400">品牌</span>
+                <!-- 品牌多时收起为 4 行，「更多/收起」展开（超 8 行滚动） -->
+                <FilterRows test-id="heading-brands">
+                  <button
+                    v-for="b in brands" :key="b.id"
+                    class="rounded-full border px-3 py-0.5 text-[13px] transition-colors"
+                    :class="isBrandSelected(b.id)
+                      ? 'border-[#1677ff] bg-[#e6f4ff] text-[#1677ff]'
+                      : 'border-slate-200 text-slate-600 hover:border-[#1677ff] hover:text-[#1677ff]'"
+                    :data-testid="`heading-brand-${b.id}`"
+                    @click="toggleBrand(b.id)"
+                  >{{ b.name }}</button>
+                </FilterRows>
+              </div>
+              <p v-else class="mt-2 text-[13px] text-slate-400" data-testid="browse-heading-brands-empty">暂无品牌</p>
+            </template>
           </div>
 
           <!-- V1.2 S1-10：放宽匹配提示（后端 search.expose_debug 开启时返回 relaxed） -->
@@ -467,8 +479,8 @@ function clearAllFilters() {
             >{{ c.name }}（{{ c.count }}）</button>
           </div>
 
-          <!-- 排序工具栏 -->
-          <div class="mb-3 flex flex-wrap items-center gap-2 text-sm">
+          <!-- 排序工具栏（搜索页 / 零结果时隐藏：无排序与视图切换需求） -->
+          <div v-if="filtersVisible" class="mb-3 flex flex-wrap items-center gap-2 text-sm">
             <button
               class="rounded-full px-4 py-1.5 transition-colors"
               :class="!sort.startsWith('price') && sort !== 'sales_desc' ? 'bg-[#1677ff] font-medium text-white shadow-sm' : 'border border-slate-200 bg-white text-slate-600 hover:border-[#1677ff] hover:text-[#1677ff]'"
@@ -556,7 +568,7 @@ function clearAllFilters() {
 
           <!-- V1.1 T-014：筛选面板（可筛属性；品牌已上移至顶部信息区） -->
           <div
-            v-if="filterOpen"
+            v-if="filterOpen && filtersVisible"
             data-testid="filter-panel"
             class="mb-3 rounded-xl border border-slate-100 bg-white p-4 shadow-sm"
           >
@@ -627,10 +639,11 @@ function clearAllFilters() {
 
           <!-- 零结果推荐位（V1.2 S1-10，降级链第 4 步：不白屏） -->
           <template v-if="!list.length && !loading && (searchMeta?.recommendations?.length ?? 0) > 0">
-            <div class="mb-3 flex items-center gap-2 text-sm text-slate-500" data-testid="search-recommendations-title">
-              <Sparkles class="h-4 w-4 text-[#ff8a00]" />
+            <div class="flex h-20 items-center justify-center gap-2 rounded-xl bg-white text-sm text-slate-500" data-testid="search-recommendations-title">
+              <SearchX class="h-5 w-5 text-slate-400" />
               没有找到相关商品，为你推荐这些
             </div>
+            <div class="mb-3 mt-5 text-sm font-semibold text-slate-700" data-testid="search-recommendations-heading">推荐商品</div>
             <div class="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-4" data-testid="search-recommendations">
               <ProductCard
                 v-for="p in searchMeta!.recommendations" :key="p.id"

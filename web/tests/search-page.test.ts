@@ -116,6 +116,29 @@ describe('搜索结果页（BrowseView keyword 模式，/search）', () => {
     await waitFor(() => expect(screen.getByText('北欧实木沙发')).toBeTruthy())
   })
 
+  it('搜索有结果时同样隐藏品牌/排序/筛选控件与视图切换', async () => {
+    // 品牌接口有数据也不展示（搜索页一律隐藏，验证的是显隐逻辑而非数据为空）
+    getBrandsMock.mockResolvedValue({ data: { data: [{ id: 5, name: '安克' }] } })
+    searchProductsMock.mockResolvedValue({
+      data: {
+        data: {
+          list: [product],
+          pagination: { page: 1, page_size: 20, total: 1, total_pages: 1 },
+          meta: { keyword: '沙发', related_categories: [] },
+        },
+      },
+    })
+
+    await renderAtSearch('沙发')
+    await waitFor(() => expect(screen.getByText('北欧实木沙发')).toBeTruthy())
+
+    expect(screen.queryByText('综合排序')).toBeNull()
+    expect(screen.queryByTestId('price-filter-toggle')).toBeNull()
+    expect(screen.queryByTestId('filter-toggle')).toBeNull()
+    expect(screen.queryByTitle('网格视图')).toBeNull()
+    expect(screen.queryByTestId('browse-heading-brands')).toBeNull()
+  })
+
   it('meta.relaxed → 放宽匹配提示条', async () => {
     searchProductsMock.mockResolvedValue({
       data: {
