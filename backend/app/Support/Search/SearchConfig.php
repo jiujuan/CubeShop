@@ -36,13 +36,15 @@ final class SearchConfig
     /**
      * 后台可维护的开关：`键 => 默认值`
      *
-     * ⚠️ 只放**运维真的会改**的项。其余（如 index_taxonomy_names 影响索引内容）
-     * 放开前需确认「改完要不要重建索引」—— 目前改动后必须跑一次 `search:reindex`。
+     * ⚠️ 只放**运维真的会改**的项。index_taxonomy_names 影响索引内容，
+     * 改动后必须跑一次 `search:reindex`（后台页会提示）；synonyms_enabled 只影响
+     * 查询侧展开逻辑，不动索引内容，故改完即生效、无需重建。
      */
     public const SWITCHES = [
         'search.index_taxonomy_names' => '1',
         'search.cache_ttl' => '60',
         'search.expose_debug' => '0',
+        'search.synonyms_enabled' => '1',
     ];
 
     public function __construct(private readonly ConfigService $config)

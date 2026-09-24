@@ -107,6 +107,9 @@ return [
     'search' => [
         'engine' => env('SEARCH_ENGINE'),
         'index_taxonomy_names' => (bool) env('SEARCH_INDEX_TAXONOMY_NAMES', true),
+        // 联想接口防刷：同 IP 每分钟次数（RateLimiter 'search-suggest'，AppServiceProvider 注册）。
+        // 只走 env 不进 system_configs：联想是机器流量高频打点，改频率属运维操作而非运营配置。
+        'suggest_rate_limit' => max(1, (int) env('SEARCH_SUGGEST_RATE_LIMIT', 30)),
     ],
 
 ];

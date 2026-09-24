@@ -177,6 +177,15 @@ class AppServiceProvider extends ServiceProvider
             return Limit::perMinute(10)->by('sync|'.($request->user()?->id ?? $request->ip()));
         });
 
+        // 站内搜索联想（V1.2 S1-10）：联想是头部搜索框每次按键就打一次的高频接口，
+        // 也是被脚本刷词频/拖库的常见入口 —— 同 IP 限到每分钟 30 次（.env
+        // SEARCH_SUGGEST_RATE_LIMIT 可调，见 config/services.php）。
+        // 注意 by() 的 key 带 'suggest' 前缀：不与 auth/order 等同名 IP 维度的计数互串。
+        RateLimiter::for('search-suggest', function (Request $request) {
+            return Limit::perMinute((int) config('services.search.suggest_rate_limit', 30))
+                ->by('suggest|'.$request->ip());
+        });
+
         // 凭证上传：同用户 30 次/分钟（另有单日 20 张业务上限）
         RateLimiter::for('voucher', function (Request $request) {
             return Limit::perMinute(30)->by('voucher|'.($request->user()?->id ?? $request->ip()));

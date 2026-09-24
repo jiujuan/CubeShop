@@ -55,6 +55,9 @@ final class ProductSearchService
     /** 空结果时「首页推荐」条数 */
     public const RECOMMEND_HOME = 4;
 
+    /** 同义词展开最多跑几组替换查询（规则失控时的熔断，防一次搜索放大成一串全表扫描） */
+    public const SYNONYM_MAX_QUERIES = 5;
+
     public function __construct(
         private readonly SearchEngineResolver $engines,
         private readonly SearchTokenizer $tokenizer,
@@ -116,8 +119,15 @@ final class ProductSearchService
         $result = $this->cachedEngineResult($engine, $criteria->keyword);
 
         if ($result->ids === []) {
-            // 降级链第 4 步：仍零结果 → 不白屏，给推荐位（同义词第 3 步在 S1-07）
-            return SearchPage::empty($criteria, $result->engine, $this->recommendations($criteria));
+            // 降级链第 3 步：同义词展开重查（S1-10 补做，设计 §4.8）
+            $expanded = $this->synonymResult($engine, $criteria->keyword);
+
+            if ($expanded === null) {
+                // 降级链第 4 步：仍零结果 → 不白屏，给推荐位
+                return SearchPage::empty($criteria, $result->engine, $this->recommendations($criteria));
+            }
+
+            $result = $expanded;
         }
 
         $query = $this->filteredQuery($criteria, $result->ids);
@@ -163,6 +173,85 @@ final class ProductSearchService
         return $this->tokenizer->isSingleCjkChar($keyword)
             ? $this->engines->like()
             : $this->engines->primary();
+    }
+
+    /**
+     * 降级链第 3 步：同义词展开重查（S1-10 补做，设计 §4.4 / §4.8）
+     *
+     * 原查询零结果后才走到这里。规则匹配是**子串级**的：归一化 + 小写后
+     * `mb_strpos` 命中 `from_word` 即替换 —— 「北欧手机壳」里的「手机壳」也会被展开。
+     * 每条候选 `to_word` 各自作为一次完整查询走引擎（引擎内部自己 AND→OR），
+     * 多组命中在 Service 合并（并集、同 id 取最高分）。
+     *
+     * ⚠️ 只有真的展开出候选且查到东西才返回结果；无规则可用 / 展开查询仍零命中
+     * 返回 null，外层继续走推荐位 —— 不要用「空的 SearchResult」区分这两种情况，
+     * 否则推荐位判断会被迫看 relaxed 标志，语义变脆。
+     */
+    private function synonymResult(ProductSearchEngine $engine, string $keyword): ?SearchResult
+    {
+        if (! $this->synonymsEnabled()) {
+            return null;
+        }
+
+        $normalized = mb_strtolower($this->tokenizer->normalize($keyword));
+
+        if ($normalized === '') {
+            return null;
+        }
+
+        $queries = [];
+
+        foreach (\App\Models\SearchSynonym::activeMap() as $from => $toWords) {
+            if ($from === '' || mb_strpos($normalized, $from) === false) {
+                continue;
+            }
+
+            foreach ($toWords as $to) {
+                if ($to !== '') {
+                    // 小写化后做 str_replace：归一化入库约定保证了词面一致
+                    $queries[] = str_replace($from, $to, $normalized);
+                }
+            }
+        }
+
+        $queries = array_values(array_unique(array_slice($queries, 0, self::SYNONYM_MAX_QUERIES)));
+
+        if ($queries === []) {
+            return null;
+        }
+
+        $ids = [];
+        $scores = [];
+
+        foreach ($queries as $query) {
+            $candidate = $this->cachedEngineResult($engine, $query);
+
+            foreach ($candidate->ids as $id) {
+                if (! isset($scores[$id])) {
+                    $ids[] = $id;
+                }
+
+                $scores[$id] = max($scores[$id] ?? 0.0, $candidate->scores[$id] ?? 0.0);
+            }
+        }
+
+        if ($ids === []) {
+            return null;
+        }
+
+        return new SearchResult(
+            ids: $ids,
+            scores: $scores,
+            total: count($ids),
+            relaxed: true,
+            engine: $engine->name(),
+        );
+    }
+
+    /** 同义词展开是否启用（`search.synonyms_enabled`，库 → env → 默认开） */
+    private function synonymsEnabled(): bool
+    {
+        return ! in_array(strtolower((string) $this->configValue('search.synonyms_enabled')), ['0', 'false', 'off', 'no'], true);
     }
 
     /**

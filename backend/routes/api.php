@@ -30,6 +30,7 @@ use App\Http\Controllers\Admin\ReportController as AdminReportController;
 use App\Http\Controllers\Admin\ReviewController as AdminReviewController;
 use App\Http\Controllers\Admin\RoleController as AdminRoleController;
 use App\Http\Controllers\Admin\SearchController as AdminSearchController;
+use App\Http\Controllers\Admin\SearchSynonymController as AdminSearchSynonymController;
 use App\Http\Controllers\Admin\UploadController;
 use App\Http\Controllers\Admin\UserController;
 use App\Http\Controllers\Admin\WmsConfigController;
@@ -90,7 +91,8 @@ Route::prefix('products')->group(function () {
 // ⚠️ /suggest 与 /hot 必须显式声明，避免将来加 /{keyword} 之类的通配时把它们吃掉
 Route::prefix('search')->group(function () {
     Route::get('/', [StorefrontSearchController::class, 'index']);
-    Route::get('/suggest', [StorefrontSearchController::class, 'suggest']);
+    // 联想防刷：同 IP 每分钟 30 次（SEARCH_SUGGEST_RATE_LIMIT 可配，见 config/services.php）
+    Route::get('/suggest', [StorefrontSearchController::class, 'suggest'])->middleware('throttle:search-suggest');
     Route::get('/hot', [StorefrontSearchController::class, 'hot']);
 });
 
@@ -300,6 +302,12 @@ Route::middleware(['auth:sanctum', 'account.active'])->group(function () {
             Route::put('/config', [AdminSearchController::class, 'updateConfig']);
             Route::get('/keywords', [AdminSearchController::class, 'keywords']);
             Route::post('/reindex', [AdminSearchController::class, 'reindex']);
+
+            // 同义词（V1.2 S1-10 补做，设计 §4.8）：零结果展开规则的维护
+            Route::get('/synonyms', [AdminSearchSynonymController::class, 'index']);
+            Route::post('/synonyms', [AdminSearchSynonymController::class, 'store']);
+            Route::put('/synonyms/{id}', [AdminSearchSynonymController::class, 'update'])->whereNumber('id');
+            Route::delete('/synonyms/{id}', [AdminSearchSynonymController::class, 'destroy'])->whereNumber('id');
         });
 
         // 媒体库（图片资产治理 P2，权限 media.*）—— replace 必须注册在 {id} 之前
