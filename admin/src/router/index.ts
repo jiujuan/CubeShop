@@ -310,6 +310,14 @@ const router = createRouter({
           meta: { title: '媒体库', menu: true, icon: 'Images', permission: 'media.view' },
         },
         {
+          // 搜索配置（V1.2 站内搜索 S1-09）：引擎/开关/热搜词/重建索引
+          // 超管专属（search.manage）：切引擎会整体改变全站检索行为，与 media.manage 同体例
+          path: 'search-config',
+          name: 'search-config',
+          component: () => import('@/views/system/SearchConfigView.vue'),
+          meta: { title: '搜索配置', menu: true, icon: 'Search', permission: 'search.manage' },
+        },
+        {
           path: 'operation-logs',
           name: 'operation-logs',
           component: () => import('@/views/system/OperationLogView.vue'),

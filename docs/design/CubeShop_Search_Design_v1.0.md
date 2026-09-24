@@ -576,7 +576,7 @@ search_synonyms: id, from_word, to_words(jsonb), status, timestamps
 | S1-06 | `ProductSearchService`（缓存、降级链、重排、词频投递）+ 000121 | 1 | ✅ 完成 |
 | S1-07 | 控制器与路由 `/search`、`/search/suggest`、`/search/hot` + `/products` 改走服务层 | 1 | ✅ 完成 |
 | S1-08 | ✅ `search:reindex`（`--chunk/--sleep/--ids/--no-bump`，幂等）+ 每日 03:40 调度 + 后台配置 4 接口（`GET/PUT /admin/search/config`、`GET /admin/search/keywords`、`POST /admin/search/reindex`）；真 PG 端到端已验证 | 0.5 |
-| S1-09 | 权限码 `search.manage`（迁移 000122 + seeder）✅、`ConfigGroup` 登记 `search` 分组 ✅；后台配置页 ⏳ 待做 | 0.5 |
+| S1-09 | ✅ 全部完成：权限码 `search.manage`（迁移 000122 + seeder）、`ConfigGroup` 登记、后台配置页（admin `SearchConfigView.vue`：引擎卡片/运行参数/热搜词/重建索引，入口 `/search-config`，vitest 9 例）| 0.5 |
 | S1-10 | 前端：联想下拉、搜索页头部信息、空结果推荐 | 1.5 |
 | S1-11 | 测试（单元 + 契约 + PG 特性）+ 万级商品性能验证 | 1 |
 | | **后端小计** | **~7** |
