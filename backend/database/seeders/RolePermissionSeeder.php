@@ -86,6 +86,11 @@ class RolePermissionSeeder extends Seeder
         // ⚠️ 只授予 super_admin：切引擎会让全站检索行为整体变化（含降级到 LIKE），
         //    与 media.manage 同体例，风险由超管承担。
         'search.manage',
+        // 短信渠道（短信渠道计划 第一期）：渠道凭证配置与发送记录查看
+        // ⚠️ 与 search.manage 同体例，仅授予 super_admin —— 短信凭证等同于“花钱的钥匙”，
+        //    渠道切换还会让全站验证码发送行为整体变化。sms.view 为将来的只读角色预留。
+        'sms.view',
+        'sms.manage',
     ];
 
     public function run(): void

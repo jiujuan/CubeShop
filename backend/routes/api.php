@@ -31,6 +31,7 @@ use App\Http\Controllers\Admin\ReviewController as AdminReviewController;
 use App\Http\Controllers\Admin\RoleController as AdminRoleController;
 use App\Http\Controllers\Admin\SearchController as AdminSearchController;
 use App\Http\Controllers\Admin\SearchSynonymController as AdminSearchSynonymController;
+use App\Http\Controllers\Admin\SmsConfigController as AdminSmsConfigController;
 use App\Http\Controllers\Admin\UploadController;
 use App\Http\Controllers\Admin\UserController;
 use App\Http\Controllers\Admin\WmsConfigController;
@@ -316,6 +317,23 @@ Route::middleware(['auth:sanctum', 'account.active'])->group(function () {
         Route::patch('/media/{id}', [MediaController::class, 'update'])->middleware('permission:media.manage')->whereNumber('id');
         Route::post('/media/{id}/replace', [MediaController::class, 'replace'])->middleware('permission:media.manage')->whereNumber('id');
         Route::delete('/media/{id}', [MediaController::class, 'destroy'])->middleware('permission:media.manage')->whereNumber('id');
+
+        // 短信渠道（短信渠道计划 第一期）：读 sms.view / 写 sms.manage
+        // 测试发送额外挂 throttle:sms-send：短信按条计费，一个未限流的发送口等于一个可被刷的账单。
+        Route::prefix('sms')->group(function () {
+            Route::get('/config', [AdminSmsConfigController::class, 'config'])
+                ->middleware('permission:sms.view');
+            Route::put('/config', [AdminSmsConfigController::class, 'updateSwitches'])
+                ->middleware('permission:sms.manage');
+            // ↓ 带 {id} 的路由必须排在无 {id} 的之后
+            Route::put('/config/{id}', [AdminSmsConfigController::class, 'updateChannel'])
+                ->middleware('permission:sms.manage')->whereNumber('id');
+            Route::post('/test', [AdminSmsConfigController::class, 'test'])
+                ->middleware(['permission:sms.manage', 'throttle:sms-send']);
+            Route::get('/logs', [AdminSmsConfigController::class, 'logs'])
+                ->middleware('permission:sms.view');
+        });
+
 
         // 分类管理 category.manage（API 文档 8.2）
         Route::get('/categories', [CategoryController::class, 'index'])->middleware('permission:category.manage');

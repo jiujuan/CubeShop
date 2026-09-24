@@ -29,6 +29,7 @@ final class ConfigGroup
         'shipping' => '物流配送',
         'waybill' => '物流配送',
         'search' => '搜索与推荐',
+        'sms' => '消息通知',
     ];
 
     /** 未登记前缀的兜底分组 */

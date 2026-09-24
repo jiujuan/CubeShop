@@ -112,4 +112,21 @@ return [
         'suggest_rate_limit' => max(1, (int) env('SEARCH_SUGGEST_RATE_LIMIT', 30)),
     ],
 
+    /*
+    |--------------------------------------------------------------------------
+    | 短信渠道（短信渠道计划 第一期）
+    |--------------------------------------------------------------------------
+    |
+    | 只放**运维参数**：超时与发送限流。凭证（AccessKey）密文存在 sms_configs 表，
+    | 运营开关（sms.enabled / sms.code_scenes）存在 system_configs，均不在此处。
+    |
+    | send_rate_limit：同 IP 每分钟发送次数（RateLimiter 'sms-send'）。短信是按条计费的，
+    | 一个未限流的发送口等于一个可被刷的账单。
+    |
+    */
+    'sms' => [
+        'timeout' => (int) env('SMS_TIMEOUT', 5),
+        'send_rate_limit' => max(1, (int) env('SMS_SEND_RATE_LIMIT', 5)),
+    ],
+
 ];

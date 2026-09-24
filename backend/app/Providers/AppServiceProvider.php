@@ -186,6 +186,15 @@ class AppServiceProvider extends ServiceProvider
                 ->by('suggest|'.$request->ip());
         });
 
+        // 短信发送（短信渠道计划 第一期）：同 IP 每分钟次数（.env SMS_SEND_RATE_LIMIT 可调，见 config/services.php）。
+        // 短信是按条计费的，一个未限流的发送口等于一个可被刷的账单；
+        // 验证码场景另有「同手机号 1 分钟 1 条」的业务限流（SmsCodeService）。
+        RateLimiter::for('sms-send', function (Request $request) {
+            return Limit::perMinute((int) config('services.sms.send_rate_limit', 5))
+                ->by('sms|'.$request->ip());
+        });
+
+
         // 凭证上传：同用户 30 次/分钟（另有单日 20 张业务上限）
         RateLimiter::for('voucher', function (Request $request) {
             return Limit::perMinute(30)->by('voucher|'.($request->user()?->id ?? $request->ip()));
