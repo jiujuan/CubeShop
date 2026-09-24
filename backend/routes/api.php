@@ -130,13 +130,16 @@ Route::post('/wms/callback/{provider}', [WmsCallbackController::class, 'handle']
     ->middleware('throttle:wms-callback');
 
 // 认证：注册 / 登录 / 验证码 / 重置密码（带限流）
+// 验证码图片单独限流（throttle:captcha）：刷新验证码不该占用登录/注册的额度
+Route::post('/auth/captcha', [AuthController::class, 'captcha'])->middleware('throttle:captcha');
+
+// 认证：注册 / 登录 / 重置密码（带限流）
 Route::middleware('throttle:auth')->group(function () {
-    Route::post('/auth/captcha', [AuthController::class, 'captcha']);
     // 短信验证码：查询当前场景用哪种验证码 / 发送短信验证码（发码按条计费，必须限流）
     Route::get('/auth/verify-mode', [AuthController::class, 'verifyMode']);
     Route::post('/auth/send-sms-code', [AuthController::class, 'sendSmsCode'])->middleware('throttle:sms-send');
     // SEC-08：注册单独收紧为 5 次/分钟（auth 组是 10 次/分钟），叠加服务层同 IP 每日上限
-    Route::post('/auth/register', [AuthController::class, 'register'])->middleware('throttle:5,1');
+    Route::post('/auth/register', [AuthController::class, 'register'])->middleware('throttle:auth-register');
     Route::post('/auth/login', [AuthController::class, 'login'])->middleware('throttle:login');
     Route::post('/auth/reset-password', [AuthController::class, 'resetPassword']);
 });

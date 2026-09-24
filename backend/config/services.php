@@ -129,4 +129,22 @@ return [
         'send_rate_limit' => max(1, (int) env('SMS_SEND_RATE_LIMIT', 5)),
     ],
 
+    /*
+    |--------------------------------------------------------------------------
+    | 认证相关限流
+    |--------------------------------------------------------------------------
+    |
+    | 全部走 config() 读取（config 缓存后是纯数组取用，无 DB / 缓存查询，不增加运行时开销）。
+    | 验证码图片是「点一下刷新一次」的高频轻接口，原先与登录注册共用一组额度，正常操作
+    | 就会撞 429，因此单独列出一个更宽松的限流器。
+    |
+    */
+    'auth' => [
+        // 认证组兜底：只防洪水，防暴破交给下面按账号维度的 login / auth-register
+        'rate_limit' => max(1, (int) env('AUTH_RATE_LIMIT', 10)),
+        'captcha_rate_limit' => max(1, (int) env('CAPTCHA_RATE_LIMIT', 60)),
+        'login_rate_limit' => max(1, (int) env('LOGIN_RATE_LIMIT', 5)),
+        'register_rate_limit' => max(1, (int) env('REGISTER_RATE_LIMIT', 5)),
+    ],
+
 ];

@@ -159,12 +159,28 @@ class AppServiceProvider extends ServiceProvider
 
         // 认证类接口限流（API 文档 11.4：登录/验证码/重置密码）
         RateLimiter::for('auth', function (Request $request) {
-            return Limit::perMinute(10)->by($request->ip());
+            return Limit::perMinute((int) config('services.auth.rate_limit', 10))->by($request->ip());
         });
 
-        // 登录接口更严格：同 IP + 用户名 5 次/分钟
+        // 验证码图片：点一下刷新一次，属于高频轻接口。它若与登录注册共用一组额度，
+        // 用户刷新几下再提交一两次就会撞 429，故单列一个更宽松的限流器。
+        RateLimiter::for('captcha', function (Request $request) {
+            return Limit::perMinute((int) config('services.auth.captcha_rate_limit', 60))
+                ->by('captcha|'.$request->ip());
+        });
+
+        // 登录接口更严格：同 IP + 账号维度限流。
+        // 账号取 username，短信登录没有用户名时退回手机号——否则所有短信登录共用一个空 key。
         RateLimiter::for('login', function (Request $request) {
-            return Limit::perMinute(5)->by($request->input('username', '').'|'.$request->ip());
+            $account = $request->input('username') ?: $request->input('phone', '');
+
+            return Limit::perMinute((int) config('services.auth.login_rate_limit', 5))
+                ->by($account.'|'.$request->ip());
+        });
+
+        RateLimiter::for('auth-register', function (Request $request) {
+            return Limit::perMinute((int) config('services.auth.register_rate_limit', 5))
+                ->by('register|'.$request->ip());
         });
 
         // 下单接口限流（API 文档 11.4：下单接口建议限流）：同用户 10 次/分钟
