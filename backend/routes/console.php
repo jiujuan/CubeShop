@@ -31,6 +31,10 @@ Schedule::command('media:scan')->dailyAt('03:10')->withoutOverlapping();
 // ⚠️ 只通知不删除 —— 物理删除必须人工执行 `media:prune --force`（会二次确认）。
 Schedule::command('media:prune --notify')->dailyAt('03:20')->withoutOverlapping();
 
+// 检索索引校准（站内搜索 S1-08）：每天全量重算一次商品的 search_title / search_body。
+// 幂等且只写变化行 —— 兜住「直接改库 / 批量导入 / 开关从关改开 / 同步路径漏行」四类陈旧。
+Schedule::command('search:reindex')->dailyAt('03:40')->withoutOverlapping();
+
 // WMS 回调幂等登记清理（WMS 计划 P3 / Step 6）：每天 04:20 清理过期登记
 Schedule::command('wms:prune-callbacks')->dailyAt('04:20')->withoutOverlapping();
 

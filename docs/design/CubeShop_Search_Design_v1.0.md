@@ -575,8 +575,8 @@ search_synonyms: id, from_word, to_words(jsonb), status, timestamps
 | S1-05 | `FallbackLikeEngine` + 引擎绑定 + `applySearchEngineOverride` | 0.5 | ✅ 完成 |
 | S1-06 | `ProductSearchService`（缓存、降级链、重排、词频投递）+ 000121 | 1 | ✅ 完成 |
 | S1-07 | 控制器与路由 `/search`、`/search/suggest`、`/search/hot` + `/products` 改走服务层 | 1 | ✅ 完成 |
-| S1-08 | `search:reindex` 命令 + 定时校准 + 后台配置接口 | 0.5 |
-| S1-09 | 权限码 `search.manage` + `ConfigGroup` 登记 + 后台配置页 | 0.5 |
+| S1-08 | ✅ `search:reindex`（`--chunk/--sleep/--ids/--no-bump`，幂等）+ 每日 03:40 调度 + 后台配置 4 接口（`GET/PUT /admin/search/config`、`GET /admin/search/keywords`、`POST /admin/search/reindex`）；真 PG 端到端已验证 | 0.5 |
+| S1-09 | 权限码 `search.manage`（迁移 000122 + seeder）✅、`ConfigGroup` 登记 `search` 分组 ✅；后台配置页 ⏳ 待做 | 0.5 |
 | S1-10 | 前端：联想下拉、搜索页头部信息、空结果推荐 | 1.5 |
 | S1-11 | 测试（单元 + 契约 + PG 特性）+ 万级商品性能验证 | 1 |
 | | **后端小计** | **~7** |
@@ -596,15 +596,22 @@ search_synonyms: id, from_word, to_words(jsonb), status, timestamps
 
 ## 11. 验收标准
 
+> **S1-08 验证证据**（2026-09-24，PostgreSQL 17.5 / 开发库 44 商品）：
+> `products.search_vector` 为 `GENERATED ALWAYS`（`setweight(A, search_title) || setweight(B, search_body)`），
+> GIN 索引 `products_search_vector_gin` 在；索引覆盖 44/44；服务层检索 `engine=postgres`、单字「椅」自动落 `engine=like`。
+> 测试：`tests/Feature/AdminSearchApiTest.php`（9）+ `tests/Feature/SearchReindexCommandTest.php`（7）。
+
 **阶段一**
-- [ ] 万级商品下搜索 P95 < 200ms（PG 本地，cold cache）
-- [ ] 中文分词召回：搜「北欧沙发」能命中标题为「北欧实木沙发」的商品（AND 零结果时 OR 兜底）
-- [ ] 相关度排序生效：标题命中排在副标题命中之前
-- [ ] 搜品牌名 / 分类名 / SKU 编码 / 属性值均可召回
+- [ ] 万级商品下搜索 P95 < 200ms（PG 本地，cold cache）—— 当前只有 44 条商品，实测 6~60ms，**万级待压测**
+- [x] 中文分词召回（真 PG 实证）：三字词按 bigram 切分后命中 —— 搜「保温杯」命中「不锈钢保温杯」；
+      无命中时 `related_categories` 0 个、推荐位 12 条（空结果兜底生效）
+- [x] 相关度排序生效（真 PG 实证）：搜「收纳」时 `ts_rank` 标题命中（权重 A）0.6687 > 仅分类名命中（权重 B）0.2432
+- [~] 搜分类名 / SKU 编码已实证（「收纳」命中分类名；`CS-005-01` 命中「运动跑步鞋」）；
+      ⚠️ 品牌名未覆盖 —— 开发库商品 `brand_id` 全为空，待有品牌数据后补验
 - [ ] 切 `search.engine=off` 后行为与改造前**逐条一致**（回归网）
 - [ ] SQLite 全量用例无回归（基线 1583 passed）；PG 特性用例通过
 - [ ] 后台改商品标题后，无需重建即可搜到新标题；改品牌名后 1 分钟内同步
-- [ ] `search:reindex` 幂等，重复执行结果一致；中断后可续跑
+- [x] `search:reindex` 幂等：单测钉住「第二次写回 0 条、索引逐字节一致」，另覆盖 `--ids` / `--no-bump` / 软删商品
 
 **阶段二**
 - [ ] 双引擎 id 集合差异率 < 1%（200 词样本）

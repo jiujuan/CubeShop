@@ -82,6 +82,10 @@ class RolePermissionSeeder extends Seeder
         'media.view',
         'media.upload',
         'media.manage',
+        // 站内搜索（V1.2 站内搜索）：引擎切换、开关与热搜词维护
+        // ⚠️ 只授予 super_admin：切引擎会让全站检索行为整体变化（含降级到 LIKE），
+        //    与 media.manage 同体例，风险由超管承担。
+        'search.manage',
     ];
 
     public function run(): void

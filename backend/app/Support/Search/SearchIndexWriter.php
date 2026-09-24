@@ -34,8 +34,10 @@ final class SearchIndexWriter
     /** 批量重算默认分块大小 */
     public const CHUNK = 500;
 
-    public function __construct(private readonly SearchTokenizer $tokenizer)
-    {
+    public function __construct(
+        private readonly SearchTokenizer $tokenizer,
+        private readonly SearchConfig $config,
+    ) {
     }
 
     /**
@@ -63,7 +65,7 @@ final class SearchIndexWriter
     /**
      * 正文域：副标题 / 关键词 / SKU 编码 / 品牌名 / 分类名 / 参数值
      *
-     * 品牌名与分类名由开关 `services.search.index_taxonomy_names` 控制（默认开）：
+     * 品牌名与分类名由开关 `search.index_taxonomy_names` 控制（默认开）：
      * 关掉后改品牌/分类名不再需要级联重算该品牌下的全部商品。
      */
     public function buildBodyField(Product $product): string
@@ -185,7 +187,12 @@ final class SearchIndexWriter
     /** 品牌名/分类名是否计入索引（默认开；关掉可消除改名的级联重算） */
     public function taxonomyNamesEnabled(): bool
     {
-        return (bool) config('services.search.index_taxonomy_names', true);
+        // 走 SearchConfig（库 → env）：后台改的开关要立刻生效，不能只认 .env
+        return in_array(
+            strtolower((string) $this->config->get('search.index_taxonomy_names', '1')),
+            ['1', 'true', 'on', 'yes'],
+            true,
+        );
     }
 
     /** @return list<string> 索引所需的全部关联名（供 chunk 预加载） */

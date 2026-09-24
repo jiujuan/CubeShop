@@ -5,8 +5,8 @@ namespace App\Services\Product;
 use App\Jobs\Search\UpdateSearchKeyword;
 use App\Models\Category;
 use App\Models\Product;
-use App\Services\Common\ConfigService;
 use App\Support\Search\ProductSearchEngine;
+use App\Support\Search\SearchConfig;
 use App\Support\Search\SearchCriteria;
 use App\Support\Search\SearchEngineResolver;
 use App\Support\Search\SearchPage;
@@ -16,7 +16,6 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
-use Throwable;
 
 /**
  * 商品检索服务（站内搜索 S1-06）
@@ -59,7 +58,7 @@ final class ProductSearchService
     public function __construct(
         private readonly SearchEngineResolver $engines,
         private readonly SearchTokenizer $tokenizer,
-        private readonly ConfigService $config,
+        private readonly SearchConfig $config,
     ) {
     }
 
@@ -454,7 +453,7 @@ final class ProductSearchService
 
     private function indexVersion(): int
     {
-        return max(1, (int) ($this->configValue('search.index_version') ?: 1));
+        return $this->config->indexVersion();
     }
 
     private function ttlFor(string $keyword): int
@@ -495,14 +494,13 @@ final class ProductSearchService
     }
 
     /**
-     * 读系统配置：表不存在（安装/迁移前）时静默回落，不能因配置没就绪就让搜索 500
+     * 读 `search.*` 配置
+     *
+     * 走 {@see SearchConfig}（库 → env → 默认），且读库失败时由它静默回落：
+     * 后台改的开关要立刻生效，同时配置没就绪也不能让搜索 500。
      */
-    private function configValue(string $key): ?string
+    private function configValue(string $key): mixed
     {
-        try {
-            return $this->config->get($key);
-        } catch (Throwable) {
-            return null;
-        }
+        return $this->config->get($key);
     }
 }

@@ -29,6 +29,7 @@ use App\Http\Controllers\Admin\RefundController;
 use App\Http\Controllers\Admin\ReportController as AdminReportController;
 use App\Http\Controllers\Admin\ReviewController as AdminReviewController;
 use App\Http\Controllers\Admin\RoleController as AdminRoleController;
+use App\Http\Controllers\Admin\SearchController as AdminSearchController;
 use App\Http\Controllers\Admin\UploadController;
 use App\Http\Controllers\Admin\UserController;
 use App\Http\Controllers\Admin\WmsConfigController;
@@ -290,6 +291,16 @@ Route::middleware(['auth:sanctum', 'account.active'])->group(function () {
 
         // 图片上传（登录即可，商品相关权限在业务层校验）
         Route::post('/upload', [UploadController::class, 'store']);
+
+        // 站内搜索配置（V1.2 站内搜索 S1-08，权限 search.manage）
+        // ⚠️ 超管专属：切引擎 / 改开关会改变全站检索行为，与 media.manage 同体例。
+        // 改开关后索引内容可能不再匹配（如 index_taxonomy_names），故保留 /reindex 手动重建入口。
+        Route::prefix('search')->middleware('permission:search.manage')->group(function () {
+            Route::get('/config', [AdminSearchController::class, 'config']);
+            Route::put('/config', [AdminSearchController::class, 'updateConfig']);
+            Route::get('/keywords', [AdminSearchController::class, 'keywords']);
+            Route::post('/reindex', [AdminSearchController::class, 'reindex']);
+        });
 
         // 媒体库（图片资产治理 P2，权限 media.*）—— replace 必须注册在 {id} 之前
         Route::get('/media', [MediaController::class, 'index'])->middleware('permission:media.view');
