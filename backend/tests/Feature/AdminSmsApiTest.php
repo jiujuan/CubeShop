@@ -223,3 +223,29 @@ test('TC-SMS-ADMIN-009 发送记录分页：支持过滤且只回脱敏手机号
     // page_size 上限与后台其它列表同口径（100）
     expect($filtered->json('data.pagination.page_size'))->toBe(20);
 });
+
+test('TC-SMS-ADMIN-010 配置接口回传每个场景的就绪度与未生效原因', function () {
+    // 勾了场景但不填模板 CODE：前台会回退图形验证码，后台必须能说出原因
+    app(SmsSettings::class)->updateSwitches([
+        'sms.enabled' => '1',
+        'sms.code_scenes' => 'register',
+    ]);
+
+    $body = $this->getJson('/api/admin/sms/config', $this->adminAuth)
+        ->assertOk()
+        ->json('data.scene_status');
+
+    expect($body['register']['ready'])->toBeFalse();
+    expect($body['register']['reason'])->toBe('template_missing');
+    expect($body['register']['reason_text'])->not->toBeEmpty();
+
+    // 补上模板 CODE 后同一场景转为就绪
+    app(SmsSettings::class)->updateSwitches([
+        'sms.code_templates' => json_encode(['register' => 'SMS_123456'], JSON_UNESCAPED_UNICODE),
+    ]);
+
+    $body = $this->getJson('/api/admin/sms/config', $this->adminAuth)->json('data.scene_status');
+
+    expect($body['register']['ready'])->toBeTrue();
+    expect($body['register']['reason'])->toBeNull();
+});

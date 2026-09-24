@@ -7,6 +7,7 @@ use App\Models\SmsConfig;
 use App\Services\Common\OperationLogService;
 use App\Services\Sms\SmsAutoEnable;
 use App\Services\Sms\SmsLogService;
+use App\Services\Sms\SmsReadiness;
 use App\Services\Sms\SmsService;
 use App\Services\Sms\SmsSettings;
 use App\Support\ApiResponse;
@@ -39,6 +40,7 @@ class SmsConfigController extends Controller
         private readonly SmsService $smsService,
         private readonly SmsLogService $logService,
         private readonly SmsAutoEnable $autoEnable,
+        private readonly SmsReadiness $readiness,
     ) {
     }
 
@@ -75,6 +77,10 @@ class SmsConfigController extends Controller
                     true,
                 ) ?? [],
             ],
+            // 每个场景的就绪度与未生效原因：勾了场景却看不到效果时，管理员据此自查
+            'scene_status' => collect(SmsSettings::CODE_SCENES)
+                ->map(fn (string $label, string $key) => $this->readiness->describe($key))
+                ->all(),
             'options' => [
                 'scenes' => SmsSettings::CODE_SCENES,
                 'providers' => collect(SmsProvider::ALL)

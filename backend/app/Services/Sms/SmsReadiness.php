@@ -35,6 +35,22 @@ final class SmsReadiness
         'mock_in_production',
     ];
 
+    /**
+     * 未就绪原因的中文说明（后台展示用）
+     *
+     * 存在的理由：判定结果是「静默回退图形验证码」，管理员在后台勾了场景却看不到效果时
+     * 无从自查 —— 原因必须回传到配置页，否则「设置不生效」只能靠猜。
+     */
+    public const REASON_TEXT = [
+        'unknown_scene' => '未知场景',
+        'sms_disabled' => '总开关未启用',
+        'scene_not_enabled' => '该场景未勾选',
+        'template_missing' => '未填写验证码模板 CODE',
+        'no_channel' => '没有启用任何短信渠道',
+        'channel_unavailable' => '当前渠道凭证不完整',
+        'mock_in_production' => '生产环境不允许走 Mock 渠道',
+    ];
+
     public function __construct(
         private readonly SmsSettings $settings,
         private readonly SmsService $sms,
@@ -87,6 +103,24 @@ final class SmsReadiness
             'ready' => true,
             'reason' => null,
             'provider' => $provider,
+        ];
+    }
+
+    /**
+     * 供后台展示的判定结果（原因已翻译为中文）
+     *
+     * @return array{ready: bool, reason: string|null, reason_text: string|null}
+     */
+    public function describe(string $scene): array
+    {
+        $result = $this->check($scene);
+
+        return [
+            'ready' => $result['ready'],
+            'reason' => $result['reason'],
+            'reason_text' => $result['reason'] === null
+                ? null
+                : (self::REASON_TEXT[$result['reason']] ?? $result['reason']),
         ];
     }
 
