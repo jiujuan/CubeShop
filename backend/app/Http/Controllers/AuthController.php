@@ -14,6 +14,7 @@ use App\Support\ApiResponse;
 use App\Support\WeakPassword;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Str;
 use Illuminate\Validation\Rules\Password;
 use Illuminate\Validation\ValidationException;
 use App\Services\Sms\SmsCodeService;
@@ -27,6 +28,9 @@ class AuthController extends Controller
 
     /** 国内手机号（注册/登录/重置密码的短信分支共用） */
     private const PHONE_PATTERN = '/^1[3-9]\d{9}$/';
+
+    /** SEC-08：账号占用类错误对外统一文案，不区分是用户名还是手机号撞库 */
+    private const ACCOUNT_UNAVAILABLE = '该账号信息不可用，请更换后重试';
 
     public function __construct(
         private readonly AuthLogService $authLog,
@@ -185,6 +189,14 @@ class AuthController extends Controller
             // 验证码要发到手机上，手机号从「可选」变「必填且必须是合法号段」
             $rules['phone'] = ['required', 'string', 'max:20', 'regex:'.self::PHONE_PATTERN, 'unique:users,phone', $this->notUsedByAdmin('phone')];
             $rules['sms_code'] = ['required', 'string', 'size:'.SmsCodeService::LENGTH];
+
+            // 免密注册（手机号即账号）：用户名与密码都可不填——不填用户名时以手机号作登录名，
+            // 不填密码时由服务端生成随机强密码，用户今后凭「手机号 + 短信验证码」登录或重置密码。
+            // 自设密码仍走同一套强度规则（SEC-05），不会因改走短信而放宽。
+            $rules['username'] = ['nullable', 'string', 'max:64', 'unique:users,username', $this->notUsedByAdmin('username')];
+            $rules['password'] = ['nullable', 'string', ...$this->passwordRule()];
+            $rules['password_confirmation'] = ['nullable', 'required_with:password', 'same:password'];
+
             $messages['phone.regex'] = '请输入正确的手机号';
             $messages['sms_code.size'] = '短信验证码为 '.SmsCodeService::LENGTH.' 位';
         } else {
@@ -205,8 +217,28 @@ class AuthController extends Controller
             throw $this->flattenAccountTaken($e);
         }
 
+        $username = $data['username'] ?? null;
+        $plainPassword = $data['password'] ?? null;
+
         if ($smsMode) {
             $this->assertSmsReady('register');
+
+            // 手机号即账号：用户名留空时用它作登录名；若该手机号已被他人用作用户名，
+            // 账号会冲突且无法静默改名，按 SEC-08 用不可区分文案拒绝。
+            $username = ($username === null || $username === '') ? $data['phone'] : $username;
+
+            if ($username === $data['phone'] && $this->usernameTaken($username)) {
+                $this->authLog->record(AuthLog::EVENT_REGISTER, false, [
+                    'identifier' => $username,
+                    'fail_reason' => 'username_taken',
+                ]);
+                $request->attributes->set('auth_log_skip', true);
+                throw BusinessException::badRequest(self::ACCOUNT_UNAVAILABLE);
+            }
+
+            if ($plainPassword === null || $plainPassword === '') {
+                $plainPassword = $this->generateRandomPassword();
+            }
 
             if (! $this->smsCodes->verify('register', $data['phone'], $data['sms_code'])) {
                 $this->authLog->record(AuthLog::EVENT_REGISTER, false, [
@@ -226,11 +258,14 @@ class AuthController extends Controller
         }
 
         $user = User::create([
-            'username' => $data['username'],
-            'password' => $data['password'],
+            'username' => $username,
+            'password' => $plainPassword,
             'phone' => $data['phone'] ?? null,
             'email' => $data['email'] ?? null,
-            'nickname' => $data['username'],
+            // 免密注册的登录名就是手机号，昵称若跟着等于手机号会在前台直接露出完整号码
+            'nickname' => ($smsMode && $username === ($data['phone'] ?? null))
+                ? '用户'.substr($username, -4)
+                : $username,
             'status' => 1,
         ]);
 
@@ -724,6 +759,25 @@ class AuthController extends Controller
         $errors['account'] = ['该账号信息不可用，请更换后重试'];
 
         return ValidationException::withMessages($errors);
+    }
+
+    /**
+     * 免密注册时生成的随机强密码（含大小写字母与数字，16 位）
+     *
+     * 用户不感知这个密码：注册后凭「手机号 + 短信验证码」登录，或通过重置密码场景自助设置。
+     * 之所以不把 password 列改成可空——那会让「无密码账号」成为一类新状态，后续每个登录入口
+     * 都要判空；生成一个不可达的强密码，等于把这类账号收敛成普通账号。
+     */
+    private function generateRandomPassword(): string
+    {
+        return 'Cs'.Str::random(10).random_int(1000, 9999);
+    }
+
+    /** 用户名是否已被买家账号或后台账号占用（免密注册派生用户名前先查一次） */
+    private function usernameTaken(string $username): bool
+    {
+        return User::where('username', $username)->exists()
+            || SysUser::withTrashed()->where('username', $username)->exists();
     }
 
     private function findAccount(string $identifier, string $password): SysUser|User|null

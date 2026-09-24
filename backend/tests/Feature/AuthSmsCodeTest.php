@@ -406,3 +406,116 @@ test('TC-AUTH-SMS-023 管理员手动设置过场景后不再被自动改写', f
 
     expect($settings->codeScenes())->toBe(['register']);
 });
+
+test('TC-AUTH-SMS-024 注册：免密模式只提交手机号与验证码即可（手机号即账号）', function () {
+    smsMakeReady(['register']);
+
+    smsRequestCode('register', '13800138000');
+    $code = smsCachedCode('register', '13800138000');
+
+    $res = $this->postJson('/api/auth/register', [
+        'phone' => '13800138000',
+        'sms_code' => $code,
+    ]);
+
+    $res->assertOk();
+
+    $user = User::where('phone', '13800138000')->first();
+
+    expect($user)->not->toBeNull();
+    // 未填用户名 → 以手机号作登录名
+    expect($user->username)->toBe('13800138000');
+    // 未填密码 → 服务端生成强密码，绝不是空值或可猜的弱口令
+    expect($user->password)->not->toBeEmpty();
+    expect(Hash::check('13800138000', $user->password))->toBeFalse();
+    // 登录名即手机号，昵称要脱敏，不能在前台直接露出完整号码
+    expect($user->nickname)->not->toBe('13800138000');
+    expect($user->nickname)->toContain('8000');
+});
+
+test('TC-AUTH-SMS-025 注册：免密账号可凭「手机号 + 短信验证码」登录（闭环）', function () {
+    smsMakeReady(['register', 'login']);
+
+    smsRequestCode('register', '13800138001');
+    $this->postJson('/api/auth/register', [
+        'phone' => '13800138001',
+        'sms_code' => smsCachedCode('register', '13800138001'),
+    ])->assertOk();
+
+    // 60 秒重发间隔按手机号计数（防刷规则，非本次要验的行为），清掉后继续走登录
+    Cache::forget('sms_code_last:13800138001');
+
+    smsRequestCode('login', '13800138001');
+    $res = $this->postJson('/api/auth/login', [
+        'phone' => '13800138001',
+        'sms_code' => smsCachedCode('login', '13800138001'),
+    ]);
+
+    $res->assertOk();
+    expect($res->json('data.token'))->not->toBeEmpty();
+});
+
+test('TC-AUTH-SMS-026 注册：手机号已被他人用作用户名时拒绝且不区分原因', function () {
+    smsMakeReady(['register']);
+
+    // 另一个账号把 13800138002 用作用户名（手机号是别的号）
+    User::create([
+        'username' => '13800138002',
+        'password' => Hash::make('Oldpass123'),
+        'phone' => '13900139000',
+        'nickname' => '占用者',
+        'status' => 1,
+    ]);
+
+    smsRequestCode('register', '13800138002');
+    $res = $this->postJson('/api/auth/register', [
+        'phone' => '13800138002',
+        'sms_code' => smsCachedCode('register', '13800138002'),
+    ]);
+
+    // 文案与「账号已占用」压平后一致，不透露到底是手机号还是用户名撞库（SEC-08）
+    $res->assertStatus(400);
+    expect($res->json('message'))->toBe('该账号信息不可用，请更换后重试');
+    expect(User::where('phone', '13800138002')->exists())->toBeFalse();
+});
+
+test('TC-AUTH-SMS-027 注册：密码模式仍强制要求密码（免密只存在于短信分支）', function () {
+    $cap = app(CaptchaService::class)->generate('web');
+
+    $res = $this->postJson('/api/auth/register', [
+        'username' => 'nobody1',
+        'captcha_id' => $cap['captcha_id'],
+        'code' => $cap['debug_code'],
+    ]);
+
+    $res->assertStatus(422);
+    expect($res->json('data.errors'))->toHaveKey('password');
+});
+
+test('TC-AUTH-SMS-028 注册：短信分支自设密码仍受强度规则约束（SEC-05 不放宽）', function () {
+    smsMakeReady(['register']);
+
+    smsRequestCode('register', '13800138003');
+
+    // 弱密码
+    $weak = $this->postJson('/api/auth/register', [
+        'phone' => '13800138003',
+        'sms_code' => smsCachedCode('register', '13800138003'),
+        'password' => '123',
+        'password_confirmation' => '123',
+    ]);
+
+    $weak->assertStatus(422);
+    expect($weak->json('data.errors'))->toHaveKey('password');
+
+    // 填了密码却没填确认密码
+    $mismatch = $this->postJson('/api/auth/register', [
+        'phone' => '13800138003',
+        'sms_code' => smsCachedCode('register', '13800138003'),
+        'password' => 'Goodpass123',
+    ]);
+
+    $mismatch->assertStatus(422);
+    expect($mismatch->json('data.errors'))->toHaveKey('password_confirmation');
+    expect(User::where('phone', '13800138003')->exists())->toBeFalse();
+});
