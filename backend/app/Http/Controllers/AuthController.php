@@ -16,10 +16,17 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\Rules\Password;
 use Illuminate\Validation\ValidationException;
+use App\Services\Sms\SmsCodeService;
+use App\Services\Sms\SmsReadiness;
+use App\Services\Sms\SmsSettings;
+use Illuminate\Http\JsonResponse;
 
 class AuthController extends Controller
 {
     use ApiResponse;
+
+    /** 国内手机号（注册/登录/重置密码的短信分支共用） */
+    private const PHONE_PATTERN = '/^1[3-9]\d{9}$/';
 
     public function __construct(
         private readonly AuthLogService $authLog,
@@ -29,6 +36,9 @@ class AuthController extends Controller
         private readonly \App\Services\Notification\NotificationService $notifications,
         private readonly \App\Services\Auth\LoginSecurityService $loginSecurity,
         private readonly \App\Services\Auth\DeviceTokenService $devices,
+        private readonly SmsReadiness $readiness,
+        private readonly SmsCodeService $smsCodes,
+        private readonly SmsSettings $smsSettings,
     ) {}
 
     /**
@@ -45,6 +55,101 @@ class AuthController extends Controller
     }
 
     /**
+     * 查询某场景当前用哪种验证码 GET /auth/verify-mode?scene=register
+     *
+     * 出参 `{mode: 'sms'|'captcha', code_length}` 是前端渲染的唯一依据：
+     * 短信就绪就渲染「手机号 + 发送验证码」，否则渲染图形验证码。
+     *
+     * ⚠️ 这里只看**系统就绪度**，不看用户状态；用户级限制（频繁/超限）由发送接口返回。
+     */
+    public function verifyMode(Request $request): JsonResponse
+    {
+        $scene = (string) $request->input('scene', 'register');
+
+        if (! $this->smsSettings->isKnownScene($scene)) {
+            $scene = 'register';
+        }
+
+        $check = $this->readiness->check($scene);
+
+        return $this->success([
+            'scene' => $scene,
+            'mode' => $check['ready'] ? 'sms' : 'captcha',
+            'code_length' => $check['ready'] ? SmsCodeService::LENGTH : CaptchaService::LENGTH,
+            'reason' => $check['reason'],
+        ]);
+    }
+
+    /**
+     * 发送短信验证码 POST /auth/send-sms-code
+     *
+     * body: { scene, phone, captcha_id, captcha_code }
+     *
+     * **图形验证码是必填的防刷闸门**：短信按条计费，一个不带图形码的发送口
+     * 等于一个可被脚本刷的账单（限流只能减轻，不能替代前置的人机校验）。
+     *
+     * 两类失败要区别对待：
+     * - 系统级不就绪（未启用 / 无模板 / 无渠道 / 生产走 Mock）→ **不报错**，返回
+     *   `mode: 'captcha'` 让前端切回图形，保证注册登录不被配置问题打断；
+     * - 用户级失败（发送过频 / 当日超限 / 被锁定）→ 明确抛错，否则他会一直点。
+     *
+     * ⚠️ 刻意**不校验**手机号是否已注册、账号是否存在：一旦校验就等于给出
+     * 「该手机号是否注册过」的枚举 oracle（SEC-08），统一走成功/中性文案。
+     */
+    public function sendSmsCode(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'scene' => ['required', 'string', 'in:'.implode(',', array_keys(SmsSettings::CODE_SCENES))],
+            'phone' => ['required', 'string', 'regex:'.self::PHONE_PATTERN],
+            'captcha_id' => ['required', 'string'],
+            'captcha_code' => ['required', 'string', 'size:'.CaptchaService::LENGTH],
+        ], [
+            'phone.regex' => '请输入正确的手机号',
+            'captcha_code.size' => '验证码为 '.CaptchaService::LENGTH.' 位',
+        ]);
+
+        if (! $this->captchaService->verify($data['captcha_id'], $data['captcha_code'])) {
+            throw BusinessException::badRequest('验证码错误或已过期');
+        }
+
+        $scene = $data['scene'];
+        $check = $this->readiness->check($scene);
+
+        if (! $check['ready']) {
+            return $this->success([
+                'sent' => false,
+                'mode' => 'captcha',
+                'code_length' => CaptchaService::LENGTH,
+                'reason' => $check['reason'],
+            ], '当前不支持短信验证码，请改用图形验证码');
+        }
+
+        $result = $this->smsCodes->send($scene, $data['phone']);
+
+        if (! $result->ok) {
+            // 渠道侧失败同样回退：别让用户卡在「点了发送但永远收不到」
+            if (in_array($result->errorCode, SmsReadiness::FALLBACK_REASONS, true)) {
+                return $this->success([
+                    'sent' => false,
+                    'mode' => 'captcha',
+                    'code_length' => CaptchaService::LENGTH,
+                    'reason' => $result->errorCode,
+                ], '短信服务暂时不可用，请改用图形验证码');
+            }
+
+            throw BusinessException::badRequest($result->errorMsg ?: '验证码发送失败，请稍后再试');
+        }
+
+        return $this->success([
+            'sent' => true,
+            'mode' => 'sms',
+            'code_length' => SmsCodeService::LENGTH,
+            'resend_after' => SmsCodeService::RESEND_INTERVAL,
+            'reason' => null,
+        ], '验证码已发送');
+    }
+
+    /**
      * 注册（对齐 API 文档 2.1；短信验证码 V1.0 用图形验证码降级）
      * POST /auth/register
      *
@@ -57,22 +162,38 @@ class AuthController extends Controller
 
         // SEC-08：注册接口的 `unique` 校验失败会精确指出"用户名已存在 / 手机号已存在"，
         // 等于给了攻击者一个可批量探测用户是否注册的 oracle。此处统一改写为不可区分的文案。
+        // 短信分支：前端按 /auth/verify-mode 的结果决定提交 phone+sms_code 还是 captcha_id+code
+        $smsMode = $request->filled('sms_code') || $request->input('mode') === 'sms';
+
+        $rules = [
+            'username' => ['required', 'string', 'max:64', 'unique:users,username', $this->notUsedByAdmin('username')],
+            'password' => ['required', 'string', ...$this->passwordRule()],
+            'password_confirmation' => ['required', 'same:password'],
+            'phone' => ['nullable', 'string', 'max:20', 'unique:users,phone', $this->notUsedByAdmin('phone')],
+            'email' => ['nullable', 'email', 'max:128', 'unique:users,email', $this->notUsedByAdmin('email')],
+        ];
+
+        // 应用 locale 为 en，密码规则的默认文案是英文；注册页是纯中文场景，
+        // 422 只回一个笼统 message 会让用户把「密码不合格」误认成「验证码错了」。
+        $messages = [
+            'password.min' => '密码至少 8 位',
+            'password.letters' => '密码需同时包含字母和数字',
+            'password.numbers' => '密码需同时包含字母和数字',
+        ];
+
+        if ($smsMode) {
+            // 验证码要发到手机上，手机号从「可选」变「必填且必须是合法号段」
+            $rules['phone'] = ['required', 'string', 'max:20', 'regex:'.self::PHONE_PATTERN, 'unique:users,phone', $this->notUsedByAdmin('phone')];
+            $rules['sms_code'] = ['required', 'string', 'size:'.SmsCodeService::LENGTH];
+            $messages['phone.regex'] = '请输入正确的手机号';
+            $messages['sms_code.size'] = '短信验证码为 '.SmsCodeService::LENGTH.' 位';
+        } else {
+            $rules['code'] = ['required', 'string', 'size:'.CaptchaService::LENGTH];
+            $messages['code.size'] = '验证码为 '.CaptchaService::LENGTH.' 位';
+        }
+
         try {
-            $data = $request->validate([
-                'username' => ['required', 'string', 'max:64', 'unique:users,username', $this->notUsedByAdmin('username')],
-                'password' => ['required', 'string', ...$this->passwordRule()],
-                'password_confirmation' => ['required', 'same:password'],
-                'phone' => ['nullable', 'string', 'max:20', 'unique:users,phone', $this->notUsedByAdmin('phone')],
-                'email' => ['nullable', 'email', 'max:128', 'unique:users,email', $this->notUsedByAdmin('email')],
-                'code' => ['required', 'string', 'size:'.CaptchaService::LENGTH],
-            ], [
-                // 应用 locale 为 en，密码规则的默认文案是英文；注册页是纯中文场景，
-                // 422 只回一个笼统 message 会让用户把「密码不合格」误认成「验证码错了」。
-                'password.min' => '密码至少 8 位',
-                'password.letters' => '密码需同时包含字母和数字',
-                'password.numbers' => '密码需同时包含字母和数字',
-                'code.size' => '验证码为 '.CaptchaService::LENGTH.' 位',
-            ]);
+            $data = $request->validate($rules, $messages);
         } catch (ValidationException $e) {
             // 注册校验失败（用户名/手机号/邮箱占用、密码强度、验证码位长等）：详尽记录但不向前端细分
             $this->authLog->record(AuthLog::EVENT_REGISTER, false, [
@@ -84,8 +205,18 @@ class AuthController extends Controller
             throw $this->flattenAccountTaken($e);
         }
 
-        // V1.0 简化：code 为注册图形验证码
-        if (! $this->captchaService->verify((string) $request->input('captcha_id', ''), $data['code'])) {
+        if ($smsMode) {
+            $this->assertSmsReady('register');
+
+            if (! $this->smsCodes->verify('register', $data['phone'], $data['sms_code'])) {
+                $this->authLog->record(AuthLog::EVENT_REGISTER, false, [
+                    'identifier' => $data['username'],
+                    'fail_reason' => 'sms_code_error',
+                ]);
+                $request->attributes->set('auth_log_skip', true);
+                throw BusinessException::badRequest('短信验证码错误或已过期');
+            }
+        } elseif (! $this->captchaService->verify((string) $request->input('captcha_id', ''), $data['code'])) {
             $this->authLog->record(AuthLog::EVENT_REGISTER, false, [
                 'identifier' => $data['username'],
                 'fail_reason' => 'captcha_error',
@@ -131,6 +262,12 @@ class AuthController extends Controller
      */
     public function login(Request $request)
     {
+        // 短信验证码登录：提交 phone + sms_code 时走这条。
+        // 密码登录始终可用，不受短信配置影响——「优先走短信」只体现在前端默认选中哪个 tab。
+        if ($request->filled('sms_code') || $request->input('mode') === 'sms') {
+            return $this->success($this->loginBySmsCode($request), '登录成功');
+        }
+
         try {
             $data = $request->validate([
                 'username' => ['required', 'string'],
@@ -192,53 +329,7 @@ class AuthController extends Controller
             throw BusinessException::badRequest('用户名或密码错误');
         }
 
-        if ((int) $user->status !== 1) {
-            $this->authLog->record(AuthLog::EVENT_LOGIN, false, [
-                'user_id' => $user->id,
-                'actor_type' => $this->actorTypeOf($user),
-                'identifier' => $identifier,
-                'fail_reason' => 'account_disabled',
-            ]);
-            $request->attributes->set('auth_log_skip', true);
-            throw BusinessException::conflict('账号已被禁用，请联系管理员');
-        }
-
-        if ($user->trashed()) {
-            $this->authLog->record(AuthLog::EVENT_LOGIN, false, [
-                'user_id' => $user->id,
-                'actor_type' => $this->actorTypeOf($user),
-                'identifier' => $identifier,
-                'fail_reason' => 'account_deleted',
-            ]);
-            $request->attributes->set('auth_log_skip', true);
-            throw BusinessException::conflict('账号已注销');
-        }
-
-        $this->loginSecurity->clear($identifier);
-
-        $user->forceFill([
-            'last_login_at' => now(),
-            'last_login_ip' => $request->ip(),
-        ])->save();
-
-        $issued = $this->devices->issue($user, $request);
-
-        // 登录成功留痕（详细维度写入 auth_logs；通用 sys_operation_log 维持原记录）
-        $this->authLog->record(AuthLog::EVENT_LOGIN, true, [
-            'user_id' => $user->id,
-            'actor_type' => $this->actorTypeOf($user),
-            'identifier' => $identifier,
-            'device_id' => $issued['device_id'] ?? null,
-            'token_id' => $issued['token_id'] ?? null,
-        ]);
-
-        $this->operationLog->record($user->id, 'auth', 'login', null, null, null, $this->actorTypeOf($user));
-
-        return $this->success([
-            'token' => $issued['token'],
-            'expires_at' => $issued['expires_at'],
-            'user' => $this->formatUser($user),
-        ], '登录成功');
+        return $this->success($this->completeLogin($user, $request, $identifier), '登录成功');
     }
 
     /**
@@ -399,17 +490,36 @@ class AuthController extends Controller
      */
     public function resetPassword(Request $request)
     {
-        $data = $request->validate([
+        $smsMode = $request->filled('sms_code') || $request->input('mode') === 'sms';
+
+        $rules = [
             'target' => ['required', 'string'],
-            'code' => ['required', 'string', 'size:'.CaptchaService::LENGTH],
-            'captcha_id' => ['required', 'string'],
             'password' => ['required', 'string', ...$this->passwordRule()],
             'password_confirmation' => ['required', 'same:password'],
-        ], [
-            'code.size' => '验证码为 '.CaptchaService::LENGTH.' 位',
-        ]);
+        ];
+        $messages = [];
 
-        if (! $this->captchaService->verify($data['captcha_id'], $data['code'])) {
+        if ($smsMode) {
+            // 短信模式下 target 必须是手机号：码发到哪个号就重置哪个号
+            $rules['target'] = ['required', 'string', 'regex:'.self::PHONE_PATTERN];
+            $rules['sms_code'] = ['required', 'string', 'size:'.SmsCodeService::LENGTH];
+            $messages['target.regex'] = '请输入正确的手机号';
+            $messages['sms_code.size'] = '短信验证码为 '.SmsCodeService::LENGTH.' 位';
+        } else {
+            $rules['code'] = ['required', 'string', 'size:'.CaptchaService::LENGTH];
+            $rules['captcha_id'] = ['required', 'string'];
+            $messages['code.size'] = '验证码为 '.CaptchaService::LENGTH.' 位';
+        }
+
+        $data = $request->validate($rules, $messages);
+
+        if ($smsMode) {
+            $this->assertSmsReady('reset_password');
+
+            if (! $this->smsCodes->verify('reset_password', $data['target'], $data['sms_code'])) {
+                throw BusinessException::badRequest('短信验证码错误或已过期');
+            }
+        } elseif (! $this->captchaService->verify($data['captcha_id'], $data['code'])) {
             throw BusinessException::badRequest('验证码错误或已过期');
         }
 
@@ -443,6 +553,135 @@ class AuthController extends Controller
      *
      * 先查后台管理员（sys_user），再查买家（users）。
      */
+    /**
+     * 短信验证码登录（登录页「验证码登录」tab 走这条）
+     *
+     * 与密码登录共用 {@see self::completeLogin()}，保证状态检查、设备签发、留痕完全一致。
+     * 不再要求图形验证码——发送验证码时已经过一次，重复校验只增加摩擦。
+     */
+    private function loginBySmsCode(Request $request): array
+    {
+        $data = $request->validate([
+            'phone' => ['required', 'string', 'regex:'.self::PHONE_PATTERN],
+            'sms_code' => ['required', 'string', 'size:'.SmsCodeService::LENGTH],
+        ], [
+            'phone.regex' => '请输入正确的手机号',
+            'sms_code.size' => '短信验证码为 '.SmsCodeService::LENGTH.' 位',
+        ]);
+
+        $phone = $data['phone'];
+        // 先定位账号：锁定是按 identifier 维度累计的，得先知道用户名才能查到
+        // 「密码登录失败累计出来的锁定」（此处结果不参与响应判断，防泄露统一在 SEC-08 分支）
+        $user = SysUser::where('phone', $phone)->first()
+            ?? User::where('phone', $phone)->first();
+
+        // SEC-07：锁定检查必须**先于**验证码校验，否则被锁账号也能试出正确验证码。
+        // ⚠️ 两个 identifier 都要查：密码登录的失败记在**用户名**上，短信登录记在**手机号**上，
+        //    只查一个维度等于「换一种登录方式就能绕过锁定」。
+        foreach (array_values(array_unique(array_filter([$phone, $user?->username]))) as $identifier) {
+            try {
+                $this->loginSecurity->assertNotLocked((string) $identifier);
+            } catch (BusinessException $e) {
+                $this->authLog->record(AuthLog::EVENT_LOGIN, false, [
+                    'identifier' => $identifier,
+                    'actor_type' => $this->actorTypeOfIdentifier((string) $identifier),
+                    'fail_reason' => 'account_locked',
+                ]);
+                $request->attributes->set('auth_log_skip', true);
+                throw $e;
+            }
+        }
+
+        $this->assertSmsReady('login');
+
+        if (! $this->smsCodes->verify('login', $phone, $data['sms_code'])) {
+            $this->authLog->record(AuthLog::EVENT_LOGIN, false, [
+                'identifier' => $phone,
+                'actor_type' => $this->actorTypeOfIdentifier($phone),
+                'fail_reason' => 'sms_code_error',
+            ]);
+            $request->attributes->set('auth_log_skip', true);
+            throw BusinessException::badRequest('验证码错误或已过期');
+        }
+
+        if (! $user) {
+            // SEC-08：不透露手机号是否注册过（与密码登录的「用户名或密码错误」同款口径）
+            $this->authLog->record(AuthLog::EVENT_LOGIN, false, [
+                'identifier' => $phone,
+                'fail_reason' => 'invalid_credential',
+            ]);
+            $request->attributes->set('auth_log_skip', true);
+            throw BusinessException::badRequest('验证码错误或账号信息不可用');
+        }
+
+        return $this->completeLogin($user, $request, $phone);
+    }
+
+    /**
+     * 登录收尾（状态检查 → 清锁定 → 留痕 → 签发设备 Token）
+     *
+     * 密码登录与短信登录共用，避免两条路径的行为漂移（例如只在一侧检查封禁）。
+     *
+     * @return array{token: string, expires_at: mixed, user: array}
+     */
+    private function completeLogin(SysUser|User $user, Request $request, string $identifier): array
+    {
+        if ((int) $user->status !== 1) {
+            $this->authLog->record(AuthLog::EVENT_LOGIN, false, [
+                'user_id' => $user->id,
+                'actor_type' => $this->actorTypeOf($user),
+                'identifier' => $identifier,
+                'fail_reason' => 'account_disabled',
+            ]);
+            $request->attributes->set('auth_log_skip', true);
+            throw BusinessException::conflict('账号已被禁用，请联系管理员');
+        }
+
+        if ($user->trashed()) {
+            $this->authLog->record(AuthLog::EVENT_LOGIN, false, [
+                'user_id' => $user->id,
+                'actor_type' => $this->actorTypeOf($user),
+                'identifier' => $identifier,
+                'fail_reason' => 'account_deleted',
+            ]);
+            $request->attributes->set('auth_log_skip', true);
+            throw BusinessException::conflict('账号已注销');
+        }
+
+        $this->loginSecurity->clear($identifier);
+
+        $user->forceFill([
+            'last_login_at' => now(),
+            'last_login_ip' => $request->ip(),
+        ])->save();
+
+        $issued = $this->devices->issue($user, $request);
+
+        $this->authLog->record(AuthLog::EVENT_LOGIN, true, [
+            'user_id' => $user->id,
+            'actor_type' => $this->actorTypeOf($user),
+            'identifier' => $identifier,
+            'device_id' => $issued['device_id'] ?? null,
+            'token_id' => $issued['token_id'] ?? null,
+        ]);
+
+        $this->operationLog->record($user->id, 'auth', 'login', null, null, null, $this->actorTypeOf($user));
+
+        return [
+            'token' => $issued['token'],
+            'expires_at' => $issued['expires_at'],
+            'user' => $this->formatUser($user),
+        ];
+    }
+
+    /** 短信验证码是否可用；不可用时给出明确文案而不是让用户对着「验证码错误」发懵 */
+    private function assertSmsReady(string $scene): void
+    {
+        if (! $this->readiness->check($scene)['ready']) {
+            throw BusinessException::badRequest('短信验证码当前不可用，请改用图形验证码');
+        }
+    }
+
     /**
      * 统一密码强度规则（SEC-05）
      *

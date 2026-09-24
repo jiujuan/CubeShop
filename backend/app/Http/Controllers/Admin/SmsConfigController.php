@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Controller;
 use App\Models\SmsConfig;
 use App\Services\Common\OperationLogService;
+use App\Services\Sms\SmsAutoEnable;
 use App\Services\Sms\SmsLogService;
 use App\Services\Sms\SmsService;
 use App\Services\Sms\SmsSettings;
@@ -37,6 +38,7 @@ class SmsConfigController extends Controller
         private readonly SmsSettings $settings,
         private readonly SmsService $smsService,
         private readonly SmsLogService $logService,
+        private readonly SmsAutoEnable $autoEnable,
     ) {
     }
 
@@ -67,6 +69,7 @@ class SmsConfigController extends Controller
             'switches' => [
                 'enabled' => $this->settings->enabled(),
                 'code_scenes' => $this->settings->codeScenes(),
+                'scenes_auto' => $this->settings->scenesAuto(),
                 'code_templates' => json_decode(
                     (string) $this->settings->switches()['sms.code_templates'],
                     true,
@@ -185,6 +188,9 @@ class SmsConfigController extends Controller
             $config->save();
         });
 
+        // 「配好服务商账号就默认启用」：仅当管理员从未手动设置过场景时才写入
+        $autoScenes = $this->autoEnable->sync();
+
         $this->operationLog->record(
             $request->user()?->id,
             'sms',
@@ -195,10 +201,18 @@ class SmsConfigController extends Controller
                 'provider' => $config->provider,
                 'before' => $before,
                 'after' => $this->channelPayload($config->fresh()),
+                'auto_scenes' => $autoScenes,
             ],
         );
 
-        return $this->success($this->channelPayload($config->fresh()), '已保存');
+        $message = '已保存';
+
+        if ($autoScenes !== []) {
+            $labels = array_map(fn (string $scene) => SmsSettings::CODE_SCENES[$scene] ?? $scene, $autoScenes);
+            $message .= '，已自动启用短信验证码：'.implode('、', $labels);
+        }
+
+        return $this->success($this->channelPayload($config->fresh()), $message);
     }
 
     /**

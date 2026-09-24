@@ -132,6 +132,9 @@ Route::post('/wms/callback/{provider}', [WmsCallbackController::class, 'handle']
 // 认证：注册 / 登录 / 验证码 / 重置密码（带限流）
 Route::middleware('throttle:auth')->group(function () {
     Route::post('/auth/captcha', [AuthController::class, 'captcha']);
+    // 短信验证码：查询当前场景用哪种验证码 / 发送短信验证码（发码按条计费，必须限流）
+    Route::get('/auth/verify-mode', [AuthController::class, 'verifyMode']);
+    Route::post('/auth/send-sms-code', [AuthController::class, 'sendSmsCode'])->middleware('throttle:sms-send');
     // SEC-08：注册单独收紧为 5 次/分钟（auth 组是 10 次/分钟），叠加服务层同 IP 每日上限
     Route::post('/auth/register', [AuthController::class, 'register'])->middleware('throttle:5,1');
     Route::post('/auth/login', [AuthController::class, 'login'])->middleware('throttle:login');
