@@ -39,7 +39,7 @@ if (-not (Test-Path $RuntimeDir)) { New-Item -ItemType Directory -Force -Path $R
 # ---------- 服务注册表 ----------
 $Services = @(
   [PSCustomObject]@{ Name = 'web';       Group = 'frontend'; Dir = 'web';       Port = 3000; Url = 'http://localhost:3000';             Command = 'npm run dev' }
-  [PSCustomObject]@{ Name = 'admin';     Group = 'frontend'; Dir = 'admin';     Port = 5173; Url = 'http://localhost:5173';             Command = 'npm run dev' }
+  [PSCustomObject]@{ Name = 'admin';     Group = 'frontend'; Dir = 'admin';     Port = 5193; Url = 'http://localhost:5193';             Command = 'npm run dev' }
   [PSCustomObject]@{ Name = 'api';       Group = 'backend';  Dir = 'backend';   Port = 8000; Url = 'http://127.0.0.1:8000/api/health';  Command = 'php artisan serve --host=127.0.0.1 --port=8000' }
   [PSCustomObject]@{ Name = 'queue';     Group = 'backend';  Dir = 'backend';   Port = $null; Url = $null;                              Command = 'php artisan queue:work --tries=3 --sleep=1' }
   [PSCustomObject]@{ Name = 'scheduler'; Group = 'backend';  Dir = 'backend';   Port = $null; Url = $null;                              Command = 'php artisan schedule:run --no-ansi' }
