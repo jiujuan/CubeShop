@@ -159,6 +159,13 @@ const router = createRouter({
           meta: { title: '支付渠道配置', menu: true, icon: 'CreditCard', permission: 'payment.channel.manage' },
         },
         {
+          // 支付渠道日终对账（A7-支付渠道对账）：长短款/重复回调/漏单差异清单与处置工单
+          path: 'payment-reconcile',
+          name: 'payment-reconcile',
+          component: () => import('@/views/order/PaymentReconcileView.vue'),
+          meta: { title: '支付对账', menu: true, icon: 'Scale', permission: 'payment.reconcile.view' },
+        },
+        {
           path: 'shipping-companies',
           name: 'shipping-companies',
           component: () => import('@/views/order/ExpressCompanyView.vue'),

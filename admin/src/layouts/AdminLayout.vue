@@ -3,7 +3,7 @@ import { computed, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import {
   BarChart3, BookOpen, Box, Calculator, ChevronDown, ChevronRight, ChevronsLeft, ChevronsRight, ClipboardList, CreditCard, FileClock, FolderTree, History, Images, KeyRound,
-  Send, Search, LayoutDashboard, Layers, LayoutList, LifeBuoy, ListTree, LogOut, MapPinned, Menu, MessageSquare, Megaphone, Package, RotateCcw, ScrollText, Settings, ShieldCheck,   SquareUser, Tags, Truck, UploadCloud, UserCog, UserRound, Users, Wallet, Warehouse, Ticket, Undo2, Activity, Diff,
+  Send, Search, LayoutDashboard, Layers, LayoutList, LifeBuoy, ListTree, LogOut, MapPinned, Menu, MessageSquare, Megaphone, Package, RotateCcw, ScrollText, Settings, ShieldCheck,   SquareUser, Tags, Truck, UploadCloud, UserCog, UserRound, Users, Wallet, Warehouse, Ticket, Undo2, Activity, Diff, Scale,
 } from 'lucide-vue-next'
 import { useAuthStore } from '@/stores/auth'
 
@@ -64,6 +64,7 @@ const icons: Record<string, unknown> = {
   Undo2,
   Activity,
   Diff,
+  Scale,
   KeyRound,
   Send,
   Search,
@@ -117,6 +118,7 @@ const menuGroups = computed<MenuGroup[]>(() => {
         { path: '/order-logs', title: '订单流水', icon: 'History', permission: 'order.log' },
         { path: '/refunds', title: '退款处理', icon: 'RotateCcw', permission: 'refund.view' },
         { path: '/balance-recharges', title: '余额充值单', icon: 'Wallet', permission: 'balance.recharge.view' },
+        { path: '/payment-reconcile', title: '支付对账', icon: 'Scale', permission: 'payment.reconcile.view' },
       ],
     },
     {
