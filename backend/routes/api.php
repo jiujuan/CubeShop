@@ -42,6 +42,7 @@ use App\Http\Controllers\Admin\WmsFulfillmentController;
 use App\Http\Controllers\Admin\WmsInventoryController;
 use App\Http\Controllers\Admin\WmsReturnInboundController;
 use App\Http\Controllers\AuthController;
+use App\Http\Controllers\Storefront\PaymentReconcileDashboardController as StorefrontPaymentReconcileDashboardController;
 use App\Http\Controllers\AnnouncementController;
 use App\Http\Controllers\HomeBannerController;
 use App\Http\Controllers\BalanceController;
@@ -187,6 +188,10 @@ Route::middleware(['auth:sanctum', 'account.active'])->group(function () {
     Route::get('/auth/devices', [AuthController::class, 'devices']);
     Route::delete('/auth/devices/{id}', [AuthController::class, 'revokeDevice']);
     Route::post('/auth/refresh', [AuthController::class, 'refresh']);
+
+    // 前台对账看板（A7 增强）：仅运营可见只读汇总；买家账号（无 spatie）被权限中间件拒绝 403
+    Route::get('/payment-reconcile/dashboard', [StorefrontPaymentReconcileDashboardController::class, 'summary'])
+        ->middleware('permission:payment.reconcile.view');
 
     // 个人中心（API 文档 3.1 / 3.2 / 11.5）
     Route::get('/user/profile', [ProfileController::class, 'show']);
@@ -459,6 +464,7 @@ Route::middleware(['auth:sanctum', 'account.active'])->group(function () {
         Route::get('/payment-reconciles/stats', [AdminPaymentReconcileController::class, 'stats'])->middleware('permission:payment.reconcile.view');
         Route::get('/payment-reconciles/{id}', [AdminPaymentReconcileController::class, 'showRun'])->middleware('permission:payment.reconcile.view');
         Route::get('/payment-reconcile-diffs', [AdminPaymentReconcileController::class, 'diffs'])->middleware('permission:payment.reconcile.view');
+        Route::get('/payment-reconcile-diffs/export', [AdminPaymentReconcileController::class, 'export'])->middleware(['permission:payment.reconcile.view', 'throttle:3,1']);
         Route::post('/payment-reconcile-diffs/{id}/resolve', [AdminPaymentReconcileController::class, 'resolve'])->middleware('permission:payment.reconcile.handle');
 
         // 支付渠道配置 payment.channel.manage（仅超管，§5）

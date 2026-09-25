@@ -25,6 +25,9 @@ use Throwable;
  * 部分唯一索引保证每日重跑不会把同一差异重复开单；已处置（resolved/ignored）不重开。
  *
  * 渠道侧来源：优先 BillReconciliationProvider（真实账单）；不支持/失败时降级 LogReconciliationProvider。
+ *
+ * 平台维度（A7 增强）：差异产生时从本地支付单冗余 platform（web/h5/miniprogram）落库，
+ * 看板可按来源端聚合；MISSING_LOCAL（本地无单可挂）platform 为 null，只计入「全部平台」口径。
  */
 class PaymentReconcileService
 {
@@ -165,6 +168,7 @@ class PaymentReconcileService
                 'payment_no' => $local?->payment_no,
                 'channel_trade_no' => $tradeNo,
                 'order_no' => $local?->order_no,
+                'platform' => $local?->platform,
             ], [
                 'local_amount' => $local?->amount,
                 'channel_amount' => $first->amount,
@@ -193,6 +197,7 @@ class PaymentReconcileService
                     'payment_no' => null,
                     'channel_trade_no' => $t->tradeNo,
                     'order_no' => null,
+                    'platform' => null, // 本地无单可挂，来源端未知，只计入「全部平台」口径
                 ], [
                     'local_amount' => null,
                     'channel_amount' => $t->amount,
@@ -214,6 +219,7 @@ class PaymentReconcileService
                     'payment_no' => $local->payment_no,
                     'channel_trade_no' => $t->tradeNo,
                     'order_no' => $local->order_no,
+                    'platform' => $local->platform,
                 ], [
                     'local_amount' => $local->amount,
                     'channel_amount' => $t->amount,
@@ -237,6 +243,7 @@ class PaymentReconcileService
                 'payment_no' => $p->payment_no,
                 'channel_trade_no' => $p->channel_trade_no,
                 'order_no' => $p->order_no,
+                'platform' => $p->platform,
             ], [
                 'local_amount' => $p->amount,
                 'channel_amount' => null,
@@ -392,35 +399,68 @@ class PaymentReconcileService
         return $diff->refresh();
     }
 
+    // ---------------- 看板统计 ----------------
+
     /**
      * 全局对账统计（看板可视化）。
      *
+     * @param  string|null  $platform  按来源端过滤（web/h5/miniprogram）；null/空 = 全部口径。
+     *                                 批次（runs）跨平台汇总，不做平台拆分。
      * @return array{
      *     total_runs:int, total_diffs:int,
      *     pending_diffs:int, processing_diffs:int, resolved_diffs:int, ignored_diffs:int,
-     *     by_type:array<string,int>, trend:array<int,array{date:string,diffs:int}>
+     *     by_type:array<string,int>,
+     *     by_channel:array<int,array{channel:string,diffs:int,pending:int,resolved:int,ignored:int}>,
+     *     trend:array<int,array{date:string,diffs:int}>
      * }
      */
-    public function stats(): array
+    public function stats(?string $platform = null): array
     {
-        $totalRuns = PaymentReconciliationRun::query()->count();
-        $totalDiffs = PaymentReconciliationDiff::query()->count();
+        $hasPlatform = $platform !== null && $platform !== '';
+        $scope = function () use ($platform, $hasPlatform) {
+            $q = PaymentReconciliationDiff::query();
+            if ($hasPlatform) {
+                $q->where('platform', $platform);
+            }
 
-        $byStatus = PaymentReconciliationDiff::query()
+            return $q;
+        };
+
+        $totalRuns = PaymentReconciliationRun::query()->count();
+        $totalDiffs = (int) $scope()->count();
+
+        $byStatus = $scope()
             ->selectRaw('status, count(*) as cnt')
             ->groupBy('status')
             ->pluck('cnt', 'status')
             ->all();
 
-        $byType = PaymentReconciliationDiff::query()
+        $byType = $scope()
             ->selectRaw('diff_type, count(*) as cnt')
             ->groupBy('diff_type')
             ->pluck('cnt', 'diff_type')
             ->all();
 
+        // 按渠道拆分（跨 DB 用 CASE WHEN 条件聚合，PG / SQLite 均支持）
+        $byChannelRows = $scope()
+            ->selectRaw("channel, count(*) as diffs, sum(case when status = 'pending' then 1 else 0 end) as pending, sum(case when status = 'resolved' then 1 else 0 end) as resolved, sum(case when status = 'ignored' then 1 else 0 end) as ignored")
+            ->groupBy('channel')
+            ->orderBy('channel')
+            ->get();
+
+        $byChannel = $byChannelRows
+            ->map(fn ($r) => [
+                'channel' => (string) $r->channel,
+                'diffs' => (int) $r->diffs,
+                'pending' => (int) $r->pending,
+                'resolved' => (int) $r->resolved,
+                'ignored' => (int) $r->ignored,
+            ])
+            ->all();
+
         // 近 14 天每日差异趋势（按 reconcile_date 补齐缺失日期）
         $since = now()->subDays(13)->startOfDay();
-        $raw = PaymentReconciliationDiff::query()
+        $raw = $scope()
             ->where('reconcile_date', '>=', $since->format('Y-m-d'))
             ->selectRaw('reconcile_date, count(*) as cnt')
             ->groupBy('reconcile_date')
@@ -436,12 +476,13 @@ class PaymentReconcileService
 
         return [
             'total_runs' => (int) $totalRuns,
-            'total_diffs' => (int) $totalDiffs,
+            'total_diffs' => $totalDiffs,
             'pending_diffs' => (int) ($byStatus['pending'] ?? 0),
             'processing_diffs' => (int) ($byStatus['processing'] ?? 0),
             'resolved_diffs' => (int) ($byStatus['resolved'] ?? 0),
             'ignored_diffs' => (int) ($byStatus['ignored'] ?? 0),
             'by_type' => $byType,
+            'by_channel' => $byChannel,
             'trend' => $trend,
         ];
     }

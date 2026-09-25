@@ -70,6 +70,17 @@ class PaymentService
     }
 
     /**
+     * 客户端平台打标：读请求头 X-Client-Platform（web/h5/miniprogram），白名单外回退 web。
+     * 收口在支付单创建处，订单支付与余额充值两条链路自动覆盖；无请求上下文（命令行/队列）恒为 web。
+     */
+    private function clientPlatform(): string
+    {
+        $header = (string) request()->header('X-Client-Platform', '');
+
+        return in_array($header, Payment::PLATFORMS, true) ? $header : Payment::PLATFORM_WEB;
+    }
+
+    /**
      * 发起订单支付：生成支付单，同一订单存在待支付单则复用（并允许切换渠道）
      *
      * @return array{payment: Payment, pay_params: array}
@@ -102,6 +113,7 @@ class PaymentService
             // SEC-14：记录提交人身份域，供 review() 做同域自审隔离（买家提交=users 域）
             'submitted_by' => $userId,
             'submitted_by_type' => Payment::SUBMITTER_USER,
+            'platform' => $this->clientPlatform(),
         ]);
 
         if ($existing && $existing->channel !== $channel) {
@@ -154,6 +166,7 @@ class PaymentService
                 'status' => Payment::STATUS_PENDING,
                 'biz_type' => Payment::BIZ_TYPE_RECHARGE,
                 'biz_no' => $recharge->recharge_no,
+                'platform' => $this->clientPlatform(),
             ]);
 
             $recharge->forceFill(['payment_id' => $payment->id, 'channel' => $channel])->save();

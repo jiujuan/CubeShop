@@ -208,3 +208,57 @@ test('A7C-14 看板统计接口：超管可见结构、无权限 403、未登录
     $this->getJson('/api/admin/payment-reconciles/stats', $this->noPermAuth)->assertForbidden();
     $this->getJson('/api/admin/payment-reconciles/stats')->assertUnauthorized();
 });
+
+test('A7C-15 导出对账差异 CSV：表头 + 行数据 + 筛选生效', function () {
+    $res = $this->getJson('/api/admin/payment-reconcile-diffs/export?status=pending', $this->adminAuth);
+
+    $res->assertOk();
+    expect(str_contains((string) $res->headers->get('Content-Type'), 'text/csv'))->toBeTrue();
+
+    $body = $res->streamedContent();
+    expect(str_starts_with($body, "\xEF\xBB\xBF"))->toBeTrue()
+        ->and($body)->toContain('对账日期')
+        ->and($body)->toContain('CH_ONLY_1');
+
+    // 处置后不再出现在 pending 筛选的导出里
+    $this->postJson("/api/admin/payment-reconcile-diffs/{$this->diff->id}/resolve", ['action' => 'resolve'], $this->operatorAuth)->assertOk();
+    $body2 = $this->getJson('/api/admin/payment-reconcile-diffs/export?status=pending', $this->adminAuth)->streamedContent();
+    expect($body2)->not->toContain('CH_ONLY_1');
+});
+
+test('A7C-15b 导出无权限 → 403', function () {
+    $this->getJson('/api/admin/payment-reconcile-diffs/export', $this->noPermAuth)->assertForbidden();
+});
+
+test('A7C-16 前台对账看板：运营 200 / 无权 403 / 买家 403 / 未登录 401 / 非法平台 422', function () {
+    $this->diff->forceFill(['platform' => 'h5'])->save();
+
+    $data = $this->getJson('/api/payment-reconcile/dashboard?platform=h5', $this->adminAuth)
+        ->assertOk()->json('data');
+    expect($data['total_diffs'])->toBe(1)
+        ->and($data['by_channel'][0]['channel'])->toBe('mock')
+        ->and($data['trend'])->toHaveCount(14);
+
+    // operator 持有 view 权限 → 200
+    $this->getJson('/api/payment-reconcile/dashboard', $this->operatorAuth)->assertOk();
+
+    // 无对账权限的运营账号 → 403
+    $this->getJson('/api/payment-reconcile/dashboard', $this->noPermAuth)->assertForbidden();
+
+    // 买家账号（无 spatie）→ 403（买家端 sanctum 为无状态守卫，必须真实登录拿 token）
+    $cap = app(\App\Services\Common\CaptchaService::class)->generate();
+    $buyerToken = $this->postJson('/api/auth/register', [
+        'username' => 'pcrbuyer'.uniqid(),
+        'password' => 'Test@1234',
+        'password_confirmation' => 'Test@1234',
+        'code' => $cap['debug_code'],
+        'captcha_id' => $cap['captcha_id'],
+    ])->json('data.token');
+    $this->getJson('/api/payment-reconcile/dashboard', ['Authorization' => 'Bearer '.$buyerToken])->assertForbidden();
+
+    // 未登录 → 401
+    $this->getJson('/api/payment-reconcile/dashboard')->assertUnauthorized();
+
+    // 非法 platform → 422
+    $this->getJson('/api/payment-reconcile/dashboard?platform=ios', $this->adminAuth)->assertUnprocessable();
+});

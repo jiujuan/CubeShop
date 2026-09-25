@@ -53,7 +53,7 @@ class PaymentReconciliationDiff extends Model
     protected $table = 'payment_reconciliation_diffs';
 
     protected $fillable = [
-        'run_id', 'reconcile_date', 'channel', 'diff_type',
+        'run_id', 'reconcile_date', 'channel', 'platform', 'diff_type',
         'payment_no', 'channel_trade_no', 'order_no',
         'local_amount', 'channel_amount', 'local_status', 'channel_status',
         'detail', 'status', 'handled_by', 'handled_at', 'handle_remark',

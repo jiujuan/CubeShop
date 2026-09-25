@@ -107,3 +107,17 @@ test('取消订单后原支付单关闭', function () {
 
     expect(Payment::where('payment_no', $payNo)->value('status'))->toBe(Payment::STATUS_CLOSED);
 });
+
+// A7 增强：支付单按 X-Client-Platform 打平台标，非法值回退 web
+test('支付单按 X-Client-Platform 打平台标（非法值回退 web）', function () {
+    $resp = $this->postJson('/api/payments', ['order_no' => $this->order['order_no'], 'channel' => 'wechat'], $this->auth + ['X-Client-Platform' => 'h5']);
+    expect($resp->json('code'))->toBe(0)
+        ->and(Payment::where('payment_no', $resp->json('data.payment_no'))->value('platform'))->toBe('h5');
+
+    // 非法值 → 回退 web
+    $this->postJson('/api/cart', ['sku_id' => $this->sku->id, 'quantity' => 1], $this->auth);
+    $order2 = $this->postJson('/api/orders', ['address_id' => $this->addressId], $this->auth)->json('data');
+    $resp2 = $this->postJson('/api/payments', ['order_no' => $order2['order_no'], 'channel' => 'alipay'], $this->auth + ['X-Client-Platform' => 'ios']);
+    expect($resp2->json('code'))->toBe(0)
+        ->and(Payment::where('payment_no', $resp2->json('data.payment_no'))->value('platform'))->toBe('web');
+});

@@ -272,3 +272,56 @@ test('A7S-12 stats 看板聚合：批次/差异总数、按类型、近14天趋�
     expect($point)->not->toBeNull()
         ->and($point['diffs'])->toBe(1);
 });
+
+test('A7S-13 平台维度：差异冗余本地支付单 platform，漏单为 null', function () {
+    $date = '2026-09-20';
+    pcrPayment('mock', $date, ['channel_trade_no' => 'LOCAL_H5', 'platform' => Payment::PLATFORM_H5]);
+    pcrPayment('mock', $date, ['channel_trade_no' => 'LOCAL_WEB', 'platform' => Payment::PLATFORM_WEB]);
+    MockGateway::$syntheticBill = [
+        new ChannelTransaction('CH_ONLY_9', null, '50.00', 'paid'),
+    ];
+
+    app(PaymentReconcileService::class)->run($date, ['mock']);
+
+    $platforms = PaymentReconciliationDiff::query()
+        ->where('diff_type', PaymentReconciliationDiff::TYPE_MISSING_CHANNEL)
+        ->orderBy('payment_no')
+        ->pluck('platform')
+        ->all();
+    expect($platforms)->toHaveCount(2)
+        ->and($platforms)->toContain(Payment::PLATFORM_H5)
+        ->and($platforms)->toContain(Payment::PLATFORM_WEB);
+
+    $missingLocal = PaymentReconciliationDiff::query()
+        ->where('diff_type', PaymentReconciliationDiff::TYPE_MISSING_LOCAL)
+        ->first();
+    expect($missingLocal)->not->toBeNull()
+        ->and($missingLocal->platform)->toBeNull();
+});
+
+test('A7S-14 stats：按渠道拆分 + 平台筛选互不串', function () {
+    $date = '2026-09-20';
+    pcrPayment('mock', $date, ['channel_trade_no' => 'LOCAL_H5', 'platform' => Payment::PLATFORM_H5]);
+    pcrPayment('mock', $date, ['channel_trade_no' => 'LOCAL_WEB', 'platform' => Payment::PLATFORM_WEB]);
+    MockGateway::$syntheticBill = [
+        new ChannelTransaction('CH_ONLY_9', null, '50.00', 'paid'),
+    ];
+    app(PaymentReconcileService::class)->run($date, ['mock']);
+
+    $stats = app(PaymentReconcileService::class)->stats();
+    expect($stats['total_diffs'])->toBe(3)
+        ->and($stats['by_channel'])->toHaveCount(1)
+        ->and($stats['by_channel'][0]['channel'])->toBe('mock')
+        ->and($stats['by_channel'][0]['diffs'])->toBe(3)
+        ->and($stats['by_channel'][0]['pending'])->toBe(3);
+
+    $h5 = app(PaymentReconcileService::class)->stats(Payment::PLATFORM_H5);
+    $h5Point = collect($h5['trend'])->firstWhere('date', $date);
+    expect($h5['total_diffs'])->toBe(1)
+        ->and($h5['by_type'][PaymentReconciliationDiff::TYPE_MISSING_CHANNEL] ?? 0)->toBe(1)
+        ->and($h5Point)->not->toBeNull()
+        ->and($h5Point['diffs'])->toBe(1);
+
+    expect(app(PaymentReconcileService::class)->stats(Payment::PLATFORM_WEB)['total_diffs'])->toBe(1)
+        ->and(app(PaymentReconcileService::class)->stats(Payment::PLATFORM_MINIPROGRAM)['total_diffs'])->toBe(0);
+});

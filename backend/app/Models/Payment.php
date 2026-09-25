@@ -32,6 +32,18 @@ class Payment extends Model
     public const BIZ_TYPE_ORDER = 'order';
     public const BIZ_TYPE_RECHARGE = 'recharge';
 
+    public const PLATFORM_WEB = 'web';
+    public const PLATFORM_H5 = 'h5';
+    public const PLATFORM_MINIPROGRAM = 'miniprogram';
+    public const PLATFORMS = [self::PLATFORM_WEB, self::PLATFORM_H5, self::PLATFORM_MINIPROGRAM];
+
+    /** 客户端平台中文名（对账看板按订单来源端拆分） */
+    public const PLATFORM_LABELS = [
+        self::PLATFORM_WEB => 'Web 商城',
+        self::PLATFORM_H5 => 'H5 手机端',
+        self::PLATFORM_MINIPROGRAM => '小程序',
+    ];
+
     /** 状态中文名（后台展示） */
     public const STATUS_LABELS = [
         self::STATUS_PENDING => '待支付',
@@ -73,6 +85,7 @@ class Payment extends Model
         'payer_name', 'payer_account', 'transfer_no', 'transferred_at', 'voucher_url',
         'review_remark', 'reviewed_by', 'reviewed_at',
         'submitted_by', 'submitted_by_type',
+        'platform',
     ];
 
     protected $casts = [
