@@ -164,7 +164,7 @@ class CaptchaService
             $this->decimal(random_int(20, 45), 3),
             random_int(1, 9999),
             // 扭曲幅度：再大字符就粘连了，人眼也读不出来
-            $this->decimal(random_int(6, 11), 1),
+            $this->decimal(random_int(12, 20), 1),
         );
     }
 
@@ -244,13 +244,13 @@ class CaptchaService
         $font = $italic ? 'Georgia, serif' : 'Arial, Helvetica, sans-serif';
         $style = $italic ? ' font-style="italic"' : '';
         $parts = [];
-        $x = 12;
+        $x = 13;
 
         for ($i = 0; $i < mb_strlen($code); $i++) {
             $char = $code[$i];
-            $size = random_int(20, 24);
-            $rotate = random_int(-13, 13);
-            $skew = random_int(-4, 4);
+            $size = random_int(22, 27);
+            $rotate = random_int(-22, 22);
+            $skew = random_int(-8, 8);
             $y = 30 + random_int(-4, 4);
             $color = $colors[array_rand($colors)];
             $ghost = $colors[array_rand($colors)];
@@ -271,7 +271,7 @@ class CaptchaService
             );
 
             // 槽位 ±2px 抖动：字符不等距，破坏一次性分割
-            $x += 23 + random_int(-1, 1);
+            $x += 25 + random_int(-2, 2);
         }
 
         return implode('', $parts);
