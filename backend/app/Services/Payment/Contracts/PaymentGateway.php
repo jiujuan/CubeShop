@@ -8,6 +8,7 @@ use App\Services\Payment\Dto\PayParams;
 use App\Services\Payment\Dto\QueryResult;
 use App\Services\Payment\Dto\RefundResult;
 use App\Services\Payment\Dto\TestResult;
+use App\Services\Payment\Dto\StatementResult;
 use Illuminate\Http\Request;
 
 /**
@@ -39,4 +40,11 @@ interface PaymentGateway
 
     /** 配置连通性自检（后台「测试连接」） */
     public function testConnection(array $config): TestResult;
+    /**
+     * 拉取渠道日账单（A7-支付渠道对账）
+     *
+     * 返回该渠道指定日期的交易流水（ChannelTransaction[]）；余额/线下等无远程账单的渠道返回 unsupported。
+     */
+    public function downloadBill(string $billDate, array $config): StatementResult;
+
 }

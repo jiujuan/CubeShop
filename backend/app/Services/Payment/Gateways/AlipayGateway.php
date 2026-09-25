@@ -9,6 +9,8 @@ use App\Services\Payment\Dto\PayParams;
 use App\Services\Payment\Dto\QueryResult;
 use App\Services\Payment\Dto\RefundResult;
 use App\Services\Payment\Dto\TestResult;
+use App\Services\Payment\Dto\ChannelTransaction;
+use App\Services\Payment\Dto\StatementResult;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
@@ -284,4 +286,101 @@ class AlipayGateway implements PaymentGateway
 
         return $json;
     }
+    /**
+     * 拉取支付宝日账单（A7-支付渠道对账）
+     *
+     * 走 alipay.data.dataservice.bill.download 取 bill_download_url → GET → 解析 CSV。
+     * ⚠️ 未对真实环境验证：任何异常都降级为 fail，由引擎改走日志源，不会中断对账。
+     */
+    public function downloadBill(string $billDate, array $config): StatementResult
+    {
+        try {
+            $params = [
+                'app_id' => (string) ($config['app_id'] ?? ''),
+                'method' => 'alipay.data.dataservice.bill.download',
+                'format' => 'JSON',
+                'charset' => 'utf-8',
+                'sign_type' => 'RSA2',
+                'timestamp' => date('Y-m-d H:i:s'),
+                'version' => '1.0',
+                'bill_type' => 'trade',
+                'bill_date' => $billDate,
+            ];
+            $params['sign'] = $this->alipayBillSign($params, (string) ($config['private_key'] ?? ''));
+            $gateway = ! empty($config['sandbox']) ? self::GATEWAY_SANDBOX : self::GATEWAY_PROD;
+
+            $resp = Http::post($gateway, $params)->json();
+            $bill = $resp['alipay_data_dataservice_bill_download_response'] ?? [];
+            if (empty($bill['bill_download_url'])) {
+                return StatementResult::fail('支付宝账单下载地址为空');
+            }
+
+            $csv = (string) Http::get($bill['bill_download_url'])->body();
+
+            return StatementResult::success($this->parseAlipayBillCsv($csv));
+        } catch (Throwable $e) {
+            return StatementResult::fail('支付宝账单拉取失败：'.$e->getMessage());
+        }
+    }
+
+    private function alipayBillSign(array $params, string $privateKey): string
+    {
+        $filtered = [];
+        foreach ($params as $k => $v) {
+            if ($k === 'sign' || $v === '' || is_array($v)) {
+                continue;
+            }
+            $filtered[$k] = $v;
+        }
+        ksort($filtered);
+        $raw = '';
+        foreach ($filtered as $k => $v) {
+            $raw .= $k.'='.$v.'&';
+        }
+        $raw = rtrim($raw, '&');
+        openssl_sign($raw, $signature, $privateKey, OPENSSL_ALGO_SHA256);
+
+        return base64_encode($signature);
+    }
+
+    private function parseAlipayBillCsv(string $csv): array
+    {
+        $lines = explode("\n", $csv);
+        $header = null;
+        $txns = [];
+
+        foreach ($lines as $line) {
+            $line = trim($line);
+            if ($line === '' || str_starts_with($line, '#')) {
+                continue;
+            }
+            $cols = str_getcsv($line);
+            if ($header === null) {
+                if (in_array('交易号', $cols, true) || in_array('支付宝交易号', $cols, true)) {
+                    $header = $cols;
+                }
+                continue;
+            }
+            if (str_starts_with($line, '总记录数') || count($cols) < 3) {
+                continue;
+            }
+            $map = array_flip($header);
+            if (! isset($map['交易号'], $map['交易金额'])) {
+                continue;
+            }
+            $tradeNo = $cols[$map['交易号']] ?? '';
+            if ($tradeNo === '' || ! isset($cols[$map['交易金额']])) {
+                continue;
+            }
+            $txns[] = new ChannelTransaction(
+                $tradeNo,
+                $cols[$map['商户订单号']] ?? ($cols[$map['订单号']] ?? null),
+                (string) ($cols[$map['交易金额']] ?? '0'),
+                'paid',
+            );
+        }
+
+        return $txns;
+    }
+
 }

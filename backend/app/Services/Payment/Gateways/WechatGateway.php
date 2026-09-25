@@ -9,6 +9,8 @@ use App\Services\Payment\Dto\PayParams;
 use App\Services\Payment\Dto\QueryResult;
 use App\Services\Payment\Dto\RefundResult;
 use App\Services\Payment\Dto\TestResult;
+use App\Services\Payment\Dto\ChannelTransaction;
+use App\Services\Payment\Dto\StatementResult;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
@@ -293,4 +295,99 @@ class WechatGateway implements PaymentGateway
 
         return "-----BEGIN PUBLIC KEY-----\n".chunk_split($key, 64, "\n")."-----END PUBLIC KEY-----\n";
     }
+    /**
+     * 拉取微信支付日账单（A7-支付渠道对账，V3）
+     *
+     * 走 /v3/bill/tradebill 取 download_url → GET（gzip）→ 解析 CSV。
+     * ⚠️ 未对真实商户环境验证：任何异常都降级为 fail，由引擎改走日志源，不会中断对账。
+     */
+    public function downloadBill(string $billDate, array $config): StatementResult
+    {
+        try {
+            $path = '/v3/bill/tradebill?bill_date='.$billDate.'&bill_type=ALL';
+            $token = $this->wechatBillAuth('GET', $path, $config);
+
+            $resp = Http::withHeaders([
+                'Authorization' => $token,
+                'Accept' => 'application/json',
+            ])->get(self::BASE_URI.'/v3/bill/tradebill', [
+                'bill_date' => $billDate,
+                'bill_type' => 'ALL',
+            ])->json();
+
+            if (empty($resp['download_url'])) {
+                return StatementResult::fail('微信账单下载地址为空');
+            }
+
+            $body = (string) Http::withHeaders(['Authorization' => $token])
+                ->get($resp['download_url'])->body();
+            $csv = gzdecode($body);
+            if ($csv === false) {
+                $csv = $body;
+            }
+
+            return StatementResult::success($this->parseWechatBillCsv($csv));
+        } catch (Throwable $e) {
+            return StatementResult::fail('微信账单拉取失败：'.$e->getMessage());
+        }
+    }
+
+    private function wechatBillAuth(string $method, string $path, array $config): string
+    {
+        $mchId = (string) ($config['mch_id'] ?? '');
+        $serialNo = (string) ($config['merchant_cert_serial_no'] ?? '');
+        $privateKey = (string) ($config['merchant_private_key'] ?? '');
+        $nonce = bin2hex(random_bytes(8));
+        $timestamp = time();
+        $message = $method."\n".$path."\n".$timestamp."\n".$nonce."\n\n";
+        openssl_sign($message, $signature, $privateKey, OPENSSL_ALGO_SHA256);
+        $sign = base64_encode($signature);
+
+        return sprintf(
+            'WECHATPAY2-SHA256-RSA2048 mchid="%s",nonce_str="%s",signature="%s",timestamp="%d",serial_no="%s"',
+            $mchId, $nonce, $sign, $timestamp, $serialNo
+        );
+    }
+
+    private function parseWechatBillCsv(string $csv): array
+    {
+        $lines = explode("\n", $csv);
+        $header = null;
+        $txns = [];
+
+        foreach ($lines as $line) {
+            $line = trim($line);
+            if ($line === '') {
+                continue;
+            }
+            $cols = str_getcsv($line);
+            if ($header === null) {
+                if (in_array('微信订单号', $cols, true)) {
+                    $header = $cols;
+                }
+                continue;
+            }
+            if (str_starts_with($line, '总交易单数')) {
+                continue;
+            }
+            $map = array_flip($header);
+            if (! isset($map['微信订单号'], $map['订单金额'], $map['交易状态'])) {
+                continue;
+            }
+            $tradeNo = $cols[$map['微信订单号']] ?? '';
+            if ($tradeNo === '' || ! isset($cols[$map['订单金额']])) {
+                continue;
+            }
+            $status = ($cols[$map['交易状态']] ?? '') === 'SUCCESS' ? 'paid' : 'unpaid';
+            $txns[] = new ChannelTransaction(
+                $tradeNo,
+                $cols[$map['商户订单号']] ?? null,
+                (string) ($cols[$map['订单金额']] ?? '0'),
+                $status,
+            );
+        }
+
+        return $txns;
+    }
+
 }

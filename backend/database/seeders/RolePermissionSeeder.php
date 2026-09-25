@@ -91,6 +91,8 @@ class RolePermissionSeeder extends Seeder
         //    渠道切换还会让全站验证码发送行为整体变化。sms.view 为将来的只读角色预留。
         'sms.view',
         'sms.manage',
+        'payment.reconcile.view',
+        'payment.reconcile.handle',
     ];
 
     public function run(): void
@@ -141,6 +143,7 @@ class RolePermissionSeeder extends Seeder
             'payment.view', 'order.log',
             // 收银台：线下核账 + 充值单查看（渠道配置为超管专属）
             'payment.offline.review', 'balance.recharge.view',
+            'payment.reconcile.view', 'payment.reconcile.handle',
             // ⚠️ 客服中心（cs.ticket.view / cs.ticket.handle / cs.faq.manage）**不授予 operator**：
             //    运营与客服为两条职责线，客服权限归 cs_agent 角色。
             //    迁移 2026_09_17_000039 曾误授予 operator 这三个权限，已由

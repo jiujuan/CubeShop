@@ -10,6 +10,7 @@ use App\Services\Payment\Dto\PayParams;
 use App\Services\Payment\Dto\QueryResult;
 use App\Services\Payment\Dto\RefundResult;
 use App\Services\Payment\Dto\TestResult;
+use App\Services\Payment\Dto\StatementResult;
 use App\Services\Payment\PaymentChannelService;
 use Illuminate\Http\Request;
 
@@ -66,4 +67,12 @@ class OfflineGateway implements PaymentGateway
     {
         return TestResult::ok('线下转账无需外部连通性测试');
     }
+    /**
+     * 线下转账无远程账单（A7-支付渠道对账）
+     */
+    public function downloadBill(string $billDate, array $config): StatementResult
+    {
+        return StatementResult::unsupported('线下转账无远程账单，对账改走本地日志源');
+    }
+
 }

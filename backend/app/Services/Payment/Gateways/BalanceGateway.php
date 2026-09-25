@@ -12,6 +12,7 @@ use App\Services\Payment\Dto\PayParams;
 use App\Services\Payment\Dto\QueryResult;
 use App\Services\Payment\Dto\RefundResult;
 use App\Services\Payment\Dto\TestResult;
+use App\Services\Payment\Dto\StatementResult;
 use Illuminate\Http\Request;
 
 /**
@@ -79,4 +80,12 @@ class BalanceGateway implements PaymentGateway
     {
         return TestResult::ok('余额支付无需外部连通性测试');
     }
+    /**
+     * 余额支付无远程账单（A7-支付渠道对账）
+     */
+    public function downloadBill(string $billDate, array $config): StatementResult
+    {
+        return StatementResult::unsupported('余额支付无远程账单，对账改走本地日志源');
+    }
+
 }

@@ -9,6 +9,8 @@ use App\Services\Payment\Dto\PayParams;
 use App\Services\Payment\Dto\QueryResult;
 use App\Services\Payment\Dto\RefundResult;
 use App\Services\Payment\Dto\TestResult;
+use App\Services\Payment\Dto\ChannelTransaction;
+use App\Services\Payment\Dto\StatementResult;
 use Illuminate\Http\Request;
 use RuntimeException;
 
@@ -22,6 +24,8 @@ use RuntimeException;
  */
 class MockGateway implements PaymentGateway
 {
+    /** 测试可注入的合成账单（ChannelTransaction[]），消费后清空 */
+    public static array $syntheticBill = [];
     public function __construct(private readonly string $proxyChannel = Payment::CHANNEL_MOCK)
     {
     }
@@ -136,4 +140,38 @@ class MockGateway implements PaymentGateway
     {
         return (string) config('payments.secret', '');
     }
+    /**
+     * 拉取渠道日账单（A7-支付渠道对账，L1 模拟）
+     *
+     * 默认用本地该渠道当日 success 支付单合成一份自洽账单；
+     * 测试可注入 static $syntheticBill（ChannelTransaction[]）以模拟「渠道有、本地无」等场景。
+     */
+    public function downloadBill(string $billDate, array $config): StatementResult
+    {
+        if (self::$syntheticBill !== []) {
+            $txns = self::$syntheticBill;
+            self::$syntheticBill = [];
+
+            return StatementResult::success($txns);
+        }
+
+        $payments = Payment::query()
+            ->where('channel', $this->channel())
+            ->where('status', Payment::STATUS_SUCCESS)
+            ->whereDate('paid_at', $billDate)
+            ->get();
+
+        $txns = $payments->map(function (Payment $p) {
+            return new ChannelTransaction(
+                (string) $p->channel_trade_no,
+                $p->payment_no,
+                (string) $p->amount,
+                'paid',
+                $p->paid_at,
+            );
+        })->all();
+
+        return StatementResult::success($txns);
+    }
+
 }

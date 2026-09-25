@@ -20,6 +20,7 @@ use App\Http\Controllers\Admin\OperationLogController;
 use App\Http\Controllers\Admin\OrderController as AdminOrderController;
 use App\Http\Controllers\Admin\OrderLogController as AdminOrderLogController;
 use App\Http\Controllers\Admin\PaymentController as AdminPaymentController;
+use App\Http\Controllers\Admin\PaymentReconcileController as AdminPaymentReconcileController;
 use App\Http\Controllers\Admin\PaymentChannelController as AdminPaymentChannelController;
 use App\Http\Controllers\Admin\PaymentLogController as AdminPaymentLogController;
 use App\Http\Controllers\Admin\BalanceRechargeController as AdminBalanceRechargeController;
@@ -451,7 +452,13 @@ Route::middleware(['auth:sanctum', 'account.active'])->group(function () {
         Route::get('/payments/export', [AdminPaymentController::class, 'export'])->middleware(['permission:payment.view', 'throttle:3,1']);
         Route::get('/payments/{id}', [AdminPaymentController::class, 'show'])->middleware('permission:payment.view');
         Route::post('/payments/{id}/close', [AdminPaymentController::class, 'close'])->middleware('permission:payment.manage');
-        Route::post('/payments/{id}/review', [AdminPaymentController::class, 'review'])->middleware('permission:payment.offline.review');
+                Route::post('/payments/{id}/review', [AdminPaymentController::class, 'review'])->middleware('permission:payment.offline.review');
+
+        // 支付渠道日终对账（A7）：运行清单 / 差异工单 / 处置，权限 payment.reconcile.view / handle
+        Route::get('/payment-reconciles', [AdminPaymentReconcileController::class, 'runs'])->middleware('permission:payment.reconcile.view');
+        Route::get('/payment-reconciles/{id}', [AdminPaymentReconcileController::class, 'showRun'])->middleware('permission:payment.reconcile.view');
+        Route::get('/payment-reconcile-diffs', [AdminPaymentReconcileController::class, 'diffs'])->middleware('permission:payment.reconcile.view');
+        Route::post('/payment-reconcile-diffs/{id}/resolve', [AdminPaymentReconcileController::class, 'resolve'])->middleware('permission:payment.reconcile.handle');
 
         // 支付渠道配置 payment.channel.manage（仅超管，§5）
         Route::get('/payment-channels', [AdminPaymentChannelController::class, 'index'])->middleware('permission:payment.channel.manage');
