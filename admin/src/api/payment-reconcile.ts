@@ -15,6 +15,16 @@ export const PAYMENT_CHANNEL_LABELS: Record<PaymentChannel, string> = {
   mock: '本地模拟',
 }
 
+/** 订单来源平台（后端 Payment::PLATFORMS 镜像） */
+export type PayPlatform = 'web' | 'h5' | 'miniprogram'
+
+/** 平台中文（后端 Payment::PLATFORM_LABELS 镜像） */
+export const PAY_PLATFORM_LABELS: Record<PayPlatform, string> = {
+  web: 'Web 商城',
+  h5: 'H5 手机端',
+  miniprogram: '小程序',
+}
+
 export type ReconcileRunStatus = 'running' | 'done' | 'partial' | 'failed'
 
 /** 对账批次状态中文（后端 PaymentReconciliationRun::STATUS_LABELS 镜像） */
@@ -83,7 +93,7 @@ export const RECONCILE_DIFF_STATUS_CLASS: Record<ReconcileDiffStatus, string> = 
   ignored: 'bg-slate-100 text-slate-500',
 }
 
-/** 对账批次头（每渠道每日一条） */
+/** 对账批次头（每渠道每日一条；批次跨平台汇总，无平台维度） */
 export interface PaymentReconcileRunRow {
   id: number
   reconcile_date: string
@@ -127,6 +137,9 @@ export interface PaymentReconcileDiffRow {
   reconcile_date: string
   channel: PaymentChannel
   channel_label: string
+  /** 订单来源平台；漏单（本地无单可挂）为 null，只计入「全部平台」口径 */
+  platform: PayPlatform | null
+  platform_label: string | null
   diff_type: ReconcileDiffType
   diff_type_label: string
   payment_no: string | null
@@ -145,7 +158,7 @@ export interface PaymentReconcileDiffRow {
   created_at: string | null
 }
 
-/** 看板统计（A7 可视化） */
+/** 看板统计（A7 可视化；支持按平台过滤） */
 export interface PaymentReconcileStats {
   total_runs: number
   total_diffs: number
@@ -154,6 +167,8 @@ export interface PaymentReconcileStats {
   resolved_diffs: number
   ignored_diffs: number
   by_type: Partial<Record<ReconcileDiffType, number>>
+  /** 按渠道拆分（渠道 → 差异/待处置/已处置/已忽略） */
+  by_channel: { channel: PaymentChannel; diffs: number; pending: number; resolved: number; ignored: number }[]
   trend: { date: string; diffs: number }[]
 }
 
@@ -170,6 +185,7 @@ export interface PaymentReconcileDiffListParams {
   channel?: PaymentChannel
   diff_type?: ReconcileDiffType
   status?: ReconcileDiffStatus
+  platform?: PayPlatform
   keyword?: string
   page?: number
   page_size?: number
@@ -188,7 +204,7 @@ export function getPaymentReconcileRun(id: number) {
   return request.get<ApiResult<PaymentReconcileRunDetail>>(`/admin/payment-reconciles/${id}`)
 }
 
-// ---------- 差异清单 / 处置 ----------
+// ---------- 差异清单 / 处置 / 导出 ----------
 
 export function getPaymentReconcileDiffs(params: PaymentReconcileDiffListParams = {}) {
   return request.get<ApiResult<{ list: PaymentReconcileDiffRow[]; pagination: Pagination }>>(
@@ -208,8 +224,23 @@ export function resolvePaymentReconcileDiff(
   )
 }
 
+/** 导出对账差异报告（CSV，随当前筛选全量导出；Excel 兼容 UTF-8 BOM） */
+export async function exportPaymentReconcileDiffs(params: PaymentReconcileDiffListParams = {}) {
+  const res = await request.get<Blob>('/admin/payment-reconcile-diffs/export', {
+    params,
+    responseType: 'blob',
+  })
+
+  const url = URL.createObjectURL(res.data)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `payment-reconcile-diffs-${new Date().toISOString().slice(0, 19).replaceAll(/[-:T]/g, '')}.csv`
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
 // ---------- 看板统计（可视化） ----------
 
-export function getPaymentReconcileStats() {
-  return request.get<ApiResult<PaymentReconcileStats>>('/admin/payment-reconciles/stats')
+export function getPaymentReconcileStats(params: { platform?: PayPlatform } = {}) {
+  return request.get<ApiResult<PaymentReconcileStats>>('/admin/payment-reconciles/stats', { params })
 }

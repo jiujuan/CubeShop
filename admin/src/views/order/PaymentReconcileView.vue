@@ -15,7 +15,10 @@ import {
   RECONCILE_DIFF_STATUS_CLASS,
   RECONCILE_DIFF_STATUS_LABELS,
   PAYMENT_CHANNEL_LABELS,
+  PAY_PLATFORM_LABELS,
+  exportPaymentReconcileDiffs,
   type PaymentChannel,
+  type PayPlatform,
   type ReconcileRunStatus,
   type ReconcileDiffType,
   type ReconcileDiffStatus,
@@ -45,6 +48,7 @@ const stats = ref<PaymentReconcileStats>({
   resolved_diffs: 0,
   ignored_diffs: 0,
   by_type: {},
+  by_channel: [],
   trend: [],
 })
 /** 分布展示的差异类型（UNKNOWN 仅在有数据时出现） */
@@ -63,9 +67,16 @@ function trendHeight(diffs: number): string {
   const max = Math.max(1, ...stats.value.trend.map((p) => p.diffs))
   return `${Math.max(4, Math.round((diffs / max) * 100))}%`
 }
+/** 看板来源端筛选（不选 = 全部平台） */
+const dashPlatform = ref<'' | PayPlatform>('')
+/** 渠道拆分行宽度占比（相对最大差异数） */
+function channelPct(diffs: number): string {
+  const max = Math.max(1, ...stats.value.by_channel.map((r) => r.diffs))
+  return `${Math.round((diffs / max) * 100)}%`
+}
 async function loadStats() {
   try {
-    const { data } = await getPaymentReconcileStats()
+    const { data } = await getPaymentReconcileStats({ platform: dashPlatform.value || undefined })
     stats.value = data.data
   } catch {
     // 看板保持零值
@@ -90,7 +101,9 @@ const diffDate = ref('')
 const diffChannel = ref<'' | PaymentChannel>('')
 const diffType = ref<'' | ReconcileDiffType>('')
 const diffStatus = ref<'' | ReconcileDiffStatus>('')
+const diffPlatform = ref<'' | PayPlatform>('')
 const diffKeyword = ref('')
+const exporting = ref(false)
 
 const confirmState = ref<{ id: number; payment_no: string; typeLabel: string; remark: string } | null>(null)
 const pendingId = ref<number | null>(null)
@@ -124,6 +137,7 @@ async function loadDiffs(page = 1) {
       channel: diffChannel.value || undefined,
       diff_type: diffType.value || undefined,
       status: diffStatus.value || undefined,
+      platform: diffPlatform.value || undefined,
       keyword: diffKeyword.value.trim() || undefined,
       page,
       page_size: diffPagination.value.page_size,
@@ -143,6 +157,26 @@ function searchRuns() {
 
 function searchDiffs() {
   loadDiffs(1)
+}
+
+/** 导出对账差异报告（CSV，随当前筛选全量） */
+async function doExport() {
+  exporting.value = true
+  try {
+    await exportPaymentReconcileDiffs({
+      date: diffDate.value || undefined,
+      channel: diffChannel.value || undefined,
+      diff_type: diffType.value || undefined,
+      status: diffStatus.value || undefined,
+      platform: diffPlatform.value || undefined,
+      keyword: diffKeyword.value.trim() || undefined,
+    })
+    tip.value = '对账差异报告已导出'
+  } catch (e) {
+    tip.value = (e as { message?: string })?.message ?? '导出失败'
+  } finally {
+    exporting.value = false
+  }
 }
 
 function goRunPage(page: number) {
@@ -207,6 +241,13 @@ onMounted(() => {
 <template>
   <div class="space-y-4">
     <!-- ============ 对账看板（可视化） ============ -->
+    <div class="flex items-center justify-between">
+      <h2 class="text-lg font-semibold text-slate-800">对账看板</h2>
+      <select v-model="dashPlatform" class="h-8 rounded border border-slate-200 px-2 text-[13px] text-black" data-testid="dash-platform" @change="loadStats">
+        <option value="">全部平台</option>
+        <option v-for="(label, key) in PAY_PLATFORM_LABELS" :key="key" :value="key">{{ label }}</option>
+      </select>
+    </div>
     <div class="grid grid-cols-2 gap-4 md:grid-cols-4">
       <div class="rounded-lg bg-white p-5 shadow-sm">
         <div class="text-xs text-slate-400">对账批次总数</div>
@@ -255,6 +296,28 @@ onMounted(() => {
           >
             <div class="w-full rounded bg-[#1677ff]" :style="{ height: trendHeight(p.diffs) }"></div>
             <div class="mt-1 text-[10px] text-slate-400">{{ idx % 2 === 0 ? p.date.slice(5) : '' }}</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 按渠道拆分 -->
+    <div class="rounded-lg bg-white p-5 shadow-sm" data-testid="by-channel">
+      <h2 class="mb-4 text-sm font-semibold text-slate-800">按渠道拆分</h2>
+      <div v-if="!stats.by_channel.length" class="py-6 text-center text-[13px] text-slate-400">暂无差异数据</div>
+      <div class="space-y-3">
+        <div v-for="r in stats.by_channel" :key="r.channel" class="text-[13px]">
+          <div class="mb-1 flex items-center justify-between">
+            <span class="text-slate-600">{{ PAYMENT_CHANNEL_LABELS[r.channel] ?? r.channel }}</span>
+            <span class="text-slate-500">
+              差异 <b class="font-mono text-slate-800">{{ r.diffs }}</b>
+              · 待处理 <b class="font-mono text-amber-600">{{ r.pending }}</b>
+              · 已处置 <b class="font-mono text-emerald-600">{{ r.resolved }}</b>
+              · 已忽略 <b class="font-mono text-slate-500">{{ r.ignored }}</b>
+            </span>
+          </div>
+          <div class="h-2 w-full overflow-hidden rounded bg-slate-100">
+            <div class="h-2 rounded bg-[#1677ff]" :style="{ width: channelPct(r.diffs) }"></div>
           </div>
         </div>
       </div>
@@ -347,6 +410,14 @@ onMounted(() => {
         <button class="flex h-8 items-center gap-1 rounded bg-[#1677ff] px-3 text-white hover:bg-[#4096ff]" data-testid="diff-search" @click="searchDiffs">
           <Search class="h-3.5 w-3.5" /> 查询
         </button>
+        <button
+          class="flex h-8 items-center gap-1 rounded border border-slate-200 px-3 text-slate-600 hover:bg-slate-50 disabled:opacity-40"
+          :disabled="exporting"
+          data-testid="diff-export"
+          @click="doExport"
+        >
+          <FileText class="h-3.5 w-3.5" /> {{ exporting ? '导出中…' : '导出报告' }}
+        </button>
       </div>
 
       <table class="w-full text-[13px]">
@@ -354,6 +425,7 @@ onMounted(() => {
           <tr class="border-b border-slate-200 text-left text-slate-500">
             <th class="px-3 py-1.5">日期</th>
             <th class="w-20 px-3 py-1.5">渠道</th>
+            <th class="w-20 px-3 py-1.5">平台</th>
             <th class="w-32 px-3 py-1.5">类型</th>
             <th class="px-3 py-1.5">关联单号</th>
             <th class="w-24 px-3 py-1.5">本地金额</th>
@@ -367,6 +439,7 @@ onMounted(() => {
           <tr v-for="row in diffs" :key="row.id" class="border-b border-slate-100 hover:bg-slate-50" :data-testid="`row-${row.id}`">
             <td class="px-3 py-1.5 font-mono text-black">{{ row.reconcile_date }}</td>
             <td class="px-3 py-1.5 text-black">{{ row.channel_label }}</td>
+            <td class="px-3 py-1.5 text-black">{{ row.platform_label || '-' }}</td>
             <td class="px-3 py-1.5">
               <span class="rounded px-2 py-0.5 text-xs" :class="RECONCILE_DIFF_TYPE_CLASS[row.diff_type]">{{ RECONCILE_DIFF_TYPE_LABELS[row.diff_type] }}</span>
             </td>
@@ -401,10 +474,10 @@ onMounted(() => {
             </td>
           </tr>
           <tr v-if="diffsLoading">
-            <td colspan="9"><LoadingSpinner /></td>
+            <td colspan="10"><LoadingSpinner /></td>
           </tr>
           <tr v-if="!diffs.length && !diffsLoading">
-            <td colspan="9" class="px-3 py-12 text-center text-slate-400" data-testid="empty">暂无差异，资金一致</td>
+            <td colspan="10" class="px-3 py-12 text-center text-slate-400" data-testid="empty">暂无差异，资金一致</td>
           </tr>
         </tbody>
       </table>
@@ -444,6 +517,7 @@ onMounted(() => {
       <div v-if="detailState" class="space-y-2 text-[13px] text-black">
         <div class="flex justify-between"><span class="text-slate-500">对账日期</span><span class="font-mono">{{ detailState.reconcile_date }}</span></div>
         <div class="flex justify-between"><span class="text-slate-500">渠道</span><span>{{ detailState.channel_label }}</span></div>
+        <div class="flex justify-between"><span class="text-slate-500">平台</span><span>{{ detailState.platform_label || '-' }}</span></div>
         <div class="flex justify-between"><span class="text-slate-500">类型</span><span>{{ detailState.diff_type_label }}</span></div>
         <div class="flex justify-between"><span class="text-slate-500">支付单号</span><span class="font-mono">{{ detailState.payment_no || '-' }}</span></div>
         <div class="flex justify-between"><span class="text-slate-500">渠道流水号</span><span class="font-mono">{{ detailState.channel_trade_no || '-' }}</span></div>
