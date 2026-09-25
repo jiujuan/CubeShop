@@ -42,3 +42,4 @@ docs/testing/.smoke-*
 /shared/region-dict/dist/
 
 docs/testing/evidence
+docs/security
