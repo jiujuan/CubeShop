@@ -243,7 +243,7 @@ onMounted(() => {
     <!-- ============ 对账看板（可视化） ============ -->
     <div class="flex items-center justify-between">
       <h2 class="text-lg font-semibold text-slate-800">对账看板</h2>
-      <select v-model="dashPlatform" class="h-8 rounded border border-slate-200 px-2 text-[13px] text-black" data-testid="dash-platform" @change="loadStats">
+      <select v-model="dashPlatform" class="h-8 rounded border border-slate-200 px-2 outline-none focus:border-[#1677ff] text-[13px] text-black" data-testid="dash-platform" @change="loadStats">
         <option value="">全部平台</option>
         <option v-for="(label, key) in PAY_PLATFORM_LABELS" :key="key" :value="key">{{ label }}</option>
       </select>
@@ -328,12 +328,12 @@ onMounted(() => {
       <h2 class="mb-4 text-lg font-semibold text-slate-800">对账批次</h2>
 
       <div class="mb-4 flex flex-wrap items-center gap-2 text-[13px]">
-        <input v-model="runDate" type="date" class="h-8 rounded border border-slate-200 px-2 text-black" data-testid="run-date" />
-        <select v-model="runChannel" class="h-8 rounded border border-slate-200 px-2 text-black" data-testid="run-channel">
+        <input v-model="runDate" type="date" class="h-8 rounded border border-slate-200 px-2 outline-none focus:border-[#1677ff] text-black" data-testid="run-date" />
+        <select v-model="runChannel" class="h-8 rounded border border-slate-200 px-2 outline-none focus:border-[#1677ff] text-black" data-testid="run-channel">
           <option value="">全部渠道</option>
           <option v-for="c in channels" :key="c" :value="c">{{ PAYMENT_CHANNEL_LABELS[c] }}</option>
         </select>
-        <select v-model="runStatus" class="h-8 rounded border border-slate-200 px-2 text-black" data-testid="run-status">
+        <select v-model="runStatus" class="h-8 rounded border border-slate-200 px-2 outline-none focus:border-[#1677ff] text-black" data-testid="run-status">
           <option value="">全部结论</option>
           <option v-for="(label, key) in RECONCILE_RUN_STATUS_LABELS" :key="key" :value="key">{{ label }}</option>
         </select>
@@ -393,20 +393,20 @@ onMounted(() => {
       <p v-if="tip" class="mb-4 rounded-md bg-emerald-50 px-3 py-2 text-xs text-emerald-600" data-testid="tip">{{ tip }}</p>
 
       <div class="mb-4 flex flex-wrap items-center gap-2 text-[13px]">
-        <input v-model="diffDate" type="date" class="h-8 rounded border border-slate-200 px-2 text-black" data-testid="filter-date" />
-        <select v-model="diffChannel" class="h-8 rounded border border-slate-200 px-2 text-black" data-testid="filter-channel">
+        <input v-model="diffDate" type="date" class="h-8 rounded border border-slate-200 px-2 outline-none focus:border-[#1677ff] text-black" data-testid="filter-date" />
+        <select v-model="diffChannel" class="h-8 rounded border border-slate-200 px-2 outline-none focus:border-[#1677ff] text-black" data-testid="filter-channel">
           <option value="">全部渠道</option>
           <option v-for="c in channels" :key="c" :value="c">{{ PAYMENT_CHANNEL_LABELS[c] }}</option>
         </select>
-        <select v-model="diffType" class="h-8 rounded border border-slate-200 px-2 text-black" data-testid="filter-type">
+        <select v-model="diffType" class="h-8 rounded border border-slate-200 px-2 outline-none focus:border-[#1677ff] text-black" data-testid="filter-type">
           <option value="">全部类型</option>
           <option v-for="(label, key) in RECONCILE_DIFF_TYPE_LABELS" :key="key" :value="key">{{ label }}</option>
         </select>
-        <select v-model="diffStatus" class="h-8 rounded border border-slate-200 px-2 text-black" data-testid="filter-status">
+        <select v-model="diffStatus" class="h-8 rounded border border-slate-200 px-2 outline-none focus:border-[#1677ff] text-black" data-testid="filter-status">
           <option value="">全部状态</option>
           <option v-for="(label, key) in RECONCILE_DIFF_STATUS_LABELS" :key="key" :value="key">{{ label }}</option>
         </select>
-        <input v-model="diffKeyword" placeholder="支付单号 / 渠道流水号 / 订单号" class="h-8 w-56 rounded border border-slate-200 px-2 text-black" data-testid="filter-keyword" />
+        <input v-model="diffKeyword" placeholder="支付单号 / 渠道流水号 / 订单号" class="h-8 w-56 rounded border border-slate-200 px-2 outline-none focus:border-[#1677ff] text-black" data-testid="filter-keyword" />
         <button class="flex h-8 items-center gap-1 rounded bg-[#1677ff] px-3 text-white hover:bg-[#4096ff]" data-testid="diff-search" @click="searchDiffs">
           <Search class="h-3.5 w-3.5" /> 查询
         </button>
