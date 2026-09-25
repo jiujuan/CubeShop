@@ -115,6 +115,12 @@ const router = createRouter({
       meta: { title: '个人中心 · CubeShop', requiresAuth: true },
     },
     {
+      path: '/reconcile-dashboard',
+      name: 'reconcile-dashboard',
+      component: () => import('@/views/ReconcileDashboardView.vue'),
+      meta: { title: '支付对账看板 · CubeShop', requiresAuth: true },
+    },
+    {
       path: '/account/favorites',
       name: 'favorites',
       component: () => import('@/views/FavoriteView.vue'),

@@ -6,6 +6,11 @@ export interface UserInfo {
   username: string
   nickname: string | null
   roles: string[]
+  /**
+   * 权限码（仅运营账号返回；买家恒为空数组）。
+   * 前台对账看板等运营页据此做入口显隐，真正的访问控制仍由后端权限中间件兜底。
+   */
+  permissions?: string[]
 }
 
 export interface Captcha {
