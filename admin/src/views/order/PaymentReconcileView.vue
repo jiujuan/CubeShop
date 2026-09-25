@@ -1,15 +1,17 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { Search, FileText } from 'lucide-vue-next'
 
 import {
   getPaymentReconciles,
   getPaymentReconcileDiffs,
+  getPaymentReconcileStats,
   resolvePaymentReconcileDiff,
   RECONCILE_RUN_STATUS_CLASS,
   RECONCILE_RUN_STATUS_LABELS,
   RECONCILE_DIFF_TYPE_CLASS,
   RECONCILE_DIFF_TYPE_LABELS,
+  RECONCILE_DIFF_TYPE_BAR,
   RECONCILE_DIFF_STATUS_CLASS,
   RECONCILE_DIFF_STATUS_LABELS,
   PAYMENT_CHANNEL_LABELS,
@@ -19,6 +21,7 @@ import {
   type ReconcileDiffStatus,
   type PaymentReconcileRunRow,
   type PaymentReconcileDiffRow,
+  type PaymentReconcileStats,
 } from '@/api/payment-reconcile'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import LoadingSpinner from '@/components/LoadingSpinner.vue'
@@ -32,6 +35,42 @@ import TablePagination from '@/components/TablePagination.vue'
  * 差异处置是资金安全闭环的最后一步：resolve 按差异类型记录处置结论，ignore 仅关单。
  */
 const channels = Object.keys(PAYMENT_CHANNEL_LABELS) as PaymentChannel[]
+
+// ---------- 看板统计（可视化） ----------
+const stats = ref<PaymentReconcileStats>({
+  total_runs: 0,
+  total_diffs: 0,
+  pending_diffs: 0,
+  processing_diffs: 0,
+  resolved_diffs: 0,
+  ignored_diffs: 0,
+  by_type: {},
+  trend: [],
+})
+/** 分布展示的差异类型（UNKNOWN 仅在有数据时出现） */
+const distTypes = computed<ReconcileDiffType[]>(() => {
+  const base: ReconcileDiffType[] = ['MISSING_LOCAL', 'MISSING_CHANNEL', 'AMOUNT_MISMATCH', 'DUPLICATE_CALLBACK']
+  if ((stats.value.by_type?.UNKNOWN ?? 0) > 0) base.push('UNKNOWN')
+  return base
+})
+/** 类型分布条宽度占比（相对最大类型） */
+function distPct(count: number): string {
+  const max = Math.max(1, ...distTypes.value.map((t) => stats.value.by_type?.[t] ?? 0))
+  return `${Math.round((count / max) * 100)}%`
+}
+/** 趋势柱高度占比（相对每日最大差异，最小 4% 保证可见） */
+function trendHeight(diffs: number): string {
+  const max = Math.max(1, ...stats.value.trend.map((p) => p.diffs))
+  return `${Math.max(4, Math.round((diffs / max) * 100))}%`
+}
+async function loadStats() {
+  try {
+    const { data } = await getPaymentReconcileStats()
+    stats.value = data.data
+  } catch {
+    // 看板保持零值
+  }
+}
 
 // ---------- 对账批次 ----------
 const runs = ref<PaymentReconcileRunRow[]>([])
@@ -159,6 +198,7 @@ async function doIgnore(row: PaymentReconcileDiffRow) {
 }
 
 onMounted(() => {
+  loadStats()
   loadRuns(1)
   loadDiffs(1)
 })
@@ -166,6 +206,60 @@ onMounted(() => {
 
 <template>
   <div class="space-y-4">
+    <!-- ============ 对账看板（可视化） ============ -->
+    <div class="grid grid-cols-2 gap-4 md:grid-cols-4">
+      <div class="rounded-lg bg-white p-5 shadow-sm">
+        <div class="text-xs text-slate-400">对账批次总数</div>
+        <div class="mt-1 text-2xl font-semibold text-slate-800" data-testid="stat-runs">{{ stats.total_runs }}</div>
+      </div>
+      <div class="rounded-lg bg-white p-5 shadow-sm">
+        <div class="text-xs text-slate-400">差异工单总数</div>
+        <div class="mt-1 text-2xl font-semibold text-slate-800" data-testid="stat-diffs">{{ stats.total_diffs }}</div>
+      </div>
+      <div class="rounded-lg bg-white p-5 shadow-sm">
+        <div class="text-xs text-slate-400">待处理</div>
+        <div class="mt-1 text-2xl font-semibold" :class="stats.pending_diffs > 0 ? 'text-amber-600' : 'text-emerald-600'" data-testid="stat-pending">{{ stats.pending_diffs }}</div>
+      </div>
+      <div class="rounded-lg bg-white p-5 shadow-sm">
+        <div class="text-xs text-slate-400">已闭环（处置+忽略）</div>
+        <div class="mt-1 text-2xl font-semibold text-slate-800" data-testid="stat-closed">{{ stats.resolved_diffs + stats.ignored_diffs }}</div>
+      </div>
+    </div>
+
+    <div class="grid grid-cols-1 gap-4 lg:grid-cols-2">
+      <!-- 差异类型分布 -->
+      <div class="rounded-lg bg-white p-5 shadow-sm">
+        <h2 class="mb-4 text-sm font-semibold text-slate-800">差异类型分布</h2>
+        <div class="space-y-3">
+          <div v-for="t in distTypes" :key="t" class="text-[13px]" :data-testid="`dist-${t}`">
+            <div class="mb-1 flex justify-between">
+              <span class="text-slate-600">{{ RECONCILE_DIFF_TYPE_LABELS[t] }}</span>
+              <span class="font-mono text-slate-800">{{ stats.by_type[t] ?? 0 }}</span>
+            </div>
+            <div class="h-2 w-full overflow-hidden rounded bg-slate-100">
+              <div class="h-2 rounded" :class="RECONCILE_DIFF_TYPE_BAR[t]" :style="{ width: distPct(stats.by_type[t] ?? 0) }"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 近 14 天差异趋势 -->
+      <div class="rounded-lg bg-white p-5 shadow-sm">
+        <h2 class="mb-4 text-sm font-semibold text-slate-800">近 14 天差异趋势</h2>
+        <div class="flex h-40 items-end gap-1" data-testid="trend">
+          <div
+            v-for="(p, idx) in stats.trend"
+            :key="p.date"
+            class="flex flex-1 flex-col items-center justify-end"
+            :title="`${p.date}：${p.diffs} 笔`"
+          >
+            <div class="w-full rounded bg-[#1677ff]" :style="{ height: trendHeight(p.diffs) }"></div>
+            <div class="mt-1 text-[10px] text-slate-400">{{ idx % 2 === 0 ? p.date.slice(5) : '' }}</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <!-- ============ 对账批次 ============ -->
     <div class="rounded-lg bg-white p-5 shadow-sm">
       <h2 class="mb-4 text-lg font-semibold text-slate-800">对账批次</h2>

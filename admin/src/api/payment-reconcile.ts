@@ -57,6 +57,15 @@ export const RECONCILE_DIFF_TYPE_CLASS: Record<ReconcileDiffType, string> = {
   UNKNOWN: 'bg-slate-100 text-slate-500',
 }
 
+/** 看板分布条实心配色（语义与列表徽章一致，用于可视化条形） */
+export const RECONCILE_DIFF_TYPE_BAR: Record<ReconcileDiffType, string> = {
+  MISSING_LOCAL: 'bg-orange-400',
+  MISSING_CHANNEL: 'bg-red-400',
+  AMOUNT_MISMATCH: 'bg-amber-400',
+  DUPLICATE_CALLBACK: 'bg-violet-400',
+  UNKNOWN: 'bg-slate-300',
+}
+
 export type ReconcileDiffStatus = 'pending' | 'processing' | 'resolved' | 'ignored'
 
 /** 差异处置状态中文（后端 PaymentReconciliationDiff::STATUS_LABELS 镜像） */
@@ -136,6 +145,18 @@ export interface PaymentReconcileDiffRow {
   created_at: string | null
 }
 
+/** 看板统计（A7 可视化） */
+export interface PaymentReconcileStats {
+  total_runs: number
+  total_diffs: number
+  pending_diffs: number
+  processing_diffs: number
+  resolved_diffs: number
+  ignored_diffs: number
+  by_type: Partial<Record<ReconcileDiffType, number>>
+  trend: { date: string; diffs: number }[]
+}
+
 export interface PaymentReconcileRunListParams {
   date?: string
   channel?: PaymentChannel
@@ -185,4 +206,10 @@ export function resolvePaymentReconcileDiff(
     `/admin/payment-reconcile-diffs/${id}/resolve`,
     payload,
   )
+}
+
+// ---------- 看板统计（可视化） ----------
+
+export function getPaymentReconcileStats() {
+  return request.get<ApiResult<PaymentReconcileStats>>('/admin/payment-reconciles/stats')
 }
