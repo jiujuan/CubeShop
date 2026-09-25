@@ -212,4 +212,10 @@ class PaymentReconcileController extends Controller
             'status_label' => $diff->statusLabel(),
         ], $data['action'] === 'ignore' ? '已忽略' : '已处置');
     }
+
+    /** 看板统计（批次/差异总数、按状态、按类型、近14天趋势） */
+    public function stats(): JsonResponse
+    {
+        return $this->success($this->reconcile->stats());
+    }
 }

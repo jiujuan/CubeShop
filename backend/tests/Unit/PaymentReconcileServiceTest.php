@@ -247,3 +247,28 @@ test('A7S-11 处置不存在的差异 → 404', function () {
     expect(fn () => $svc->resolve(999999, 1))->toThrow(BusinessException::class)
         ->and(fn () => $svc->ignore(999999, 1))->toThrow(BusinessException::class);
 });
+
+test('A7S-12 stats 看板聚合：批次/差异总数、按类型、近14天趋势', function () {
+    $date = '2026-09-20';
+    MockGateway::$syntheticBill = [
+        new ChannelTransaction('CH_ONLY_1', null, '30.00', 'paid'),
+    ];
+    app(PaymentReconcileService::class)->run($date, ['mock']);
+
+    // 造一笔已处置差异：应计入总数但不计入 pending
+    $first = PaymentReconciliationDiff::first();
+    app(PaymentReconcileService::class)->resolve((int) $first->id, 1, '已补单');
+
+    $stats = app(PaymentReconcileService::class)->stats();
+
+    expect($stats['total_runs'])->toBe(1)
+        ->and($stats['total_diffs'])->toBe(1)
+        ->and($stats['pending_diffs'])->toBe(0)
+        ->and($stats['resolved_diffs'])->toBe(1)
+        ->and($stats['by_type'][PaymentReconciliationDiff::TYPE_MISSING_LOCAL] ?? 0)->toBe(1)
+        ->and($stats['trend'])->toHaveCount(14);
+
+    $point = collect($stats['trend'])->firstWhere('date', $date);
+    expect($point)->not->toBeNull()
+        ->and($point['diffs'])->toBe(1);
+});

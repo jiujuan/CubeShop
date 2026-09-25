@@ -391,4 +391,58 @@ class PaymentReconcileService
 
         return $diff->refresh();
     }
+
+    /**
+     * 全局对账统计（看板可视化）。
+     *
+     * @return array{
+     *     total_runs:int, total_diffs:int,
+     *     pending_diffs:int, processing_diffs:int, resolved_diffs:int, ignored_diffs:int,
+     *     by_type:array<string,int>, trend:array<int,array{date:string,diffs:int}>
+     * }
+     */
+    public function stats(): array
+    {
+        $totalRuns = PaymentReconciliationRun::query()->count();
+        $totalDiffs = PaymentReconciliationDiff::query()->count();
+
+        $byStatus = PaymentReconciliationDiff::query()
+            ->selectRaw('status, count(*) as cnt')
+            ->groupBy('status')
+            ->pluck('cnt', 'status')
+            ->all();
+
+        $byType = PaymentReconciliationDiff::query()
+            ->selectRaw('diff_type, count(*) as cnt')
+            ->groupBy('diff_type')
+            ->pluck('cnt', 'diff_type')
+            ->all();
+
+        // 近 14 天每日差异趋势（按 reconcile_date 补齐缺失日期）
+        $since = now()->subDays(13)->startOfDay();
+        $raw = PaymentReconciliationDiff::query()
+            ->where('reconcile_date', '>=', $since->format('Y-m-d'))
+            ->selectRaw('reconcile_date, count(*) as cnt')
+            ->groupBy('reconcile_date')
+            ->orderBy('reconcile_date')
+            ->pluck('cnt', 'reconcile_date')
+            ->all();
+
+        $trend = [];
+        for ($i = 0; $i < 14; $i++) {
+            $d = $since->copy()->addDays($i)->format('Y-m-d');
+            $trend[] = ['date' => $d, 'diffs' => (int) ($raw[$d] ?? 0)];
+        }
+
+        return [
+            'total_runs' => (int) $totalRuns,
+            'total_diffs' => (int) $totalDiffs,
+            'pending_diffs' => (int) ($byStatus['pending'] ?? 0),
+            'processing_diffs' => (int) ($byStatus['processing'] ?? 0),
+            'resolved_diffs' => (int) ($byStatus['resolved'] ?? 0),
+            'ignored_diffs' => (int) ($byStatus['ignored'] ?? 0),
+            'by_type' => $byType,
+            'trend' => $trend,
+        ];
+    }
 }

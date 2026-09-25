@@ -456,6 +456,7 @@ Route::middleware(['auth:sanctum', 'account.active'])->group(function () {
 
         // 支付渠道日终对账（A7）：运行清单 / 差异工单 / 处置，权限 payment.reconcile.view / handle
         Route::get('/payment-reconciles', [AdminPaymentReconcileController::class, 'runs'])->middleware('permission:payment.reconcile.view');
+        Route::get('/payment-reconciles/stats', [AdminPaymentReconcileController::class, 'stats'])->middleware('permission:payment.reconcile.view');
         Route::get('/payment-reconciles/{id}', [AdminPaymentReconcileController::class, 'showRun'])->middleware('permission:payment.reconcile.view');
         Route::get('/payment-reconcile-diffs', [AdminPaymentReconcileController::class, 'diffs'])->middleware('permission:payment.reconcile.view');
         Route::post('/payment-reconcile-diffs/{id}/resolve', [AdminPaymentReconcileController::class, 'resolve'])->middleware('permission:payment.reconcile.handle');

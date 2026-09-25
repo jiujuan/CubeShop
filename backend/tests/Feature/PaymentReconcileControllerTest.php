@@ -191,3 +191,20 @@ test('A7C-13 处置需 payment.reconcile.handle：运营可、无权限账号 40
         'action' => 'resolve',
     ], $this->noPermAuth)->assertForbidden();
 });
+
+test('A7C-14 看板统计接口：超管可见结构、无权限 403、未登录 401', function () {
+    $data = $this->getJson('/api/admin/payment-reconciles/stats', $this->adminAuth)
+        ->assertOk()
+        ->json('data');
+
+    expect($data)->toHaveKeys([
+        'total_runs', 'total_diffs', 'pending_diffs', 'processing_diffs',
+        'resolved_diffs', 'ignored_diffs', 'by_type', 'trend',
+    ])
+        ->and($data['total_runs'])->toBe(1) // beforeEach 预置 1 条运行批次
+        ->and($data['total_diffs'])->toBe(1)
+        ->and($data['trend'])->toHaveCount(14);
+
+    $this->getJson('/api/admin/payment-reconciles/stats', $this->noPermAuth)->assertForbidden();
+    $this->getJson('/api/admin/payment-reconciles/stats')->assertUnauthorized();
+});
