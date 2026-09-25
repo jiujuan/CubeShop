@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { Package } from 'lucide-vue-next'
+import { KeyRound, Lock, Package, ShieldCheck, UserRound } from 'lucide-vue-next'
 import {
   CAPTCHA_LENGTH, getCaptcha, getVerifyMode, register, type Captcha,
 } from '@/api/auth'
@@ -248,25 +248,37 @@ async function submit() {
         </p>
 
         <template v-else>
-          <input
-            v-model="username" type="text" placeholder="用户名 / 手机号"
-            class="h-11 w-full rounded-lg border border-slate-200 px-3 outline-none focus:border-[#1677ff]"
-          />
-          <input
-            v-model="password" type="password" placeholder="密码（≥8 位，含字母和数字）"
-            class="h-11 w-full rounded-lg border border-slate-200 px-3 outline-none focus:border-[#1677ff]"
-          />
-          <input
-            v-model="confirm" type="password" placeholder="确认密码"
-            class="h-11 w-full rounded-lg border border-slate-200 px-3 outline-none focus:border-[#1677ff]"
-          />
+          <div class="flex items-center gap-2 rounded-lg border border-slate-200 px-3 focus-within:border-[#1677ff]">
+            <UserRound class="h-4 w-4 text-slate-400" />
+            <input
+              v-model="username" type="text" placeholder="用户名 / 手机号"
+              class="h-11 flex-1 outline-none"
+            />
+          </div>
+          <div class="flex items-center gap-2 rounded-lg border border-slate-200 px-3 focus-within:border-[#1677ff]">
+            <Lock class="h-4 w-4 text-slate-400" />
+            <input
+              v-model="password" type="password" placeholder="密码（≥8 位，含字母和数字）"
+              class="h-11 flex-1 outline-none"
+            />
+          </div>
+          <div class="flex items-center gap-2 rounded-lg border border-slate-200 px-3 focus-within:border-[#1677ff]">
+            <KeyRound class="h-4 w-4 text-slate-400" />
+            <input
+              v-model="confirm" type="password" placeholder="确认密码"
+              class="h-11 flex-1 outline-none"
+            />
+          </div>
 
           <div class="flex gap-2">
-            <input
-              v-model="captchaCode" type="text" :maxlength="CAPTCHA_LENGTH" placeholder="验证码"
-              data-testid="register-captcha-code"
-              class="h-11 w-36 rounded-lg border border-slate-200 px-3 text-center tracking-widest outline-none focus:border-[#1677ff]"
-            />
+            <div class="flex h-11 w-36 items-center gap-2 rounded-lg border border-slate-200 px-3 focus-within:border-[#1677ff]">
+              <ShieldCheck class="h-4 w-4 text-slate-400" />
+              <input
+                v-model="captchaCode" type="text" :maxlength="CAPTCHA_LENGTH" placeholder="验证码"
+                data-testid="register-captcha-code"
+                class="w-full flex-1 text-center tracking-widest outline-none"
+              />
+            </div>
             <button
               type="button" data-testid="register-captcha-image"
               class="flex h-11 w-[140px] shrink-0 items-center justify-center overflow-hidden rounded-lg bg-slate-50 hover:opacity-80"

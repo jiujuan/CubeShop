@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { Eye, EyeOff, Lock, Package, UserRound } from 'lucide-vue-next'
+import { Eye, EyeOff, Lock, Package, ShieldCheck, UserRound } from 'lucide-vue-next'
 import {
   CAPTCHA_LENGTH, getCaptcha, getVerifyMode, login, loginBySmsCode, type Captcha,
 } from '@/api/auth'
@@ -220,11 +220,14 @@ async function submit() {
             </button>
           </div>
           <div class="flex gap-2">
-            <input
-              v-model="captchaCode" type="text" :maxlength="CAPTCHA_LENGTH" placeholder="验证码"
-              class="h-11 w-36 rounded-lg border border-slate-200 px-3 text-center tracking-widest outline-none focus:border-[#1677ff]"
-              @keyup.enter="submit"
-            />
+            <div class="flex h-11 w-36 items-center gap-2 rounded-lg border border-slate-200 px-3 focus-within:border-[#1677ff]">
+              <ShieldCheck class="h-4 w-4 text-slate-400" />
+              <input
+                v-model="captchaCode" type="text" :maxlength="CAPTCHA_LENGTH" placeholder="验证码"
+                class="w-full flex-1 text-center tracking-widest outline-none"
+                @keyup.enter="submit"
+              />
+            </div>
             <button
               type="button" data-testid="login-captcha-image"
               class="flex h-11 w-[140px] shrink-0 items-center justify-center overflow-hidden rounded-lg bg-slate-50 hover:opacity-80"

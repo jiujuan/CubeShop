@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { CAPTCHA_LENGTH, getCaptcha, sendSmsCode, type Captcha, type SmsScene } from '@/api/auth'
+import { MessageSquareCode, Phone, ShieldCheck } from 'lucide-vue-next'
 
 /**
  * 短信验证码字段（注册 / 登录 / 重置密码共用）
@@ -122,18 +123,24 @@ onBeforeUnmount(() => window.clearInterval(timer))
 
 <template>
   <div class="space-y-4" data-testid="sms-code-field">
-    <input
-      v-model="phoneValue" type="tel" maxlength="11" placeholder="手机号"
-      data-testid="sms-phone"
-      class="h-11 w-full rounded-lg border border-slate-200 px-3 outline-none focus:border-[#1677ff]"
-    />
+    <div class="flex items-center gap-2 rounded-lg border border-slate-200 px-3 focus-within:border-[#1677ff]">
+      <Phone class="h-4 w-4 text-slate-400" />
+      <input
+        v-model="phoneValue" type="tel" maxlength="11" placeholder="手机号"
+        data-testid="sms-phone"
+        class="h-11 flex-1 outline-none"
+      />
+    </div>
 
     <div class="flex gap-2">
-      <input
-        v-model="captchaCode" type="text" :maxlength="CAPTCHA_LENGTH" placeholder="图形验证码"
-        data-testid="sms-captcha-code"
-        class="h-11 w-28 rounded-lg border border-slate-200 px-3 text-center tracking-widest outline-none focus:border-[#1677ff]"
-      />
+      <div class="flex h-11 w-28 items-center gap-2 rounded-lg border border-slate-200 px-3 focus-within:border-[#1677ff]">
+        <ShieldCheck class="h-4 w-4 text-slate-400" />
+        <input
+          v-model="captchaCode" type="text" :maxlength="CAPTCHA_LENGTH" placeholder="图形验证码"
+          data-testid="sms-captcha-code"
+          class="w-full flex-1 text-center tracking-widest outline-none"
+        />
+      </div>
       <button
         type="button" data-testid="sms-captcha-image"
         class="flex h-11 w-[120px] shrink-0 items-center justify-center overflow-hidden rounded-lg bg-slate-50 hover:opacity-80"
@@ -146,11 +153,14 @@ onBeforeUnmount(() => window.clearInterval(timer))
     </div>
 
     <div class="flex gap-2">
-      <input
-        v-model="codeValue" type="text" :maxlength="codeLength" placeholder="短信验证码"
-        data-testid="sms-code"
-        class="h-11 flex-1 rounded-lg border border-slate-200 px-3 text-center tracking-widest outline-none focus:border-[#1677ff]"
-      />
+      <div class="flex h-11 flex-1 items-center gap-2 rounded-lg border border-slate-200 px-3 focus-within:border-[#1677ff]">
+        <MessageSquareCode class="h-4 w-4 text-slate-400" />
+        <input
+          v-model="codeValue" type="text" :maxlength="codeLength" placeholder="短信验证码"
+          data-testid="sms-code"
+          class="w-full flex-1 text-center tracking-widest outline-none"
+        />
+      </div>
       <button
         type="button" data-testid="sms-send" :disabled="sending || countdown > 0"
         class="h-11 w-[120px] shrink-0 rounded-lg border border-[#1677ff] text-[#1677ff] transition-colors hover:bg-[#e6f4ff] disabled:opacity-60"
