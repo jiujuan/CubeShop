@@ -188,6 +188,12 @@ const menuGroups = computed<MenuGroup[]>(() => {
     .filter((g) => g.items.length > 0)
 })
 
+/** 菜单激活判断：完全相等或其子路径（startsWith 会把 /refunds-overview 误判进 /refunds） */
+function isActive(path: string): boolean {
+  const current = router.currentRoute.value.path
+  return current === path || current.startsWith(`${path}/`)
+}
+
 const pageTitle = computed(() => (router.currentRoute.value.meta.title as string) || '')
 
 async function handleLogout() {
@@ -217,7 +223,7 @@ async function handleLogout() {
             :to="menu.path"
             :title="menu.title"
             class="flex items-center justify-center rounded-lg py-1.5 text-[#1f2329] transition-colors hover:bg-[#d6e9ff] data-[active=true]:bg-[#1677ff] data-[active=true]:text-white"
-            :data-active="$route.path.startsWith(menu.path)"
+            :data-active="isActive(menu.path)"
           >
             <component :is="icons[menu.icon ?? '']" class="h-4 w-4" />
           </RouterLink>
@@ -239,7 +245,7 @@ async function handleLogout() {
               :key="menu.path"
               :to="menu.path"
               class="flex items-center gap-3 rounded-lg px-3.5 py-1.5 text-sm font-medium text-[#1f2329] transition-colors hover:bg-[#d6e9ff] data-[active=true]:bg-[#1677ff] data-[active=true]:text-white"
-              :data-active="$route.path.startsWith(menu.path)"
+              :data-active="isActive(menu.path)"
             >
               <component :is="icons[menu.icon ?? '']" class="h-4 w-4" />
               {{ menu.title }}
