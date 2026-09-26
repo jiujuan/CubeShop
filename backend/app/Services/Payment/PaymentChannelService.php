@@ -73,6 +73,12 @@ class PaymentChannelService
         return rtrim((string) config('app.url', 'http://127.0.0.1:8000'), '/').'/api/payments/callback/'.$channel;
     }
 
+    /** 退款异步回调地址（Phase 4，只读展示 + 复制；微信退款通知指向此处） */
+    public function buildRefundNotifyUrl(string $channel): string
+    {
+        return rtrim((string) config('app.url', 'http://127.0.0.1:8000'), '/').'/api/payments/'.$channel.'/refund-notify';
+    }
+
     /**
      * 渠道是否对前台开放（渠道开关 × 业务总开关）
      */
@@ -283,6 +289,8 @@ class PaymentChannelService
 
         // 回调/回跳地址与沙箱标志是独立列，合并进配置供网关直接取用
         $config['notify_url'] = $record->notify_url ?: $this->buildNotifyUrl($channel);
+        // 退款异步通知地址（Phase 4）：与支付回调独立，供微信 refund() 填 notify_url
+        $config['refund_notify_url'] = $this->buildRefundNotifyUrl($channel);
         $config['return_url'] = $record->return_url ?: '';
         $config['sandbox'] = $record->sandbox;
 

@@ -10,6 +10,8 @@ use App\Models\SysOperationLog;
 use App\Models\Payment;
 use App\Services\Common\NoGeneratorService;
 use App\Services\Payment\Dto\RefundResult;
+use App\Services\Payment\Dto\RefundCallbackResult;
+use App\Services\Payment\Dto\RefundQueryResult;
 use App\Services\Payment\PaymentChannelService;
 use App\Services\Payment\PaymentGatewayFactory;
 use App\Services\Refund\RefundLogger;
@@ -666,4 +668,132 @@ class RefundService
 
         return $refund;
     }
+
+    /**
+     * 微信退款异步回调接入（Phase 4）
+     *
+     * 由 RefundNotifyController 验签后调用：按 out_refund_no 反查退款单 → 写 channel_callback 日志
+     * → 据 channelStatus 落终态。幂等：终态退款单直接跳过（微信会重放同一通知）。
+     */
+    public function applyChannelCallback(RefundCallbackResult $result): void
+    {
+        if (! $result->ok || $result->outRefundNo === '') {
+            return;
+        }
+
+        $refund = Refund::where('out_refund_no', $result->outRefundNo)->first();
+        if (! $refund) {
+            // 找不到对应退款单（可能延迟 / 重复推送）：不抛错，避免渠道反复重推
+            return;
+        }
+
+        RefundLogger::record($refund, RefundLogger::TYPE_CHANNEL_CALLBACK, [
+            'channel' => $refund->channel,
+            'out_refund_no' => $result->outRefundNo,
+            'channel_status' => $result->channelStatus,
+            'event_type' => $result->eventType,
+            'response' => $result->raw,
+            'actor_type' => 'system',
+            'actor_id' => 0,
+        ]);
+
+        // RefundCallbackResult 无 refundNo 字段：渠道退款单号（refund_id）在 raw 内
+        $this->transitionByChannelStatus($refund, $result->channelStatus, $result->raw, $result->raw['refund_id'] ?? null);
+    }
+
+    /**
+     * 定时轮询查单结果接入（Phase 4 兜底）
+     *
+     * 由 RefundSyncCommand 调用：写 query 日志 → 据 channelStatus 落库。
+     * 查单接口异常（ok=false）不盲目置失败，保持 processing 等待下一轮。
+     */
+    public function applyQueryResult(Refund $refund, RefundQueryResult $result): void
+    {
+        RefundLogger::record($refund, RefundLogger::TYPE_QUERY, [
+            'channel' => $refund->channel,
+            'out_refund_no' => $refund->out_refund_no,
+            'channel_status' => $result->channelStatus,
+            'response' => $result->raw ?: ['ok' => $result->ok],
+            'actor_type' => 'system',
+            'actor_id' => 0,
+        ]);
+
+        if (! $result->ok) {
+            return;
+        }
+
+        $this->transitionByChannelStatus($refund, $result->channelStatus, $result->raw, $result->refundNo);
+    }
+
+    /**
+     * 异步结果统一落库（回调 / 轮询共用）
+     *
+     * SUCCESS → markRefundSuccess（订单 refunded + 退券）；
+     * ABNORMAL / CLOSED → failRefund（订单保持 refunding 转人工）；
+     * PROCESSING → 仅更新状态快照，保持 processing 等待下次回调 / 轮询。
+     * 终态幂等：已 success / failed 直接跳过（回调 / 轮询重放保护）。
+     *
+     * @param  string|null  $refundNo  渠道退款单号（微信 refund_id）
+     */
+    private function transitionByChannelStatus(Refund $refund, string $channelStatus, array $raw, ?string $refundNo): void
+    {
+        if (in_array($refund->status, [Refund::STATUS_SUCCESS, Refund::STATUS_FAILED], true)) {
+            return;
+        }
+
+        DB::transaction(function () use ($refund, $channelStatus, $raw, $refundNo) {
+            $refund->refund_status = $channelStatus;
+            $refund->channel_raw = $raw;
+            if ($refundNo !== null) {
+                $refund->channel_refund_no = $refundNo;
+            }
+            $refund->save();
+        });
+
+        if ($channelStatus === 'SUCCESS') {
+            $order = Order::whereKey($refund->order_id)->firstOrFail();
+            $this->markRefundSuccess(
+                $refund,
+                RefundResult::success($refundNo ?? $refund->channel_refund_no, $raw, $channelStatus),
+                $order,
+                0,
+                OrderLog::OPERATOR_SYSTEM,
+            );
+        } elseif (in_array($channelStatus, ['ABNORMAL', 'CLOSED'], true)) {
+            $this->failRefund($refund, '渠道退款异常：'.$channelStatus, $channelStatus);
+        }
+    }
+
+    /**
+     * 标记退款失败（异步异常 / 轮询超时兜底）
+     *
+     * 订单保持 refunding，由后台人工重试。终态幂等。
+     *
+     * @param  string|null  $channelStatus  渠道侧状态快照（ABNORMAL / CLOSED / TIMEOUT），写入 refund_status
+     */
+    public function failRefund(Refund $refund, string $reason, ?string $channelStatus = null): void
+    {
+        if (in_array($refund->status, [Refund::STATUS_SUCCESS, Refund::STATUS_FAILED], true)) {
+            return;
+        }
+
+        DB::transaction(function () use ($refund, $reason, $channelStatus) {
+            $refund->status = Refund::STATUS_FAILED;
+            $refund->failed_reason = $reason;
+            if ($channelStatus !== null) {
+                $refund->refund_status = $channelStatus;
+            }
+            $refund->save();
+        });
+
+        RefundLogger::record($refund, RefundLogger::TYPE_FAILED, [
+            'channel' => $refund->channel,
+            'out_refund_no' => $refund->out_refund_no,
+            'note' => $reason,
+            'channel_status' => $channelStatus,
+            'actor_type' => 'system',
+            'actor_id' => 0,
+        ]);
+    }
+
 }

@@ -15,6 +15,9 @@ Schedule::command('payments:cancel-timeout')->everyMinute()->withoutOverlapping(
 // 主动查单补偿（收银台方案 §7.2）：每分钟扫描卡在处理中的在线支付单
 Schedule::command('payments:sync-pending')->everyMinute()->withoutOverlapping();
 
+// 退款异步兜底轮询（Phase 4）：每 15 分钟扫描微信退款 processing 超时单并向渠道查单
+Schedule::command('refunds:sync-processing')->everyFifteenMinutes()->withoutOverlapping();
+
 // 支付渠道日终对账（A7）：每日 02:00 跑前一日，差异生成工单交运营处置
 Schedule::command('payments:reconcile')->dailyAt('02:00')->withoutOverlapping();
 

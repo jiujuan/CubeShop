@@ -58,6 +58,7 @@ use App\Http\Controllers\HealthController;
 use App\Http\Controllers\NotificationController;
 use App\Http\Controllers\OrderController;
 use App\Http\Controllers\PaymentController;
+use App\Http\Controllers\Payment\RefundNotifyController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\ReviewController;
 use App\Http\Controllers\Storefront\AttributeController as StorefrontAttributeController;
@@ -675,6 +676,10 @@ Route::middleware(['auth:sanctum', 'account.active'])->group(function () {
 
 // 支付回调（无需用户 Token，由各渠道网关验签保护；API 文档 7.2）
 Route::post('/payments/callback/{channel}', [PaymentController::class, 'callback']);
+
+// 退款异步通知（Phase 4，无需用户 Token，微信验签保护；API 文档 7.2）
+// 仅微信推送；支付宝 / 余额为同步退款不会到达；路由与支付回调按 {channel} 区分。
+Route::post('/payments/{channel}/refund-notify', [RefundNotifyController::class, 'handle']);
 
 // 沙箱模拟渠道通知（SEC-01）：**仅非生产环境注册**。
 // 生产环境该路由根本不存在（404），即使 PAYMENT_SANDBOX 被误配为 true 也无法调用；

@@ -149,6 +149,7 @@ class WechatGateway implements PaymentGateway
         $body = [
             'out_trade_no' => $payment->payment_no,
             'out_refund_no' => $outRefundNo,
+            'notify_url' => (string) ($config['refund_notify_url'] ?? ''),
             'reason' => $reason,
             'amount' => [
                 'refund' => (int) bcmul($amount, '100', 0),
