@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { useRoute } from 'vue-router'
 import { ExternalLink, ImagePlus, X } from 'lucide-vue-next'
 
 import {
@@ -21,6 +22,7 @@ import {
   type Refund,
   type RefundDetail,
   type RefundStatus,
+  type RefundType,
   type ReturnCondition,
   type ReturnReceivedDetail,
   type RefundLogEntry,
@@ -42,6 +44,8 @@ const tip = ref('')
 const statusFilter = ref<'' | RefundStatus>('')
 const refundNo = ref('')
 const orderNo = ref('')
+/** 概览页队列跳转携带的附加筛选（账龄/重试耗尽/类型/退货状态） */
+const queueFilter = ref<{ aged_hours?: number; retry_exhausted?: 1; type?: RefundType; return_status?: string }>({})
 
 const MAX_IMAGES = 9
 
@@ -53,6 +57,7 @@ async function load() {
       refund_no: refundNo.value.trim() || undefined,
       order_no: orderNo.value.trim() || undefined,
       status: statusFilter.value || undefined,
+      ...queueFilter.value,
       page: pagination.value.page,
       page_size: pagination.value.page_size,
     })
@@ -63,10 +68,20 @@ async function load() {
   }
 }
 
-onMounted(load)
+onMounted(() => {
+  // 支持「退款概览」异常队列跳转：/refunds?status=..&aged_hours=..&retry_exhausted=1&type=..&return_status=..
+  const q = useRoute().query
+  if (typeof q.status === 'string' && q.status) statusFilter.value = q.status as RefundStatus
+  if (typeof q.type === 'string' && q.type) queueFilter.value.type = q.type as RefundType
+  if (typeof q.return_status === 'string' && q.return_status) queueFilter.value.return_status = q.return_status
+  if (typeof q.aged_hours === 'string' && q.aged_hours) queueFilter.value.aged_hours = Number(q.aged_hours)
+  if (q.retry_exhausted === '1') queueFilter.value.retry_exhausted = 1
+  load()
+})
 
 function filterStatus(status: '' | RefundStatus) {
   statusFilter.value = status
+  queueFilter.value = {}
   pagination.value.page = 1
   load()
 }
@@ -79,6 +94,7 @@ function search() {
 function reset() {
   refundNo.value = ''
   orderNo.value = ''
+  queueFilter.value = {}
   pagination.value.page = 1
   load()
 }

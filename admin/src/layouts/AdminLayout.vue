@@ -3,7 +3,7 @@ import { computed, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import {
   BarChart3, BookOpen, Box, Calculator, ChevronDown, ChevronRight, ChevronsLeft, ChevronsRight, ClipboardList, CreditCard, FileClock, FolderTree, History, Images, KeyRound,
-  Send, Search, LayoutDashboard, Layers, LayoutList, LifeBuoy, ListTree, LogOut, MapPinned, Menu, MessageSquare, Megaphone, Package, RotateCcw, ScrollText, Settings, ShieldCheck,   SquareUser, Tags, Truck, UploadCloud, UserCog, UserRound, Users, Wallet, Warehouse, Ticket, Undo2, Activity, Diff, Scale, PackageCheck, Gavel,
+  Send, Search, LayoutDashboard, Layers, LayoutList, LifeBuoy, ListTree, LogOut, MapPinned, Menu, MessageSquare, Megaphone, Package, RotateCcw, ScrollText, Settings, ShieldCheck,   SquareUser, Tags, Truck, UploadCloud, UserCog, UserRound, Users, Wallet, Warehouse, Ticket, Undo2, Activity, Diff, Scale, PackageCheck, Gavel, Gauge,
 } from 'lucide-vue-next'
 import { useAuthStore } from '@/stores/auth'
 
@@ -70,6 +70,7 @@ const icons: Record<string, unknown> = {
   Search,
   PackageCheck,
   Gavel,
+  Gauge,
 }
 
 interface MenuItem {
@@ -118,6 +119,7 @@ const menuGroups = computed<MenuGroup[]>(() => {
         { path: '/payments', title: '支付管理', icon: 'CreditCard', permission: 'payment.view' },
         { path: '/payment-logs', title: '支付日志', icon: 'ScrollText', permission: 'payment.view' },
         { path: '/order-logs', title: '订单流水', icon: 'History', permission: 'order.log' },
+        { path: '/refunds-overview', title: '退款概览', icon: 'Gauge', permission: 'refund.view' },
         { path: '/refunds', title: '退款处理', icon: 'RotateCcw', permission: 'refund.view' },
         { path: '/return-refunds', title: '退货处理', icon: 'PackageCheck', permission: 'refund.view' },
         { path: '/refund-disputes', title: '退款纠纷', icon: 'Gavel', permission: 'refund.view' },

@@ -136,8 +136,28 @@ export interface RefundListResult {
   pagination: { page: number; page_size: number; total: number; total_pages: number }
 }
 
-export function getRefunds(params: { refund_no?: string; order_no?: string; status?: RefundStatus; type?: RefundType; return_status?: string; page?: number; page_size?: number }) {
+export function getRefunds(params: { refund_no?: string; order_no?: string; status?: RefundStatus; type?: RefundType; return_status?: string; aged_hours?: number; retry_exhausted?: 1; page?: number; page_size?: number }) {
   return request.get<ApiResult<RefundListResult>>('/admin/refunds', { params })
+}
+
+/** 退款概览统计（GET /admin/refunds/stats，只读聚合） */
+export interface RefundStats {
+  status_counts: Record<RefundStatus, number>
+  status_amounts: Record<RefundStatus, string>
+  /** 未完结单账龄分桶（小时） */
+  aging: { lt_24h: number; h24_72: number; gt_72h: number }
+  queues: {
+    /** processing 超 24h，疑似渠道回调丢失 */
+    processing_stuck: number
+    /** failed 且 retry_count 达上限，待人工 */
+    failed_maxed: number
+    /** return_refund 待退货超 7 天未发货 */
+    return_waiting_overdue: number
+  }
+}
+
+export function getRefundStats() {
+  return request.get<ApiResult<RefundStats>>('/admin/refunds/stats')
 }
 
 /** 退款详情（含订单商品明细与后台处理流水） */
