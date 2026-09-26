@@ -9,6 +9,8 @@ import {
   receiveRefund,
   getRefundLogs,
   retryRefund,
+  batchProcessRefunds,
+  exportRefunds,
   REFUND_MAX_RETRY,
   REFUND_CHANNEL_LABELS,
   REFUND_ACTION_LABELS,
@@ -42,6 +44,7 @@ const statusFilter = ref<'' | RefundStatus>('')
 const MAX_IMAGES = 9
 
 async function load() {
+  selectedIds.value = []
   loading.value = true
   try {
     const res = await getRefunds({
@@ -288,6 +291,67 @@ function closeLogs() {
   logState.value = null
 }
 
+// ---------- 批量审核 + 导出（#5） ----------
+
+const selectedIds = ref<number[]>([])
+const batchBusy = ref(false)
+const exporting = ref(false)
+const batchTip = ref('')
+
+const allSelected = computed(
+  () => refunds.value.length > 0 && selectedIds.value.length === refunds.value.length,
+)
+
+function toggleSelectAll() {
+  selectedIds.value = allSelected.value ? [] : refunds.value.map((r) => r.id)
+}
+
+function toggleSelect(id: number) {
+  selectedIds.value = selectedIds.value.includes(id)
+    ? selectedIds.value.filter((v) => v !== id)
+    : [...selectedIds.value, id]
+}
+
+async function doBatch(action: 'approve' | 'reject') {
+  if (!selectedIds.value.length || batchBusy.value) return
+  batchBusy.value = true
+  batchTip.value = ''
+  tip.value = ''
+  try {
+    const { data: res } = await batchProcessRefunds(selectedIds.value, action)
+    const r = res.data
+    if (r.failed_count) {
+      const failedText = r.failed
+        .slice(0, 3)
+        .map((f) => `${f.refund_no || '#' + f.id}（${f.reason}）`)
+        .join('、')
+      batchTip.value = ''
+      tip.value = `批量审核完成：成功 ${r.succeeded_count} 单，失败 ${r.failed_count} 单：${failedText}${r.failed_count > 3 ? ' 等' : ''}`
+    } else {
+      batchTip.value = `批量审核完成：成功 ${r.succeeded_count} 单`
+    }
+    selectedIds.value = []
+    await load()
+  } catch (e) {
+    tip.value = e instanceof Error ? e.message : '批量审核失败，请稍后重试'
+  } finally {
+    batchBusy.value = false
+  }
+}
+
+async function doExport() {
+  if (exporting.value) return
+  exporting.value = true
+  tip.value = ''
+  try {
+    await exportRefunds({ status: statusFilter.value || undefined })
+  } catch (e) {
+    tip.value = e instanceof Error ? e.message : '导出失败，请稍后重试'
+  } finally {
+    exporting.value = false
+  }
+}
+
 </script>
 
 <template>
@@ -310,10 +374,39 @@ function closeLogs() {
       >{{ tab[1] }}</button>
     </div>
 
+    <!-- 批量审核 + 导出工具条（#5） -->
+    <div class="mb-4 flex flex-wrap items-center gap-3">
+      <button
+        class="rounded border border-slate-200 px-3 py-1 text-xs text-slate-600 hover:border-[#1677ff] hover:text-[#1677ff] disabled:opacity-50"
+        data-testid="export-refunds"
+        :disabled="exporting"
+        @click="doExport"
+      >{{ exporting ? '导出中…' : '导出 CSV' }}</button>
+      <template v-if="selectedIds.length">
+        <span class="text-xs text-slate-500" data-testid="selected-count">已选 {{ selectedIds.length }} 单</span>
+        <button
+          class="rounded bg-emerald-500 px-3 py-1 text-xs text-white hover:bg-emerald-600 disabled:opacity-50"
+          data-testid="batch-approve"
+          :disabled="batchBusy"
+          @click="doBatch('approve')"
+        >批量同意</button>
+        <button
+          class="rounded bg-red-500 px-3 py-1 text-xs text-white hover:bg-red-600 disabled:opacity-50"
+          data-testid="batch-reject"
+          :disabled="batchBusy"
+          @click="doBatch('reject')"
+        >批量拒绝</button>
+      </template>
+    </div>
+    <p v-if="batchTip" class="mb-4 rounded-md bg-emerald-50 px-3 py-2 text-xs text-emerald-600" data-testid="batch-tip">{{ batchTip }}</p>
+
     <!-- 表格 -->
     <table class="w-full text-[13px]">
       <thead>
         <tr class="border-b border-slate-200 text-left text-slate-500">
+          <th class="w-10 px-3 py-1.5">
+            <input type="checkbox" data-testid="select-all" :checked="allSelected" @change="toggleSelectAll" />
+          </th>
           <th class="px-3 py-1.5">退款单号</th>
           <th class="px-3 py-1.5">类型</th>
           <th class="px-3 py-1.5">订单号</th>
@@ -328,6 +421,9 @@ function closeLogs() {
       </thead>
       <tbody>
         <tr v-for="refund in refunds" :key="refund.id" class="border-b border-slate-100 hover:bg-slate-50">
+          <td class="px-3 py-1.5">
+            <input type="checkbox" :data-testid="`select-${refund.id}`" :checked="selectedIds.includes(refund.id)" @change="toggleSelect(refund.id)" />
+          </td>
           <td class="px-3 py-1.5 font-mono text-black">
             {{ refund.refund_no }}
             <span v-if="refund.images?.length" class="ml-1 rounded bg-amber-100 px-1 text-[10px] text-amber-600">图{{ refund.images.length }}</span>
@@ -384,10 +480,10 @@ function closeLogs() {
           </td>
         </tr>
         <tr v-if="loading">
-          <td colspan="8"><LoadingSpinner /></td>
+          <td colspan="10"><LoadingSpinner /></td>
         </tr>
         <tr v-if="!refunds.length && !loading">
-          <td colspan="8" class="px-3 py-12 text-center text-slate-400">暂时无数据</td>
+          <td colspan="10" class="px-3 py-12 text-center text-slate-400">暂时无数据</td>
         </tr>
       </tbody>
     </table>

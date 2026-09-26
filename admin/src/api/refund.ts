@@ -203,3 +203,41 @@ export const REFUND_ACTION_LABELS: Record<string, string> = {
   return_received: '后台确认收货',
   coupon_returned: '返还优惠券',
 }
+
+// ---------- 批量审核 + 导出（#5） ----------
+
+export interface BatchProcessResultItem {
+  id: number
+  refund_no: string
+  status?: string
+  status_label?: string
+  reason?: string
+}
+
+export interface BatchProcessResult {
+  total: number
+  succeeded_count: number
+  failed_count: number
+  succeeded: BatchProcessResultItem[]
+  failed: BatchProcessResultItem[]
+}
+
+/** 批量审核：循环复用 RefundService::process（每单独立事务），非 pending 单逐单回报失败 */
+export function batchProcessRefunds(ids: number[], action: 'approve' | 'reject', remark?: string) {
+  return request.post<ApiResult<BatchProcessResult>>('/admin/refunds/batch-process', { ids, action, remark })
+}
+
+/** 导出退款列表（CSV，随当前筛选全量导出；Excel 兼容 UTF-8 BOM） */
+export async function exportRefunds(params: Parameters<typeof getRefunds>[0] = {}) {
+  const res = await request.get<Blob>('/admin/refunds/export', {
+    params,
+    responseType: 'blob',
+  })
+
+  const url = URL.createObjectURL(res.data)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `refunds-${new Date().toISOString().slice(0, 19).replaceAll(/[-:T]/g, '')}.csv`
+  a.click()
+  URL.revokeObjectURL(url)
+}

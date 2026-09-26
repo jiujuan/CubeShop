@@ -9,12 +9,14 @@ import { useAuthStore } from '@/stores/auth'
  * 后台退款处理（Vitest）
  * 覆盖：列表渲染、详情弹层（商品明细/流水/用户凭证图）、同意/拒绝弹层（理由 + 图片上传）。
  */
-const { getRefundsMock, getRefundDetailMock, processRefundMock, receiveRefundMock, uploadImageMock } = vi.hoisted(() => ({
+const { getRefundsMock, getRefundDetailMock, processRefundMock, receiveRefundMock, uploadImageMock, batchProcessRefundsMock, exportRefundsMock } = vi.hoisted(() => ({
   getRefundsMock: vi.fn(),
   getRefundDetailMock: vi.fn(),
   processRefundMock: vi.fn(),
   receiveRefundMock: vi.fn(),
   uploadImageMock: vi.fn(),
+  batchProcessRefundsMock: vi.fn(),
+  exportRefundsMock: vi.fn(),
 }))
 
 vi.mock('@/api/refund', () => ({
@@ -24,6 +26,8 @@ vi.mock('@/api/refund', () => ({
   receiveRefund: receiveRefundMock,
   getRefundLogs: vi.fn(),
   retryRefund: vi.fn(),
+  batchProcessRefunds: batchProcessRefundsMock,
+  exportRefunds: exportRefundsMock,
   REFUND_MAX_RETRY: 3,
   REFUND_CHANNEL_LABELS: { wechat: '微信支付', alipay: '支付宝', balance: '余额', offline: '线下' },
   REFUND_STATUS_LABELS: { pending: '待审核', approved: '已同意', rejected: '已拒绝', success: '退款成功', failed: '退款失败', processing: '退款中' },
