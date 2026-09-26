@@ -6,9 +6,14 @@ import {
   confirmOrder,
   getOrder,
   rebuyOrder,
+  openRefundDispute,
+  getRefundDisputes,
   REFUND_CHANNEL_LABELS,
+  REFUND_DISPUTE_REASON_LABELS,
   type OrderDetail,
   type OrderItemView,
+  type RefundDisputeBrief,
+  type RefundDisputeReason,
 } from '@/api/order'
 import { getMyReviews, type ReviewItem } from '@/api/review'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
@@ -43,6 +48,7 @@ async function load() {
   try {
     const { data } = await getOrder(route.params.id as string)
     order.value = data.data
+    void loadDisputes()
   } finally {
     loading.value = false
   }
@@ -156,6 +162,75 @@ function refundLineText(r: { type?: string; status: string; return_status?: stri
     s += `｜退货状态：${RETURN_STATUS_LABELS[r.return_status]}`
   }
   return typeLabel + s
+}
+
+// ---------- 退款纠纷/申诉（#4） ----------
+
+const disputeMap = ref<Record<string, RefundDisputeBrief | undefined>>({})
+
+function disputeOf(r: { id: string }): RefundDisputeBrief | undefined {
+  return disputeMap.value[r.id]
+}
+
+/** 是否可发起纠纷：rejected/failed，或退货退款停在待收货；且无进行中的纠纷 */
+function canDispute(r: { id: string; status: string; type?: string; return_status?: string | null }): boolean {
+  const disputable =
+    r.status === 'rejected' ||
+    r.status === 'failed' ||
+    (r.type === 'return_refund' && r.status === 'approved' && r.return_status === 'waiting_return')
+  if (!disputable) return false
+  const d = disputeMap.value[r.id]
+  return !d || d.status === 'resolved_refund' || d.status === 'resolved_reject' || d.status === 'closed'
+}
+
+/** 拉取各退款单的最新纠纷状态（仅争议态退款才请求） */
+async function loadDisputes() {
+  const refunds = (order.value?.refunds ?? []).filter(
+    (r) => r.status === 'rejected' || r.status === 'failed' || (r.type === 'return_refund' && r.return_status === 'waiting_return'),
+  )
+  await Promise.all(refunds.map(async (r) => {
+    try {
+      const { data } = await getRefundDisputes(r.id)
+      disputeMap.value[r.id] = data.data[0]
+    } catch {
+      // 静默：纠纷信息拉取失败不影响订单主流程
+    }
+  }))
+}
+
+const disputeForm = ref<{
+  refund: { id: string; refund_no: string } | null
+  reason: RefundDisputeReason
+  description: string
+  submitting: boolean
+  tip: string
+}>({ refund: null, reason: 'refund_rejected', description: '', submitting: false, tip: '' })
+
+function openDisputeForm(r: { id: string; refund_no: string }) {
+  disputeForm.value = { refund: r, reason: 'refund_rejected', description: '', submitting: false, tip: '' }
+}
+
+function closeDisputeForm() {
+  disputeForm.value.refund = null
+}
+
+async function submitDispute() {
+  const refund = disputeForm.value.refund
+  if (!refund) return
+  disputeForm.value.submitting = true
+  disputeForm.value.tip = ''
+  try {
+    await openRefundDispute(refund.id, {
+      reason_code: disputeForm.value.reason,
+      description: disputeForm.value.description || undefined,
+    })
+    disputeForm.value.refund = null
+    await loadDisputes()
+  } catch (e) {
+    disputeForm.value.tip = e instanceof Error ? e.message : '提交失败，请稍后重试'
+  } finally {
+    disputeForm.value.submitting = false
+  }
 }
 
 /** 确认收货：先二次确认，成功后局部刷新详情与时间轴 */
@@ -457,6 +532,16 @@ async function onReviewSubmitted() {
             <p v-else-if="r.status === 'failed'" class="mt-2 rounded-md bg-orange-50 px-3 py-2 text-xs text-orange-500">
               退款失败{{ r.failed_reason ? '：' + r.failed_reason : '' }}，请联系客服处理
             </p>
+            <!-- 纠纷/申诉（#4）：进度展示 + 发起入口 -->
+            <p v-if="disputeOf(r)" class="mt-2 rounded-md bg-[#fff7e6] px-3 py-2 text-xs text-amber-600" data-testid="refund-dispute-progress">
+              纠纷进度：{{ disputeOf(r)?.status_label }}<template v-if="disputeOf(r)?.resolution_note">｜裁决说明：{{ disputeOf(r)?.resolution_note }}</template>
+            </p>
+            <button
+              v-if="canDispute(r)"
+              class="mt-2 rounded border border-amber-300 px-2.5 py-1 text-xs text-amber-600 hover:bg-amber-50"
+              data-testid="open-dispute"
+              @click="openDisputeForm(r)"
+            >发起纠纷/申诉</button>
             <p v-if="r.out_refund_no || r.channel_refund_no" class="mt-2 font-mono text-[11px] text-slate-400">
               退款单号：{{ r.out_refund_no || '-' }}<template v-if="r.channel_refund_no">｜渠道单号：{{ r.channel_refund_no }}</template>
             </p>
@@ -514,6 +599,25 @@ async function onReviewSubmitted() {
         </div>
 
         <!-- 确认收货二次确认 -->
+        <!-- 发起纠纷弹层（#4） -->
+        <div v-if="disputeForm.refund" class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" @click.self="closeDisputeForm">
+          <div class="w-full max-w-md rounded-xl bg-white p-5" data-testid="dispute-form">
+            <h3 class="text-base font-semibold text-slate-800">发起纠纷/申诉</h3>
+            <p class="mt-1 text-xs text-slate-400">退款单 {{ disputeForm.refund.refund_no }}：对处理结果有异议可申请平台介入</p>
+            <label class="mt-3 block text-sm text-slate-600">争议原因</label>
+            <select v-model="disputeForm.reason" class="mt-1 w-full rounded border border-slate-200 px-2 py-2 text-sm focus:border-[#1677ff] focus:outline-none" data-testid="dispute-reason-select">
+              <option v-for="(label, key) in REFUND_DISPUTE_REASON_LABELS" :key="key" :value="key">{{ label }}</option>
+            </select>
+            <label class="mt-3 block text-sm text-slate-600">问题描述</label>
+            <textarea v-model="disputeForm.description" rows="3" class="mt-1 w-full rounded border border-slate-200 px-2 py-2 text-sm focus:border-[#1677ff] focus:outline-none" data-testid="dispute-description" placeholder="补充说明您的主张" />
+            <p v-if="disputeForm.tip" class="mt-2 rounded bg-red-50 px-3 py-2 text-xs text-red-600" data-testid="dispute-form-tip">{{ disputeForm.tip }}</p>
+            <div class="mt-4 flex justify-end gap-3">
+              <button class="rounded-full border border-slate-200 px-5 py-2 text-sm text-slate-500" @click="closeDisputeForm">取消</button>
+              <button class="rounded-full bg-[#1677ff] px-5 py-2 text-sm text-white disabled:opacity-50" :disabled="disputeForm.submitting" data-testid="dispute-submit" @click="submitDispute">提交申诉</button>
+            </div>
+          </div>
+        </div>
+
         <ConfirmDialog
           v-model="showConfirmDialog"
           title="确认收货"

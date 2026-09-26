@@ -214,6 +214,8 @@ export interface OrderDetail extends OrderBrief {
 }
 
 export interface RefundBrief {
+  /** 退款单 public_id */
+  id: string
   refund_no: string
   type?: 'refund' | 'return_refund'
   amount: string
@@ -229,6 +231,8 @@ export interface RefundBrief {
   created_at: string
   channel?: string | null
   refund_status?: string | null
+  out_refund_no?: string | null
+  channel_refund_no?: string | null
   failed_reason?: string | null
   refunded_at?: string | null
   retry_count?: number
@@ -392,4 +396,67 @@ export interface ShippingInfo {
 /** 订单物流信息（仅本人；未发货返回 null） */
 export function getOrderShipping(id: string | number) {
   return request.get<ApiResult<ShippingInfo | null>>(`/orders/${id}/shipping`)
+}
+
+// ---------- 退款纠纷/申诉（#4） ----------
+
+export type RefundDisputeStatus =
+  | 'opened'
+  | 'platform_involved'
+  | 'resolved_refund'
+  | 'resolved_reject'
+  | 'closed'
+
+export type RefundDisputeReason =
+  | 'refund_rejected'
+  | 'goods_damaged_dispute'
+  | 'timeout_no_process'
+  | 'amount_mismatch'
+  | 'not_received_return'
+  | 'other'
+
+export interface RefundDisputeBrief {
+  id: string
+  refund_id: string | null
+  reason_code: RefundDisputeReason
+  reason_label: string
+  description: string | null
+  evidence: string[]
+  status: RefundDisputeStatus
+  status_label: string
+  resolution: string | null
+  resolution_note: string | null
+  refund_action: string | null
+  created_at: string | null
+  resolved_at: string | null
+  messages?: { id: string; sender_type: 'admin' | 'customer' | 'system'; body: string; created_at: string | null }[]
+}
+
+export const REFUND_DISPUTE_REASON_LABELS: Record<RefundDisputeReason, string> = {
+  refund_rejected: '商家拒绝退款',
+  goods_damaged_dispute: '退货商品争议',
+  timeout_no_process: '超时未处理',
+  amount_mismatch: '退款金额争议',
+  not_received_return: '未收到退货/已退未收',
+  other: '其他',
+}
+
+export const REFUND_DISPUTE_STATUS_LABELS: Record<RefundDisputeStatus, string> = {
+  opened: '待平台介入',
+  platform_involved: '平台处理中',
+  resolved_refund: '已裁决：支持买家',
+  resolved_reject: '已裁决：支持商家',
+  closed: '已关闭',
+}
+
+export function openRefundDispute(refundId: string | number, payload: { reason_code: RefundDisputeReason; description?: string; evidence?: string[] }) {
+  return request.post<ApiResult<RefundDisputeBrief>>(`/refunds/${refundId}/dispute`, payload)
+}
+
+export function getRefundDisputes(refundId: string | number) {
+  return request.get<ApiResult<RefundDisputeBrief[]>>(`/refunds/${refundId}/disputes`)
+}
+
+export function postRefundDisputeMessage(refundId: string | number, disputeId: string | number, body: string) {
+  return request.post<ApiResult<{ id: string }>>(`/refunds/${refundId}/disputes/${disputeId}/messages`, { body })
 }
