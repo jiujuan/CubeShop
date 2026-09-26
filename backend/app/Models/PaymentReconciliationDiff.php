@@ -27,6 +27,11 @@ class PaymentReconciliationDiff extends Model
     public const TYPE_DUPLICATE_CALLBACK = 'DUPLICATE_CALLBACK'; // 同一渠道交易号多次成功回调（重复回调）
     public const TYPE_UNKNOWN = 'UNKNOWN';
 
+    // 退款对账差异（Phase 5 引入，与支付对账共用本表）
+    public const TYPE_REFUND_STATUS_MISMATCH = 'REFUND_STATUS_MISMATCH'; // 本地与渠道退款状态不一致（本地 processing 但渠道已成功 / 本地 success 但渠道失败）
+    public const TYPE_REFUND_CHANNEL_MISSING = 'REFUND_CHANNEL_MISSING'; // 本地有退款单但渠道侧已关闭/异常/查无（疑似漏退 / 渠道长款）
+    public const TYPE_REFUND_LOCAL_MISSING = 'REFUND_LOCAL_MISSING';     // 渠道有退款但本地无对应（queryRefund 模式一般不触发，留作账单模式扩展）
+
     /** @var array<string, string> */
     public const TYPE_LABELS = [
         self::TYPE_MISSING_LOCAL => '漏单（渠道有本地无）',
@@ -34,6 +39,9 @@ class PaymentReconciliationDiff extends Model
         self::TYPE_AMOUNT_MISMATCH => '金额不一致',
         self::TYPE_DUPLICATE_CALLBACK => '重复回调',
         self::TYPE_UNKNOWN => '未知差异',
+        self::TYPE_REFUND_STATUS_MISMATCH => '退款状态不一致',
+        self::TYPE_REFUND_CHANNEL_MISSING => '本地有·渠道无退款记录',
+        self::TYPE_REFUND_LOCAL_MISSING => '渠道有·本地无退款',
     ];
 
     // 处置状态

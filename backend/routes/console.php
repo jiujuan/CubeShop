@@ -17,6 +17,7 @@ Schedule::command('payments:sync-pending')->everyMinute()->withoutOverlapping();
 
 // 退款异步兜底轮询（Phase 4）：每 15 分钟扫描微信退款 processing 超时单并向渠道查单
 Schedule::command('refunds:sync-processing')->everyFifteenMinutes()->withoutOverlapping();
+Schedule::command('refunds:reconcile')->daily()->withoutOverlapping();
 
 // 支付渠道日终对账（A7）：每日 02:00 跑前一日，差异生成工单交运营处置
 Schedule::command('payments:reconcile')->dailyAt('02:00')->withoutOverlapping();

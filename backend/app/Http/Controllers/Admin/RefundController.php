@@ -6,6 +6,7 @@ use App\Exceptions\BusinessException;
 use App\Http\Controllers\Controller;
 use App\Models\Order;
 use App\Models\Refund;
+use App\Models\RefundLog;
 use App\Models\SysOperationLog;
 use App\Services\Refund\RefundService;
 use App\Support\ApiResponse;
@@ -189,6 +190,40 @@ class RefundController extends Controller
     }
 
     /**
+     * 退款全链路事件日志：GET /admin/refunds/{id}/logs
+     *
+     * 读取 refund_logs（Phase 1 引入，append-only），覆盖申请→审核→调渠道→回调→查单→重试→终态
+     * 每个重要节点，供后台「退款日志」抽屉追溯。与 SysOperationLog（后台处理流水）互补。
+     */
+    public function logs(Request $request, int $id): JsonResponse
+    {
+        $refund = Refund::find($id);
+        if (! $refund) {
+            throw BusinessException::notFound('退款单不存在');
+        }
+
+        $logs = RefundLog::query()
+            ->where('refund_id', $refund->id)
+            ->orderBy('id')
+            ->get()
+            ->map(fn (RefundLog $log) => [
+                'id' => $log->id,
+                'type' => $log->type,
+                'channel' => $log->channel,
+                'out_refund_no' => $log->out_refund_no,
+                'channel_status' => $log->channel_status,
+                'actor_type' => $log->actor_type,
+                'actor_id' => $log->actor_id,
+                'note' => $log->note,
+                'request' => $log->request,
+                'response' => $log->response,
+                'created_at' => $log->created_at?->format('Y-m-d H:i:s'),
+            ])->all();
+
+        return $this->success(['refund_id' => $refund->id, 'logs' => $logs]);
+    }
+
+    /**
      * 解码操作日志 content（JSON 字符串）为结构化数据
      *
      * 后台「处理记录」需要按中文键值渲染（含图片），直接展示原始 JSON 不可读。
@@ -230,6 +265,14 @@ class RefundController extends Controller
             'processed_by' => $refund->processed_by,
             'processed_by_name' => $refund->processor?->nickname ?: $refund->processor?->username,
             'processed_at' => $refund->processed_at?->format('Y-m-d H:i:s'),
+            'channel' => $refund->channel,
+            'out_refund_no' => $refund->out_refund_no,
+            'channel_refund_no' => $refund->channel_refund_no,
+            'refund_status' => $refund->refund_status,
+            'failed_reason' => $refund->failed_reason,
+            'retry_count' => (int) $refund->retry_count,
+            'refunded_at' => $refund->refunded_at?->format('Y-m-d H:i:s'),
+            'max_retry' => RefundService::MAX_RETRY,
             'created_at' => $refund->created_at?->format('Y-m-d H:i:s'),
             'order_status' => $refund->order?->status,
         ];
