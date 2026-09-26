@@ -7,6 +7,7 @@ use App\Models\Traits\HasPublicId;
 use App\Models\Traits\ReleasesMediaOnDelete;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 /**
  * 退款申请（数据库设计 2.8）
@@ -20,6 +21,7 @@ class Refund extends Model
     public const STATUS_REJECTED = 'rejected';
     public const STATUS_SUCCESS = 'success';
     public const STATUS_FAILED = 'failed';
+    public const STATUS_PROCESSING = 'processing'; // 渠道已受理，等待异步确认
 
     /** 退款类型：仅退款 / 退货退款（WMS 退货闭环基础，P4 / D3） */
     public const TYPE_REFUND = 'refund';
@@ -41,6 +43,7 @@ class Refund extends Model
         self::STATUS_APPROVED => '已同意',
         self::STATUS_REJECTED => '已拒绝',
         self::STATUS_SUCCESS => '退款成功',
+        self::STATUS_PROCESSING => '退款处理中',
         self::STATUS_FAILED => '退款失败',
     ];
 
@@ -52,6 +55,8 @@ class Refund extends Model
         'refund_details',
         'return_tracking_no', 'return_express_company', 'return_status',
         'return_details', 'return_received_details', 'return_received_at', 'return_exception_reason',
+        'channel', 'payment_no', 'out_refund_no', 'channel_refund_no', 'refund_status',
+        'channel_raw', 'failed_reason', 'refunded_at', 'retry_count',
     ];
 
     protected $casts = [
@@ -64,6 +69,9 @@ class Refund extends Model
         'return_received_at' => 'datetime',
         'processed_at' => 'datetime',
         'warehouse_id' => 'integer',
+        'channel_raw' => 'array',
+        'refunded_at' => 'datetime',
+        'retry_count' => 'integer',
     ];
 
     /** 仅退款快捷判断 */
@@ -91,5 +99,11 @@ class Refund extends Model
     public function processor(): BelongsTo
     {
         return $this->belongsTo(SysUser::class, 'processed_by');
+    }
+
+    /** 退款事件日志（refund_logs，append-only） */
+    public function refundLogs(): HasMany
+    {
+        return $this->hasMany(RefundLog::class, 'refund_id');
     }
 }
