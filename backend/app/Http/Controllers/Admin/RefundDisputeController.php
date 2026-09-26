@@ -17,8 +17,10 @@ class RefundDisputeController extends Controller
 {
     use ApiResponse;
 
-    public function __construct(private RefundDisputeService $service)
-    {
+    public function __construct(
+        private RefundDisputeService $service,
+        private \App\Services\Refund\RefundSettings $settings,
+    ) {
     }
 
     /** 列表：GET /admin/refund-disputes */
@@ -156,6 +158,11 @@ class RefundDisputeController extends Controller
             'refund_action' => $d->refund_action,
             'created_at' => $d->created_at?->format('Y-m-d H:i:s'),
             'resolved_at' => $d->resolved_at?->format('Y-m-d H:i:s'),
+            // 退款策略（#6）：SLA（小时）与是否超时（进行中且开单超 SLA）
+            'sla_hours' => $this->settings->disputeSlaHours(),
+            'sla_overdue' => in_array($d->status, [RefundDispute::STATUS_OPENED, RefundDispute::STATUS_PLATFORM_INVOLVED], true)
+                && $d->created_at !== null
+                && $d->created_at->lt(now()->subHours($this->settings->disputeSlaHours())),
         ];
 
         if ($withMessages) {

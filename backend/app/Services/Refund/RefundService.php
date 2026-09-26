@@ -46,6 +46,7 @@ class RefundService
         private InventoryService $inventory,
         private PaymentGatewayFactory $factory,
         private PaymentChannelService $channels,
+        private RefundSettings $settings,
     ) {
     }
 
@@ -145,6 +146,13 @@ class RefundService
             'images' => $images,
             'max_refundable' => $maxRefundable,
         ], SysOperationLog::ACTOR_CUSTOMER);
+
+        // 退款策略（#6）：金额未超自动同意阈值 → 系统自动审核通过（adminId=0 表示系统）。
+        // 复用 process() 保证状态流转/渠道退款/日志/通知走同一条链路，绝不在此直接改终态。
+        $threshold = $this->settings->autoApproveAmount();
+        if (bccomp($threshold, '0.00', 2) === 1 && bccomp($amount, $threshold, 2) <= 0) {
+            return $this->process($refund, 0, 'approve', '系统自动审核：退款金额未超自动同意阈值');
+        }
 
         return $refund;
     }
@@ -632,7 +640,7 @@ class RefundService
     /**
      * 失败退款重试：复用 out_refund_no 幂等重新发起渠道退款。
      *
-     * 仅 failed 态可重试；每次自增 retry_count；达 MAX_RETRY(3) 仍失败则转人工。
+     * 仅 failed 态可重试；每次自增 retry_count；达上限（refund.max_retry，默认 3）仍失败则转人工。
      *
      * @throws \App\Exceptions\BusinessException
      */
@@ -641,8 +649,9 @@ class RefundService
         if ($refund->status !== Refund::STATUS_FAILED) {
             throw BusinessException::badRequest('仅失败状态的退款可重试');
         }
-        if ($refund->retry_count >= self::MAX_RETRY) {
-            throw BusinessException::badRequest('已达最大重试次数（'.self::MAX_RETRY.'），请转人工处理');
+        $maxRetry = $this->settings->maxRetry();
+        if ($refund->retry_count >= $maxRetry) {
+            throw BusinessException::badRequest('已达最大重试次数（'.$maxRetry.'），请转人工处理');
         }
 
         DB::transaction(function () use ($refund, $adminId) {
@@ -662,7 +671,7 @@ class RefundService
         $refund = $this->executeChannelRefund($refund, $adminId, OrderLog::OPERATOR_ADMIN);
 
         // 达到上限仍失败 → 标记转人工
-        if ($refund->status === Refund::STATUS_FAILED && $refund->retry_count >= self::MAX_RETRY) {
+        if ($refund->status === Refund::STATUS_FAILED && $refund->retry_count >= $this->settings->maxRetry()) {
             DB::transaction(function () use ($refund) {
                 $refund->failed_reason = '已达最大重试次数，转人工';
                 $refund->save();

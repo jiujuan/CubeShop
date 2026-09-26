@@ -16,6 +16,7 @@ class DatabaseSeeder extends Seeder
             AttributeSeeder::class,
             ProductSeeder::class,
             OrderConfigSeeder::class,
+            RefundConfigSeeder::class,
             ExpressCompanySeeder::class,
             FreightTemplateSeeder::class,
             RefundSeeder::class,

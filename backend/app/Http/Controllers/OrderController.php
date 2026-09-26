@@ -414,6 +414,10 @@ class OrderController extends Controller
             'amount' => (string) $refund->amount,
             'status' => $refund->status,
             'return_status' => $refund->return_status,
+            // 退款策略（#6）：退货退款时下发退货地址模板，供买家寄件
+            'return_address' => $refund->type === Refund::TYPE_RETURN_REFUND
+                ? (app(\App\Services\Refund\RefundSettings::class)->returnAddressTemplate() ?: null)
+                : null,
         ], '退款申请已提交，等待审核');
     }
 }

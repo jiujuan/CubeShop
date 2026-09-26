@@ -8,7 +8,10 @@ use App\Models\Order;
 use App\Models\Refund;
 use App\Models\RefundLog;
 use App\Models\SysOperationLog;
+use App\Services\Common\ConfigService;
+use App\Services\Common\OperationLogService;
 use App\Services\Refund\RefundService;
+use App\Services\Refund\RefundSettings;
 use App\Support\ApiResponse;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -21,8 +24,12 @@ class RefundController extends Controller
 {
     use ApiResponse;
 
-    public function __construct(private RefundService $refunds)
-    {
+    public function __construct(
+        private RefundService $refunds,
+        private ConfigService $configs,
+        private RefundSettings $settings,
+        private OperationLogService $operationLog,
+    ) {
     }
 
     /** 退款列表：GET /admin/refunds */
@@ -50,7 +57,7 @@ class RefundController extends Controller
             ->when(isset($data['aged_hours']), fn ($q) => $q->where('created_at', '<=', now()->subHours((int) $data['aged_hours'])))
             ->when(isset($data['retry_exhausted']), fn ($q) => $q
                 ->where('status', Refund::STATUS_FAILED)
-                ->where('retry_count', '>=', RefundService::MAX_RETRY))
+                ->where('retry_count', '>=', $this->settings->maxRetry()))
             ->orderByDesc('id')
             ->paginate(min($data['page_size'] ?? 20, 100), ['*'], 'page', $data['page'] ?? 1);
 
@@ -101,7 +108,7 @@ class RefundController extends Controller
                 ->where('created_at', '<', now()->subDay())->count(),
             'failed_maxed' => Refund::query()
                 ->where('status', Refund::STATUS_FAILED)
-                ->where('retry_count', '>=', RefundService::MAX_RETRY)->count(),
+                ->where('retry_count', '>=', $this->settings->maxRetry())->count(),
             'return_waiting_overdue' => Refund::query()
                 ->where('type', Refund::TYPE_RETURN_REFUND)
                 ->where('return_status', Refund::RETURN_STATUS_WAITING_RETURN)
@@ -114,6 +121,63 @@ class RefundController extends Controller
             'aging' => $aging,
             'queues' => $queues,
         ]);
+    }
+
+    /**
+     * 退款策略读取：GET /admin/refunds/policy（refund.* 配置唯一出口，RefundSettings）
+     */
+    public function policy(): JsonResponse
+    {
+        return $this->success($this->policyPayload());
+    }
+
+    /**
+     * 退款策略更新：PUT /admin/refunds/policy（permission: refund.process）
+     *
+     * 只更新请求中出现的键；数值键 null = 不改动（清空自动同意请传 0）。
+     * return_address_template 允许传 null 清空（ConvertEmptyStringsToNull 已把 '' 转 null）。
+     * 逐键走 ConfigService::set（自带缓存 flush）。
+     */
+    public function updatePolicy(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'auto_approve_amount' => ['nullable', 'numeric', 'min:0', 'max:999999'],
+            'max_retry' => ['nullable', 'integer', 'min:0', 'max:10'],
+            'dispute_sla_hours' => ['nullable', 'integer', 'min:1', 'max:8760'],
+            'return_address_template' => ['nullable', 'string', 'max:1000'],
+        ]);
+
+        $before = $this->policyPayload();
+
+        if (isset($data['auto_approve_amount'])) {
+            $this->configs->set('refund.auto_approve_amount', number_format((float) $data['auto_approve_amount'], 2, '.', ''));
+        }
+        if (isset($data['max_retry'])) {
+            $this->configs->set('refund.max_retry', (string) (int) $data['max_retry']);
+        }
+        if (isset($data['dispute_sla_hours'])) {
+            $this->configs->set('refund.dispute_sla_hours', (string) (int) $data['dispute_sla_hours']);
+        }
+        if (array_key_exists('return_address_template', $data)) {
+            $this->configs->set('refund.return_address_template', (string) ($data['return_address_template'] ?? ''));
+        }
+
+        $this->operationLog->record($request->user()->id, 'refund', 'update_policy', 'system_configs', null, [
+            'before' => $before,
+            'after' => $this->policyPayload(),
+        ]);
+
+        return $this->success($this->policyPayload(), '已保存');
+    }
+
+    private function policyPayload(): array
+    {
+        return [
+            'auto_approve_amount' => $this->settings->autoApproveAmount(),
+            'max_retry' => $this->settings->maxRetry(),
+            'dispute_sla_hours' => $this->settings->disputeSlaHours(),
+            'return_address_template' => $this->settings->returnAddressTemplate(),
+        ];
     }
 
     /**
@@ -293,7 +357,7 @@ class RefundController extends Controller
             ->when(isset($data['aged_hours']), fn ($q) => $q->where('created_at', '<=', now()->subHours((int) $data['aged_hours'])))
             ->when(isset($data['retry_exhausted']), fn ($q) => $q
                 ->where('status', Refund::STATUS_FAILED)
-                ->where('retry_count', '>=', RefundService::MAX_RETRY))
+                ->where('retry_count', '>=', $this->settings->maxRetry()))
             ->orderByDesc('id');
 
         $filename = 'refunds-'.now()->format('YmdHis').'.csv';
@@ -452,7 +516,7 @@ class RefundController extends Controller
             'admin_remark' => $refund->admin_remark,
             'admin_images' => $refund->admin_images ?? [],
             'processed_by' => $refund->processed_by,
-            'processed_by_name' => $refund->processor?->nickname ?: $refund->processor?->username,
+            'processed_by_name' => $refund->processed_by === 0 ? '系统自动' : ($refund->processor?->nickname ?: $refund->processor?->username),
             'processed_at' => $refund->processed_at?->format('Y-m-d H:i:s'),
             'channel' => $refund->channel,
             'out_refund_no' => $refund->out_refund_no,
@@ -461,7 +525,7 @@ class RefundController extends Controller
             'failed_reason' => $refund->failed_reason,
             'retry_count' => (int) $refund->retry_count,
             'refunded_at' => $refund->refunded_at?->format('Y-m-d H:i:s'),
-            'max_retry' => RefundService::MAX_RETRY,
+            'max_retry' => $this->settings->maxRetry(),
             'created_at' => $refund->created_at?->format('Y-m-d H:i:s'),
             'order_status' => $refund->order?->status,
         ];

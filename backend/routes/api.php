@@ -501,6 +501,9 @@ Route::middleware(['auth:sanctum', 'account.active'])->group(function () {
         // 批量审核 + 导出（静态路由须在 /refunds/{id} 之前注册）
         Route::post('/refunds/batch-process', [RefundController::class, 'batchProcess'])->middleware('permission:refund.process');
         Route::get('/refunds/export', [RefundController::class, 'export'])->middleware('permission:refund.view');
+        // 退款策略（#6）：静态路由须在 /refunds/{id} 之前注册
+        Route::get('/refunds/policy', [RefundController::class, 'policy'])->middleware('permission:refund.view');
+        Route::put('/refunds/policy', [RefundController::class, 'updatePolicy'])->middleware('permission:refund.process');
         Route::get('/refunds/stats', [RefundController::class, 'stats'])->middleware('permission:refund.view');
         Route::get('/refunds/{id}', [RefundController::class, 'show'])->middleware('permission:refund.view');
         Route::post('/refunds/{id}/process', [RefundController::class, 'process'])->middleware('permission:refund.process');

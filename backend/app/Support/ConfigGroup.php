@@ -23,6 +23,7 @@ final class ConfigGroup
         'auth' => '认证安全',
         'payment' => '支付与充值',
         'order' => '订单交易',
+        'refund' => '退款策略',
         'inventory' => '库存与预警',
         'review' => '评价与通知',
         'notify' => '评价与通知',
