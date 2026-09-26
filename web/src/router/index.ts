@@ -139,6 +139,12 @@ const router = createRouter({
       meta: { title: '收货地址 · CubeShop', requiresAuth: true },
     },
     {
+      path: '/points',
+      name: 'points',
+      component: () => import('@/views/PointsView.vue'),
+      meta: { title: '我的积分 · CubeShop', requiresAuth: true },
+    },
+    {
       path: '/notifications',
       name: 'notifications',
       component: () => import('@/views/NotificationsView.vue'),

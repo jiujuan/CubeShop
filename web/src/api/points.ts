@@ -40,3 +40,53 @@ export function getCheckinStatus() {
 export function postCheckin() {
   return request.post<ApiResult<CheckinResult>>('/checkin')
 }
+
+// ---------- 我的积分（会员成长计划 S3） ----------
+
+/** 积分账户概览（GET /user/points 的 account 段） */
+export interface PointAccount {
+  balance: number
+  frozen: number
+  total: number
+  total_earn: number
+  total_spend: number
+}
+
+/** 积分流水行 */
+export interface PointLogRow {
+  id: number
+  type: string
+  type_label: string
+  points: number
+  frozen_points: number
+  balance_before: number
+  balance_after: number
+  remark: string | null
+  created_at: string | null
+}
+
+/** 我的积分概览 */
+export interface MyPoints {
+  enabled: boolean
+  name: string
+  account: PointAccount
+  logs: PointLogRow[]
+}
+
+/** 流水分页 */
+export interface PointLogPage {
+  list: PointLogRow[]
+  pagination: { total: number; per_page: number; current_page: number; last_page: number }
+}
+
+/** 我的积分概览 */
+export function getMyPoints() {
+  return request.get<ApiResult<MyPoints>>('/user/points')
+}
+
+/** 我的积分流水（分页） */
+export function getMyPointLogs(page = 1, perPage = 20) {
+  return request.get<ApiResult<PointLogPage>>('/user/points/logs', {
+    params: { page, per_page: perPage },
+  })
+}
