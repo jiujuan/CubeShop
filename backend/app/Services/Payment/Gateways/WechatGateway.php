@@ -8,6 +8,8 @@ use App\Services\Payment\Dto\CallbackResult;
 use App\Services\Payment\Dto\PayParams;
 use App\Services\Payment\Dto\QueryResult;
 use App\Services\Payment\Dto\RefundResult;
+use App\Services\Payment\Dto\RefundQueryResult;
+use App\Services\Payment\Dto\RefundCallbackResult;
 use App\Services\Payment\Dto\TestResult;
 use App\Services\Payment\Dto\ChannelTransaction;
 use App\Services\Payment\Dto\StatementResult;
@@ -141,11 +143,12 @@ class WechatGateway implements PaymentGateway
     /**
      * 申请退款：POST /v3/refund/domestic/refunds
      */
-    public function refund(Payment $payment, string $amount, string $reason, array $config): RefundResult
+    public function refund(Payment $payment, string $amount, string $reason, array $config, ?string $outRefundNo = null): RefundResult
     {
+        $outRefundNo = $outRefundNo ?? 'R'.Str::upper((string) Str::ulid());
         $body = [
             'out_trade_no' => $payment->payment_no,
-            'out_refund_no' => 'R'.Str::upper((string) Str::ulid()),
+            'out_refund_no' => $outRefundNo,
             'reason' => $reason,
             'amount' => [
                 'refund' => (int) bcmul($amount, '100', 0),
@@ -156,7 +159,82 @@ class WechatGateway implements PaymentGateway
 
         $response = $this->request('POST', '/v3/refund/domestic/refunds', $body, $config);
 
-        return RefundResult::success((string) ($response['out_refund_no'] ?? ''), $response);
+        // 微信退款异步处理：申请成功即返回 PROCESSING，终态由回调 / 查单确认（Phase 4）
+        return RefundResult::success((string) ($response['out_refund_no'] ?? $outRefundNo), $response, 'PROCESSING');
+    }
+
+    /**
+     * 退款查单：GET /v3/refund/domestic/refunds/{out_refund_no}
+     */
+    public function queryRefund(Payment $payment, string $outRefundNo, array $config): RefundQueryResult
+    {
+        $path = '/v3/refund/domestic/refunds/'.urlencode($outRefundNo);
+
+        try {
+            $response = $this->request('GET', $path, null, $config);
+        } catch (Throwable $e) {
+            return RefundQueryResult::fail('query_failed', ['error' => $e->getMessage()]);
+        }
+
+        $status = (string) ($response['status'] ?? '');
+        $channelStatus = match ($status) {
+            'SUCCESS' => 'SUCCESS',
+            'PROCESSING' => 'PROCESSING',
+            'CLOSED' => 'CLOSED',
+            'ABNORMAL' => 'ABNORMAL',
+            default => 'ABNORMAL',
+        };
+
+        return RefundQueryResult::success($channelStatus, (string) ($response['refund_id'] ?? $outRefundNo), $response);
+    }
+
+    /**
+     * 退款回调验签（V3）：校验请求头签名 → AES-256-GCM 解密 resource
+     *
+     * 与支付回调共用 V3 验签 / 解密逻辑；退款通知 event_type 为 REFUND.SUCCESS / REFUND.ABNORMAL。
+     * 仅微信渠道有异步退款回调，故不进 PaymentGateway 契约（Phase 4 用 instanceof 判定）。
+     */
+    public function verifyRefundCallback(Request $request, array $config): RefundCallbackResult
+    {
+        $body = (string) $request->getContent();
+        $timestamp = (string) $request->header('Wechatpay-Timestamp', '');
+        $nonce = (string) $request->header('Wechatpay-Nonce', '');
+        $signature = (string) $request->header('Wechatpay-Signature', '');
+        $serial = (string) $request->header('Wechatpay-Serial', '');
+
+        if ($timestamp === '' || $nonce === '' || $signature === '') {
+            return RefundCallbackResult::fail('缺少微信退款验签请求头');
+        }
+
+        if (! $this->verifySign($timestamp, $nonce, $body, $signature, (string) ($config['wechatpay_public_key'] ?? ''))) {
+            return RefundCallbackResult::fail('微信退款回调验签失败');
+        }
+
+        $payload = json_decode($body, true) ?: [];
+        $resource = $payload['resource'] ?? [];
+        $eventType = (string) ($payload['event_type'] ?? '');
+
+        try {
+            $decrypted = $this->decryptResource($resource, (string) ($config['api_v3_key'] ?? ''));
+        } catch (Throwable $e) {
+            return RefundCallbackResult::fail('微信退款回调解密失败：'.$e->getMessage());
+        }
+
+        $rawStatus = (string) ($decrypted['refund_status'] ?? '');
+        $channelStatus = match ($rawStatus) {
+            'SUCCESS' => 'SUCCESS',
+            'PROCESSING' => 'PROCESSING',
+            'CLOSED' => 'CLOSED',
+            'ABNORMAL' => 'ABNORMAL',
+            default => 'ABNORMAL',
+        };
+
+        return RefundCallbackResult::success(
+            (string) ($decrypted['out_refund_no'] ?? ''),
+            $channelStatus,
+            $eventType,
+            $decrypted,
+        );
     }
 
     /** 连通性自检：GET /v3/certificates（微信无沙箱，沙箱模式下不调用） */

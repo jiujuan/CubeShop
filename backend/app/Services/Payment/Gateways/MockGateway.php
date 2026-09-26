@@ -8,6 +8,7 @@ use App\Services\Payment\Dto\CallbackResult;
 use App\Services\Payment\Dto\PayParams;
 use App\Services\Payment\Dto\QueryResult;
 use App\Services\Payment\Dto\RefundResult;
+use App\Services\Payment\Dto\RefundQueryResult;
 use App\Services\Payment\Dto\TestResult;
 use App\Services\Payment\Dto\ChannelTransaction;
 use App\Services\Payment\Dto\StatementResult;
@@ -90,9 +91,15 @@ class MockGateway implements PaymentGateway
         return QueryResult::success($payment->status, $payment->channel_trade_no, (string) $payment->amount);
     }
 
-    public function refund(Payment $payment, string $amount, string $reason, array $config): RefundResult
+    public function refund(Payment $payment, string $amount, string $reason, array $config, ?string $outRefundNo = null): RefundResult
     {
-        return RefundResult::success('MOCK'.strtoupper(bin2hex(random_bytes(6))));
+        return RefundResult::success($outRefundNo ?? 'MOCK'.strtoupper(bin2hex(random_bytes(6))));
+    }
+
+    /** 模拟网关退款即时成功，无远程查单；返回 unsupported 由编排层跳过轮询 */
+    public function queryRefund(Payment $payment, string $outRefundNo, array $config): RefundQueryResult
+    {
+        return RefundQueryResult::fail('unsupported');
     }
 
     public function testConnection(array $config): TestResult

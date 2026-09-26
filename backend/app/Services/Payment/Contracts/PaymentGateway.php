@@ -7,6 +7,7 @@ use App\Services\Payment\Dto\CallbackResult;
 use App\Services\Payment\Dto\PayParams;
 use App\Services\Payment\Dto\QueryResult;
 use App\Services\Payment\Dto\RefundResult;
+use App\Services\Payment\Dto\RefundQueryResult;
 use App\Services\Payment\Dto\TestResult;
 use App\Services\Payment\Dto\StatementResult;
 use Illuminate\Http\Request;
@@ -35,8 +36,17 @@ interface PaymentGateway
     /** 主动查单（回调丢失补偿、结果页轮询兜底） */
     public function query(Payment $payment, array $config): QueryResult;
 
-    /** 退款 */
-    public function refund(Payment $payment, string $amount, string $reason, array $config): RefundResult;
+    /**
+     * 退款
+     *
+     * @param  string|null  $outRefundNo  幂等单号（编排层生成并持久化，重试复用）；null 时网关自行生成
+     */
+    public function refund(Payment $payment, string $amount, string $reason, array $config, ?string $outRefundNo = null): RefundResult;
+
+    /**
+     * 退款查单（异步退款状态兜底；余额/线下等无远程查单返回 unsupported）
+     */
+    public function queryRefund(Payment $payment, string $outRefundNo, array $config): RefundQueryResult;
 
     /** 配置连通性自检（后台「测试连接」） */
     public function testConnection(array $config): TestResult;

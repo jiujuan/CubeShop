@@ -9,6 +9,7 @@ use App\Services\Payment\Dto\CallbackResult;
 use App\Services\Payment\Dto\PayParams;
 use App\Services\Payment\Dto\QueryResult;
 use App\Services\Payment\Dto\RefundResult;
+use App\Services\Payment\Dto\RefundQueryResult;
 use App\Services\Payment\Dto\TestResult;
 use App\Services\Payment\Dto\StatementResult;
 use App\Services\Payment\PaymentChannelService;
@@ -58,9 +59,15 @@ class OfflineGateway implements PaymentGateway
     }
 
     /** 银行转账不可逆，不支持原路退款（§7.5） */
-    public function refund(Payment $payment, string $amount, string $reason, array $config): RefundResult
+    public function refund(Payment $payment, string $amount, string $reason, array $config, ?string $outRefundNo = null): RefundResult
     {
         return RefundResult::fail('线下转账不支持原路退款，请线下处理后人工标记');
+    }
+
+    /** 线下转账无远程退款查单 */
+    public function queryRefund(Payment $payment, string $outRefundNo, array $config): RefundQueryResult
+    {
+        return RefundQueryResult::fail('unsupported');
     }
 
     public function testConnection(array $config): TestResult

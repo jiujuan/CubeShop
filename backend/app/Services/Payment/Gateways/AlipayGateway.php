@@ -8,6 +8,7 @@ use App\Services\Payment\Dto\CallbackResult;
 use App\Services\Payment\Dto\PayParams;
 use App\Services\Payment\Dto\QueryResult;
 use App\Services\Payment\Dto\RefundResult;
+use App\Services\Payment\Dto\RefundQueryResult;
 use App\Services\Payment\Dto\TestResult;
 use App\Services\Payment\Dto\ChannelTransaction;
 use App\Services\Payment\Dto\StatementResult;
@@ -113,14 +114,15 @@ class AlipayGateway implements PaymentGateway
     }
 
     /** 退款：alipay.trade.refund */
-    public function refund(Payment $payment, string $amount, string $reason, array $config): RefundResult
+    public function refund(Payment $payment, string $amount, string $reason, array $config, ?string $outRefundNo = null): RefundResult
     {
+        $outRequestNo = $outRefundNo ?? 'R'.Str::upper((string) Str::ulid());
         $params = $this->commonParams('alipay.trade.refund', $config);
         $params['biz_content'] = json_encode([
             'out_trade_no' => $payment->payment_no,
             'refund_amount' => $amount,
             'refund_reason' => $reason,
-            'out_request_no' => 'R'.Str::upper((string) Str::ulid()),
+            'out_request_no' => $outRequestNo,
         ], JSON_UNESCAPED_UNICODE);
         $params['sign'] = $this->sign($this->buildSignContent($params), (string) ($config['private_key'] ?? ''));
 
@@ -132,6 +134,36 @@ class AlipayGateway implements PaymentGateway
         }
 
         return RefundResult::success((string) ($node['trade_no'] ?? ''), $node);
+    }
+
+    /**
+     * 退款查单：alipay.trade.fastpay.refund.query
+     */
+    public function queryRefund(Payment $payment, string $outRefundNo, array $config): RefundQueryResult
+    {
+        $params = $this->commonParams('alipay.trade.fastpay.refund.query', $config);
+        $params['biz_content'] = json_encode([
+            'out_trade_no' => $payment->payment_no,
+            'out_request_no' => $outRefundNo,
+        ], JSON_UNESCAPED_UNICODE);
+        $params['sign'] = $this->sign($this->buildSignContent($params), (string) ($config['private_key'] ?? ''));
+
+        $response = $this->post($params, $config);
+        $node = $response['alipay_trade_fastpay_refund_query_response'] ?? [];
+
+        if (($node['code'] ?? '10000') !== '10000') {
+            return RefundQueryResult::fail((string) ($node['sub_msg'] ?? $node['msg'] ?? '查询失败'), $node);
+        }
+
+        $status = (string) ($node['refund_status'] ?? '');
+        $channelStatus = match ($status) {
+            'REFUND_SUCCESS' => 'SUCCESS',
+            'REFUND_PROCESSING' => 'PROCESSING',
+            'TRADE_CLOSED' => 'CLOSED',
+            default => 'ABNORMAL',
+        };
+
+        return RefundQueryResult::success($channelStatus, (string) ($node['out_request_no'] ?? $outRefundNo), $node);
     }
 
     /**
