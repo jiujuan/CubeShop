@@ -31,7 +31,9 @@ class RefundController extends Controller
         $data = $request->validate([
             'refund_no' => ['nullable', 'string'],
             'order_no' => ['nullable', 'string'],
-            'status' => ['nullable', 'string', 'in:'.implode(',', [Refund::STATUS_PENDING, Refund::STATUS_APPROVED, Refund::STATUS_REJECTED, Refund::STATUS_SUCCESS, Refund::STATUS_FAILED])],
+            'status' => ['nullable', 'string', 'in:'.implode(',', [Refund::STATUS_PENDING, Refund::STATUS_APPROVED, Refund::STATUS_PROCESSING, Refund::STATUS_REJECTED, Refund::STATUS_SUCCESS, Refund::STATUS_FAILED])],
+            'aged_hours' => ['nullable', 'integer', 'min:0'],
+            'retry_exhausted' => ['nullable', 'in:1'],
             'type' => ['nullable', 'string', 'in:'.implode(',', [Refund::TYPE_REFUND, Refund::TYPE_RETURN_REFUND])],
             'return_status' => ['nullable', 'string', 'in:'.implode(',', [Refund::RETURN_STATUS_WAITING_RETURN, Refund::RETURN_STATUS_SHIPPING, Refund::RETURN_STATUS_RECEIVED, Refund::RETURN_STATUS_EXCEPTION])],
             'page' => ['nullable', 'integer', 'min:1'],
@@ -45,12 +47,73 @@ class RefundController extends Controller
             ->when($data['status'] ?? null, fn ($q, $v) => $q->where('status', $v))
             ->when($data['type'] ?? null, fn ($q, $v) => $q->where('type', $v))
             ->when($data['return_status'] ?? null, fn ($q, $v) => $q->where('return_status', $v))
+            ->when(isset($data['aged_hours']), fn ($q) => $q->where('created_at', '<=', now()->subHours((int) $data['aged_hours'])))
+            ->when(isset($data['retry_exhausted']), fn ($q) => $q
+                ->where('status', Refund::STATUS_FAILED)
+                ->where('retry_count', '>=', RefundService::MAX_RETRY))
             ->orderByDesc('id')
             ->paginate(min($data['page_size'] ?? 20, 100), ['*'], 'page', $data['page'] ?? 1);
 
         $paginator->through(fn (Refund $refund) => $this->row($refund));
 
         return $this->paginated($paginator);
+    }
+
+    /**
+     * 退款概览统计：GET /admin/refunds/stats
+     *
+     * 指标卡：各状态计数 + 金额汇总；账龄分桶（未完结单 <24h / 24-72h / >72h，failed 仍需人工闭环故计入）；
+     * 异常队列：processing 超 24h（疑似渠道回调丢失）、failed 且 retry_count 达上限（待人工）、
+     * return_refund 待退货超 7 天未发货。只读聚合，不触碰退款状态。
+     */
+    public function stats(): JsonResponse
+    {
+        $statuses = [
+            Refund::STATUS_PENDING, Refund::STATUS_APPROVED, Refund::STATUS_PROCESSING,
+            Refund::STATUS_SUCCESS, Refund::STATUS_FAILED, Refund::STATUS_REJECTED,
+        ];
+
+        $rows = Refund::query()
+            ->selectRaw('status, count(*) as cnt, sum(amount) as total')
+            ->whereIn('status', $statuses)
+            ->groupBy('status')
+            ->get();
+
+        $counts = array_fill_keys($statuses, 0);
+        $amounts = array_fill_keys($statuses, '0.00');
+        foreach ($rows as $row) {
+            $counts[$row->status] = (int) $row->cnt;
+            $amounts[$row->status] = number_format((float) $row->total, 2, '.', '');
+        }
+
+        $unfinished = Refund::query()->whereIn('status', [
+            Refund::STATUS_PENDING, Refund::STATUS_APPROVED, Refund::STATUS_PROCESSING, Refund::STATUS_FAILED,
+        ]);
+        $aging = [
+            'lt_24h' => (clone $unfinished)->where('created_at', '>=', now()->subDay())->count(),
+            'h24_72' => (clone $unfinished)->where('created_at', '<', now()->subDay())->where('created_at', '>=', now()->subDays(3))->count(),
+            'gt_72h' => (clone $unfinished)->where('created_at', '<', now()->subDays(3))->count(),
+        ];
+
+        $queues = [
+            'processing_stuck' => Refund::query()
+                ->where('status', Refund::STATUS_PROCESSING)
+                ->where('created_at', '<', now()->subDay())->count(),
+            'failed_maxed' => Refund::query()
+                ->where('status', Refund::STATUS_FAILED)
+                ->where('retry_count', '>=', RefundService::MAX_RETRY)->count(),
+            'return_waiting_overdue' => Refund::query()
+                ->where('type', Refund::TYPE_RETURN_REFUND)
+                ->where('return_status', Refund::RETURN_STATUS_WAITING_RETURN)
+                ->where('created_at', '<', now()->subDays(7))->count(),
+        ];
+
+        return $this->success([
+            'status_counts' => $counts,
+            'status_amounts' => $amounts,
+            'aging' => $aging,
+            'queues' => $queues,
+        ]);
     }
 
     /**
@@ -213,7 +276,9 @@ class RefundController extends Controller
         $data = $request->validate([
             'refund_no' => ['nullable', 'string'],
             'order_no' => ['nullable', 'string'],
-            'status' => ['nullable', 'string', 'in:'.implode(',', [Refund::STATUS_PENDING, Refund::STATUS_APPROVED, Refund::STATUS_REJECTED, Refund::STATUS_SUCCESS, Refund::STATUS_FAILED])],
+            'status' => ['nullable', 'string', 'in:'.implode(',', [Refund::STATUS_PENDING, Refund::STATUS_APPROVED, Refund::STATUS_PROCESSING, Refund::STATUS_REJECTED, Refund::STATUS_SUCCESS, Refund::STATUS_FAILED])],
+            'aged_hours' => ['nullable', 'integer', 'min:0'],
+            'retry_exhausted' => ['nullable', 'in:1'],
             'type' => ['nullable', 'string', 'in:'.implode(',', [Refund::TYPE_REFUND, Refund::TYPE_RETURN_REFUND])],
             'return_status' => ['nullable', 'string', 'in:'.implode(',', [Refund::RETURN_STATUS_WAITING_RETURN, Refund::RETURN_STATUS_SHIPPING, Refund::RETURN_STATUS_RECEIVED, Refund::RETURN_STATUS_EXCEPTION])],
         ]);
@@ -225,6 +290,10 @@ class RefundController extends Controller
             ->when($data['status'] ?? null, fn ($q, $v) => $q->where('status', $v))
             ->when($data['type'] ?? null, fn ($q, $v) => $q->where('type', $v))
             ->when($data['return_status'] ?? null, fn ($q, $v) => $q->where('return_status', $v))
+            ->when(isset($data['aged_hours']), fn ($q) => $q->where('created_at', '<=', now()->subHours((int) $data['aged_hours'])))
+            ->when(isset($data['retry_exhausted']), fn ($q) => $q
+                ->where('status', Refund::STATUS_FAILED)
+                ->where('retry_count', '>=', RefundService::MAX_RETRY))
             ->orderByDesc('id');
 
         $filename = 'refunds-'.now()->format('YmdHis').'.csv';
