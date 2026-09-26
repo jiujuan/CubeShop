@@ -32,6 +32,8 @@ class RolePermissionSeeder extends Seeder
         'product.view',
         'product.create',
         'product.update',
+        // 商品批量导入（xlsx 上传、批量建商品/调价调库存）：风险较高的批量写，单独授权
+        'product.import',
         'category.manage',
         'order.view',
         'order.ship',
@@ -123,7 +125,7 @@ class RolePermissionSeeder extends Seeder
         // 运营：除用户管理外的日常运营权限（地址仅可查看核对，代改需超管授权）
         // 账号/角色管理（account.manage / role.manage）为超管专属，运营默认不授予
         $operator->syncPermissions([
-            'product.view', 'product.create', 'product.update', 'category.manage',
+            'product.view', 'product.create', 'product.update', 'product.import', 'category.manage',
             'order.view', 'order.ship', 'order.export',
             // 物流管理（V1.1 二期 T-047）：快递字典维护与异常看板
             'shipping.manage',

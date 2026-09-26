@@ -25,6 +25,7 @@ use App\Http\Controllers\Admin\PaymentChannelController as AdminPaymentChannelCo
 use App\Http\Controllers\Admin\PaymentLogController as AdminPaymentLogController;
 use App\Http\Controllers\Admin\BalanceRechargeController as AdminBalanceRechargeController;
 use App\Http\Controllers\Admin\ProductController;
+use App\Http\Controllers\Admin\ProductImportController;
 use App\Http\Controllers\Admin\PromotionController as AdminPromotionController;
 use App\Http\Controllers\Admin\RefundController;
 use App\Http\Controllers\Admin\ReportController as AdminReportController;
@@ -370,6 +371,9 @@ Route::middleware(['auth:sanctum', 'account.active'])->group(function () {
         Route::get('/products', [ProductController::class, 'index'])->middleware('permission:product.view');
         Route::post('/products', [ProductController::class, 'store'])->middleware('permission:product.create');
         Route::post('/products/batch', [ProductController::class, 'batch'])->middleware('permission:product.update');
+        // 商品批量导入（静态路径须在 /products/{id} 之前注册）
+        Route::get('/products/import/template', [ProductImportController::class, 'template'])->middleware('permission:product.view');
+        Route::post('/products/import', [ProductImportController::class, 'import'])->middleware('permission:product.import');
         Route::get('/products/{id}', [ProductController::class, 'show'])->middleware('permission:product.view');
         Route::put('/products/{id}', [ProductController::class, 'update'])->middleware('permission:product.update');
         Route::post('/products/{id}/status', [ProductController::class, 'updateStatus'])->middleware('permission:product.update');

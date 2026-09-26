@@ -21,6 +21,7 @@ use Illuminate\Database\QueryException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\Rule;
 
 /**
  * 商品管理（API 文档 8.1）
@@ -150,7 +151,7 @@ class ProductController extends Controller
             return $this->fail('商品不存在', 40004);
         }
 
-        $payload = $this->validatePayload($request, forUpdate: true);
+        $payload = $this->validatePayload($request, forUpdate: true, productId: $id);
         $this->validateAttributeValues($payload);
 
         try {
@@ -291,11 +292,19 @@ class ProductController extends Controller
 
     // ---------- internals ----------
 
-    private function validatePayload(Request $request, bool $forUpdate = false): array
+    private function validatePayload(Request $request, bool $forUpdate = false, ?int $productId = null): array
     {
         $hasSelection = $request->filled('specs_selection');
 
+        // 商品编码（业务主键，批量导入锚点）：可空唯一。
+        // ⚠️ Rule::unique()->ignore(null) 会产生恒 UNKNOWN 的比较值，故仅在真有 id 时才挂 ignore。
+        $codeUnique = Rule::unique('products', 'code');
+        if ($productId !== null) {
+            $codeUnique = $codeUnique->ignore($productId);
+        }
+
         $rules = [
+            'code' => ['nullable', 'string', 'max:64', $codeUnique],
             'category_id' => [$forUpdate ? 'sometimes' : 'required', 'nullable', 'integer', 'exists:categories,id'],
             'title' => [$forUpdate ? 'sometimes' : 'required', 'string', 'max:255'],
             'subtitle' => ['nullable', 'string', 'max:255'],

@@ -33,7 +33,7 @@ class Product extends Model
 
     protected $table = 'products';
     protected $fillable = [
-        'category_id', 'title', 'subtitle', 'main_image', 'description', 'description_md',
+        'code', 'category_id', 'title', 'subtitle', 'main_image', 'description', 'description_md',
         'price', 'status', 'sales_count', 'sort',
         // V1.1 E01
         'brand_id', 'weight', 'video_url', 'keywords',
