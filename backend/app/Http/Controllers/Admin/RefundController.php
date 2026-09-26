@@ -31,6 +31,8 @@ class RefundController extends Controller
             'refund_no' => ['nullable', 'string'],
             'order_no' => ['nullable', 'string'],
             'status' => ['nullable', 'string', 'in:'.implode(',', [Refund::STATUS_PENDING, Refund::STATUS_APPROVED, Refund::STATUS_REJECTED, Refund::STATUS_SUCCESS, Refund::STATUS_FAILED])],
+            'type' => ['nullable', 'string', 'in:'.implode(',', [Refund::TYPE_REFUND, Refund::TYPE_RETURN_REFUND])],
+            'return_status' => ['nullable', 'string', 'in:'.implode(',', [Refund::RETURN_STATUS_WAITING_RETURN, Refund::RETURN_STATUS_SHIPPING, Refund::RETURN_STATUS_RECEIVED, Refund::RETURN_STATUS_EXCEPTION])],
             'page' => ['nullable', 'integer', 'min:1'],
             'page_size' => ['nullable', 'integer', 'min:1', 'max:100'],
         ]);
@@ -40,6 +42,8 @@ class RefundController extends Controller
             ->when($data['refund_no'] ?? null, fn ($q, $v) => $q->where('refund_no', $v))
             ->when($data['order_no'] ?? null, fn ($q, $v) => $q->where('order_no', $v))
             ->when($data['status'] ?? null, fn ($q, $v) => $q->where('status', $v))
+            ->when($data['type'] ?? null, fn ($q, $v) => $q->where('type', $v))
+            ->when($data['return_status'] ?? null, fn ($q, $v) => $q->where('return_status', $v))
             ->orderByDesc('id')
             ->paginate(min($data['page_size'] ?? 20, 100), ['*'], 'page', $data['page'] ?? 1);
 

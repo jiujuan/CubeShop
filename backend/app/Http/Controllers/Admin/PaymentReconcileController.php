@@ -122,6 +122,7 @@ class PaymentReconcileController extends Controller
             'date' => ['nullable', 'date'],
             'channel' => ['nullable', 'string', 'max:32'],
             'diff_type' => ['nullable', 'string', 'max:32'],
+            'category' => ['nullable', 'string', 'in:payment,refund'],
             'status' => ['nullable', 'string', 'in:pending,processing,resolved,ignored'],
             'platform' => ['nullable', 'string', 'in:web,h5,miniprogram'],
             'keyword' => ['nullable', 'string', 'max:64'],
@@ -156,6 +157,7 @@ class PaymentReconcileController extends Controller
             'date' => ['nullable', 'date'],
             'channel' => ['nullable', 'string', 'max:32'],
             'diff_type' => ['nullable', 'string', 'max:32'],
+            'category' => ['nullable', 'string', 'in:payment,refund'],
             'status' => ['nullable', 'string', 'in:pending,processing,resolved,ignored'],
             'platform' => ['nullable', 'string', 'in:web,h5,miniprogram'],
             'keyword' => ['nullable', 'string', 'max:64'],
@@ -251,6 +253,8 @@ class PaymentReconcileController extends Controller
             ->when($data['date'] ?? null, fn ($q, $v) => $q->where('reconcile_date', $v))
             ->when($data['channel'] ?? null, fn ($q, $v) => $q->where('channel', $v))
             ->when($data['diff_type'] ?? null, fn ($q, $v) => $q->where('diff_type', $v))
+            ->when(($data['category'] ?? null) === 'refund', fn ($q) => $q->where('diff_type', 'like', 'REFUND_%'))
+            ->when(($data['category'] ?? null) === 'payment', fn ($q) => $q->where('diff_type', 'not like', 'REFUND_%'))
             ->when($data['status'] ?? null, fn ($q, $v) => $q->where('status', $v))
             ->when($data['platform'] ?? null, fn ($q, $v) => $q->where('platform', $v))
             ->when($data['keyword'] ?? null, function ($q, $v) {
