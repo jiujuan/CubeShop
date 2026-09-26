@@ -69,6 +69,18 @@ const router = createRouter({
           meta: { title: '商品管理 / 编辑商品', permission: 'product.update' },
         },
         {
+          path: 'inventory-checks',
+          name: 'inventory-checks',
+          component: () => import('@/views/inventory/InventoryCheckListView.vue'),
+          meta: { title: '商品管理 / 库存盘点', menu: true, icon: 'ClipboardCheck', permission: 'inventory.check' },
+        },
+        {
+          path: 'inventory-checks/:id',
+          name: 'inventory-check-detail',
+          component: () => import('@/views/inventory/InventoryCheckDetailView.vue'),
+          meta: { title: '商品管理 / 盘点详情', permission: 'inventory.check' },
+        },
+        {
           path: 'products/import',
           name: 'product-import',
           component: () => import('@/views/product/ProductImportView.vue'),

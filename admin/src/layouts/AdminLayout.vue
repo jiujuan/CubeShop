@@ -3,7 +3,7 @@ import { computed, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import {
   BarChart3, BookOpen, Box, Calculator, ChevronDown, ChevronRight, ChevronsLeft, ChevronsRight, ClipboardList, CreditCard, FileClock, FolderTree, History, Images, KeyRound,
-  Send, Search, LayoutDashboard, Layers, LayoutList, LifeBuoy, ListTree, LogOut, MapPinned, Menu, MessageSquare, Megaphone, Package, RotateCcw, ScrollText, Settings, ShieldCheck,   SquareUser, Tags, Truck, UploadCloud, UserCog, UserRound, Users, Wallet, Warehouse, Ticket, Undo2, Activity, Diff, Scale, PackageCheck, Gavel, Gauge, SlidersHorizontal, FileUp,
+  Send, Search, LayoutDashboard, Layers, LayoutList, LifeBuoy, ListTree, LogOut, MapPinned, Menu, MessageSquare, Megaphone, Package, RotateCcw, ScrollText, Settings, ShieldCheck,   SquareUser, Tags, Truck, UploadCloud, UserCog, UserRound, Users, Wallet, Warehouse, Ticket, Undo2, Activity, Diff, Scale, PackageCheck, Gavel, Gauge, SlidersHorizontal, FileUp, ClipboardCheck,
 } from 'lucide-vue-next'
 import { useAuthStore } from '@/stores/auth'
 
@@ -73,6 +73,7 @@ const icons: Record<string, unknown> = {
   Gauge,
   SlidersHorizontal,
   FileUp,
+  ClipboardCheck,
 }
 
 interface MenuItem {
@@ -106,6 +107,7 @@ const menuGroups = computed<MenuGroup[]>(() => {
       items: [
         { path: '/products', title: '商品管理', icon: 'Package', permission: 'product.view' },
         { path: '/products/import', title: '商品导入', icon: 'FileUp', permission: 'product.import' },
+        { path: '/inventory-checks', title: '库存盘点', icon: 'ClipboardCheck', permission: 'inventory.check' },
         { path: '/categories', title: '分类管理', icon: 'FolderTree', permission: 'category.manage' },
         { path: '/brands', title: '品牌管理', icon: 'Tags', permission: 'product.view' },
         { path: '/attributes', title: '属性库', icon: 'ListTree', permission: 'product.view' },
