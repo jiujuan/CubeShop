@@ -186,7 +186,6 @@ const statusTabs: { key: StatusTab; label: string }[] = [
           买家对退款结论/退货认定发起申诉，平台介入调解；裁决「支持买家」时可驱动退款动作。
         </p>
       </div>
-      <span class="text-xs text-slate-400">共 {{ pagination.total }} 条记录</span>
     </div>
 
     <!-- 状态 Tab -->
@@ -232,7 +231,7 @@ const statusTabs: { key: StatusTab; label: string }[] = [
     <template v-else>
       <table class="mt-4 w-full text-sm">
         <thead>
-          <tr class="border-b border-slate-100 text-left text-slate-400">
+          <tr class="border-b border-slate-100 text-left text-slate-600">
             <th class="py-2 font-normal">纠纷单</th>
             <th class="py-2 font-normal">退款单号</th>
             <th class="py-2 font-normal">买家</th>

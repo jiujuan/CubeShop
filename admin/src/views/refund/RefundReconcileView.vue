@@ -122,7 +122,7 @@ function closeDetail() {
     <template v-else>
       <table class="w-full text-sm">
         <thead>
-          <tr class="border-b text-left text-slate-500">
+          <tr class="border-b border-slate-100 text-left text-slate-500">
             <th class="py-2 pr-3">对账日期</th>
             <th class="py-2 pr-3">渠道</th>
             <th class="py-2 pr-3">差异类型</th>

@@ -173,7 +173,6 @@ function closeLogs() {
         <h2 class="text-lg font-semibold text-slate-800">退货处理</h2>
         <p class="mt-0.5 text-xs text-slate-400">仅退款类型：退货退款（确认收货 / 质检）</p>
       </div>
-      <span class="text-xs text-slate-400">共 {{ pagination.total }} 条记录</span>
     </div>
 
     <!-- 退货状态 Tab -->
@@ -202,7 +201,7 @@ function closeLogs() {
     <template v-else>
       <table class="w-full text-sm">
         <thead>
-          <tr class="border-b text-left text-slate-500">
+          <tr class="border-b border-slate-100 text-left text-slate-500">
             <th class="py-2 pr-3">退款单号</th>
             <th class="py-2 pr-3">订单号</th>
             <th class="py-2 pr-3">渠道</th>
@@ -306,7 +305,7 @@ function closeLogs() {
         <h3 class="mt-5 text-sm font-semibold text-slate-700">应退明细</h3>
         <table class="mt-2 w-full text-sm">
           <thead>
-            <tr class="border-b text-left text-slate-500">
+            <tr class="border-b border-slate-100 text-left text-slate-500">
               <th class="py-1 pr-3">SKU</th>
               <th class="py-1 pr-3">应退数量</th>
               <th class="py-1">实收</th>
