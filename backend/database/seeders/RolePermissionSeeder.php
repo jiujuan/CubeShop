@@ -59,6 +59,9 @@ class RolePermissionSeeder extends Seeder
         'account.manage',
         'role.manage',
         'inventory.manage',
+        // 库存盘点（建单/录入/导入导出/作废）。过账不在此列——过账改写库存，
+        // 复用 inventory.manage，与手工调整库存同一授权口径（盘点员可录数、调账需库存管理权）
+        'inventory.check',
         // V1.1 二期（T-032）营销管理：优惠券与满减活动
         'marketing.manage',
         // 公告管理（P-Announcement）：运营可自助发布/管理前台公告
@@ -132,7 +135,7 @@ class RolePermissionSeeder extends Seeder
             'refund.view', 'refund.process',
             'dashboard.view',
             'address.view',
-            'review.manage', 'report.view', 'inventory.manage',
+            'review.manage', 'report.view', 'inventory.manage', 'inventory.check',
             // 营销管理（V1.1 二期 T-032）：运营可自助发券/建满减活动
             'marketing.manage',
             // 公告管理（P-Announcement）：运营可自助发布/管理前台公告

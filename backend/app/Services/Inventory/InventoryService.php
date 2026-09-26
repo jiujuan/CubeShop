@@ -140,9 +140,15 @@ class InventoryService
      *                                   缺省维持 'adjust'（既有调用零改动）。
      * @throws RuntimeException 库存不足
      */
-    public function adjust(int $skuId, int $delta, ?int $operatorId = null, ?string $remark = null, ?string $bizType = null): int
+    /**
+     * 库存调整（唯一写入口）
+     *
+     * $bizId 供业务单据反查（如盘点单过账：biz_type=inventory_check、biz_id=盘点单ID）。
+     * 追加在参数末尾且可空，既有调用方无需改动。
+     */
+    public function adjust(int $skuId, int $delta, ?int $operatorId = null, ?string $remark = null, ?string $bizType = null, ?int $bizId = null): int
     {
-        return DB::transaction(function () use ($skuId, $delta, $operatorId, $remark, $bizType) {
+        return DB::transaction(function () use ($skuId, $delta, $operatorId, $remark, $bizType, $bizId) {
             if ($delta === 0) {
                 return $this->getStock($skuId);
             }
@@ -168,7 +174,7 @@ class InventoryService
             $after = $before + $delta;
             $this->log($skuId, 'adjust', $delta, $before, $after,
                 $inventory?->locked_stock ?? 0, $inventory?->locked_stock ?? 0,
-                $bizType ?? 'adjust', null, $remark, $operatorId);
+                $bizType ?? 'adjust', $bizId, $remark, $operatorId);
 
             return $after;
         });

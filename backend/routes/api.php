@@ -26,6 +26,7 @@ use App\Http\Controllers\Admin\PaymentLogController as AdminPaymentLogController
 use App\Http\Controllers\Admin\BalanceRechargeController as AdminBalanceRechargeController;
 use App\Http\Controllers\Admin\ProductController;
 use App\Http\Controllers\Admin\ProductImportController;
+use App\Http\Controllers\Admin\InventoryCheckController;
 use App\Http\Controllers\Admin\PromotionController as AdminPromotionController;
 use App\Http\Controllers\Admin\RefundController;
 use App\Http\Controllers\Admin\ReportController as AdminReportController;
@@ -374,6 +375,15 @@ Route::middleware(['auth:sanctum', 'account.active'])->group(function () {
         // 商品批量导入（静态路径须在 /products/{id} 之前注册）
         Route::get('/products/import/template', [ProductImportController::class, 'template'])->middleware('permission:product.view');
         Route::post('/products/import', [ProductImportController::class, 'import'])->middleware('permission:product.import');
+        // 库存盘点：建单/录入/导入导出/作废用 inventory.check，过账单独用 inventory.manage
+        Route::get('/inventory-checks', [InventoryCheckController::class, 'index'])->middleware('permission:inventory.check');
+        Route::post('/inventory-checks', [InventoryCheckController::class, 'store'])->middleware('permission:inventory.check');
+        Route::get('/inventory-checks/{id}', [InventoryCheckController::class, 'show'])->middleware('permission:inventory.check');
+        Route::post('/inventory-checks/{id}/count', [InventoryCheckController::class, 'count'])->middleware('permission:inventory.check');
+        Route::post('/inventory-checks/{id}/import', [InventoryCheckController::class, 'import'])->middleware('permission:inventory.check');
+        Route::get('/inventory-checks/{id}/export', [InventoryCheckController::class, 'export'])->middleware('permission:inventory.check');
+        Route::post('/inventory-checks/{id}/cancel', [InventoryCheckController::class, 'cancel'])->middleware('permission:inventory.check');
+        Route::post('/inventory-checks/{id}/post', [InventoryCheckController::class, 'post'])->middleware('permission:inventory.manage');
         Route::get('/products/{id}', [ProductController::class, 'show'])->middleware('permission:product.view');
         Route::put('/products/{id}', [ProductController::class, 'update'])->middleware('permission:product.update');
         Route::post('/products/{id}/status', [ProductController::class, 'updateStatus'])->middleware('permission:product.update');
