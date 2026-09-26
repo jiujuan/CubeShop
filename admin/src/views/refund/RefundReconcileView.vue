@@ -24,6 +24,7 @@ import TablePagination from '@/components/TablePagination.vue'
  * Phase 5 的 RefundReconcileService 已把退款差异写入 payment_reconciliation_diffs
  * （diff_type 以 REFUND_ 开头）。本页通过 category=refund 过滤出来，供财务/运营核查处置。
  * 复用支付对账的差异处置/导出能力（同一张表、同一控制器）。
+ * 布局与「支付日志」页一致：标题/Tab/表格/分页整体收在一张白色卡片内。
  */
 type DiffTab = '' | ReconcileDiffStatus
 
@@ -90,14 +91,16 @@ function closeDetail() {
 </script>
 
 <template>
-  <div class="p-5">
+  <div class="rounded-lg bg-white p-5 shadow-sm">
     <div class="flex items-center justify-between">
-      <h1 class="text-lg font-semibold text-slate-800">退款对账差异</h1>
-      <button class="rounded bg-[#1677ff] px-3 py-1.5 text-sm text-white" @click="exportCsv">导出 CSV</button>
+      <div>
+        <h2 class="text-lg font-semibold text-slate-800">退款对账差异</h2>
+        <p class="mt-0.5 text-xs text-slate-400">
+          由「退款对账」任务每日比对本地退款与渠道状态生成；差异类型以 REFUND_ 开头。
+        </p>
+      </div>
+      <button class="rounded bg-[#1677ff] px-3 py-1.5 text-sm text-white hover:bg-[#4096ff]" @click="exportCsv">导出 CSV</button>
     </div>
-    <p class="mt-1 text-sm text-slate-400">
-      由「退款对账」任务每日比对本地退款与渠道状态生成；差异类型以 REFUND_ 开头。
-    </p>
 
     <!-- 处置状态 Tab -->
     <div class="mt-4 flex flex-wrap gap-2">
@@ -115,9 +118,9 @@ function closeDetail() {
       >{{ RECONCILE_DIFF_STATUS_LABELS[t] }}</button>
     </div>
 
-    <div class="mt-4 rounded-lg bg-white p-5 shadow-sm">
-      <div v-if="loading" class="flex justify-center py-10"><LoadingSpinner /></div>
-      <table v-else class="w-full text-sm">
+    <div v-if="loading" class="flex justify-center py-10"><LoadingSpinner /></div>
+    <template v-else>
+      <table class="w-full text-sm">
         <thead>
           <tr class="border-b text-left text-slate-500">
             <th class="py-2 pr-3">对账日期</th>
@@ -176,12 +179,11 @@ function closeDetail() {
       </table>
 
       <TablePagination
-        v-if="!loading"
         class="mt-4"
         :pagination="pagination"
         @change="goPage"
       />
-    </div>
+    </template>
 
     <p v-if="tip" class="mt-3 text-sm text-red-500">{{ tip }}</p>
     <p v-if="resolveTip" class="mt-3 text-sm text-red-500">{{ resolveTip }}</p>

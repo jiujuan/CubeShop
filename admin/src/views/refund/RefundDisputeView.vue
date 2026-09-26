@@ -27,6 +27,8 @@ import TablePagination from '@/components/TablePagination.vue'
  *
  * 列表（状态 Tab + 原因筛选）→ 详情抽屉（退款快照 + 举证 + 消息线程 + 裁决表单）。
  * 裁决 resolution=resolved_refund 时按 refund_action 经 RefundService 驱动退款状态。
+ * 布局与「支付日志」页一致：标题/Tab/筛选/表格/分页整体收在一张白色卡片内；
+ * 查询按钮为品牌蓝；下拉框悬停/选中项高亮为蓝色（见底部 style）。
  */
 type StatusTab = '' | RefundDisputeStatus
 
@@ -176,11 +178,16 @@ const statusTabs: { key: StatusTab; label: string }[] = [
 </script>
 
 <template>
-  <div class="p-5">
-    <h1 class="text-lg font-semibold text-slate-800">退款纠纷管理</h1>
-    <p class="mt-1 text-sm text-slate-400">
-      买家对退款结论/退货认定发起申诉，平台介入调解；裁决「支持买家」时可驱动退款动作。
-    </p>
+  <div class="refund-dispute-page rounded-lg bg-white p-5 shadow-sm">
+    <div class="flex items-center justify-between">
+      <div>
+        <h2 class="text-lg font-semibold text-slate-800">退款纠纷管理</h2>
+        <p class="mt-0.5 text-xs text-slate-400">
+          买家对退款结论/退货认定发起申诉，平台介入调解；裁决「支持买家」时可驱动退款动作。
+        </p>
+      </div>
+      <span class="text-xs text-slate-400">共 {{ pagination.total }} 条记录</span>
+    </div>
 
     <!-- 状态 Tab -->
     <div class="mt-4 flex flex-wrap gap-2">
@@ -195,26 +202,35 @@ const statusTabs: { key: StatusTab; label: string }[] = [
     </div>
 
     <!-- 筛选 -->
-    <div class="mt-3 flex flex-wrap items-center gap-2">
-      <select v-model="reason" class="rounded border border-slate-200 px-2 py-1.5 text-sm" data-testid="dispute-reason-filter" @change="search">
+    <div class="mt-3 flex flex-wrap items-center gap-2 text-[13px]">
+      <select
+        v-model="reason"
+        class="rounded-md border border-slate-300 px-2 py-1.5 outline-none focus:border-[#1677ff]"
+        data-testid="dispute-reason-filter"
+        @change="search"
+      >
         <option value="">全部原因</option>
         <option v-for="(label, key) in REFUND_DISPUTE_REASON_LABELS" :key="key" :value="key">{{ label }}</option>
       </select>
       <input
         v-model="keyword"
         placeholder="退款单号 / 订单号 / 买家"
-        class="w-64 rounded border border-slate-200 px-2 py-1.5 text-sm focus:border-[#1677ff] focus:outline-none"
+        class="w-64 rounded-md border border-slate-300 px-3 py-1.5 outline-none focus:border-[#1677ff]"
         data-testid="dispute-keyword"
         @keyup.enter="search"
       />
-      <button class="rounded bg-slate-700 px-3 py-1.5 text-sm text-white" @click="search">查询</button>
+      <button
+        class="rounded bg-[#1677ff] px-5 py-1.5 text-sm text-white hover:bg-[#4096ff]"
+        data-testid="dispute-search"
+        @click="search"
+      >查询</button>
     </div>
 
     <LoadingSpinner v-if="loading" class="mt-6" />
     <p v-else-if="tip" class="mt-3 rounded-md bg-red-50 px-3 py-2 text-sm text-red-600">{{ tip }}</p>
 
-    <div v-else class="mt-4 rounded-lg bg-white p-5 shadow-sm">
-      <table class="w-full text-sm">
+    <template v-else>
+      <table class="mt-4 w-full text-sm">
         <thead>
           <tr class="border-b border-slate-100 text-left text-slate-400">
             <th class="py-2 font-normal">纠纷单</th>
@@ -248,7 +264,7 @@ const statusTabs: { key: StatusTab; label: string }[] = [
         </tbody>
       </table>
       <TablePagination v-if="!loading" class="mt-4" :pagination="pagination" @change="goPage" />
-    </div>
+    </template>
 
     <!-- 详情抽屉 -->
     <div v-if="detail" class="fixed inset-0 z-40 flex justify-end bg-black/30" @click.self="closeDetail">
@@ -356,3 +372,17 @@ const statusTabs: { key: StatusTab; label: string }[] = [
     </div>
   </div>
 </template>
+
+<style>
+/* 下拉框悬停/选中项高亮为品牌蓝（原生 option 悬停色默认跟随系统/黑色） */
+.refund-dispute-page select {
+  background-color: #ffffff;
+  color: #1f2937;
+}
+.refund-dispute-page select option:hover,
+.refund-dispute-page select option:focus,
+.refund-dispute-page select option:checked {
+  background-color: #1677ff;
+  color: #ffffff;
+}
+</style>

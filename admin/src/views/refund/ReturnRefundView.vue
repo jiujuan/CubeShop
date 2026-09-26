@@ -24,6 +24,7 @@ import TablePagination from '@/components/TablePagination.vue'
  * 聚焦 return_refund 类型：运营在此确认买家寄回的退货、做良品/残次质检、标记差异。
  * 与「退款处理」页互补——那里覆盖全部退款单的审核/重试，这里覆盖退货收货这一步骤。
  * 后端 receive 接口已做幂等、库存回加与差异记录；本页只负责呈现与提交。
+ * 布局与「支付日志」页一致：标题/Tab/表格/分页整体收在一张白色卡片内。
  */
 type ReturnTab = '' | 'waiting_return' | 'shipping' | 'received' | 'exception'
 
@@ -166,10 +167,13 @@ function closeLogs() {
 </script>
 
 <template>
-  <div class="p-5">
+  <div class="rounded-lg bg-white p-5 shadow-sm">
     <div class="flex items-center justify-between">
-      <h1 class="text-lg font-semibold text-slate-800">退货处理</h1>
-      <span class="text-sm text-slate-400">仅退款类型：退货退款（确认收货 / 质检）</span>
+      <div>
+        <h2 class="text-lg font-semibold text-slate-800">退货处理</h2>
+        <p class="mt-0.5 text-xs text-slate-400">仅退款类型：退货退款（确认收货 / 质检）</p>
+      </div>
+      <span class="text-xs text-slate-400">共 {{ pagination.total }} 条记录</span>
     </div>
 
     <!-- 退货状态 Tab -->
@@ -192,11 +196,11 @@ function closeLogs() {
       </button>
     </div>
 
-    <div class="mt-4 rounded-lg bg-white p-5 shadow-sm">
-      <div v-if="loading" class="flex justify-center py-10">
-        <LoadingSpinner />
-      </div>
-      <table v-else class="w-full text-sm">
+    <div v-if="loading" class="flex justify-center py-10">
+      <LoadingSpinner />
+    </div>
+    <template v-else>
+      <table class="w-full text-sm">
         <thead>
           <tr class="border-b text-left text-slate-500">
             <th class="py-2 pr-3">退款单号</th>
@@ -257,12 +261,11 @@ function closeLogs() {
       </table>
 
       <TablePagination
-        v-if="!loading"
         class="mt-4"
         :pagination="pagination"
         @change="goPage"
       />
-    </div>
+    </template>
 
     <p v-if="tip" class="mt-3 text-sm text-red-500">{{ tip }}</p>
 
