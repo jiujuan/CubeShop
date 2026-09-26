@@ -37,6 +37,7 @@ use App\Http\Controllers\Admin\SearchSynonymController as AdminSearchSynonymCont
 use App\Http\Controllers\Admin\SmsConfigController as AdminSmsConfigController;
 use App\Http\Controllers\Admin\UploadController;
 use App\Http\Controllers\Admin\UserController;
+use App\Http\Controllers\Admin\UserPointController;
 use App\Http\Controllers\Admin\WmsConfigController;
 use App\Http\Controllers\Admin\WmsApiLogController;
 use App\Http\Controllers\Admin\WmsConsoleController;
@@ -702,6 +703,11 @@ Route::middleware(['auth:sanctum', 'account.active'])->group(function () {
         Route::put('/users/{id}', [UserController::class, 'update'])->middleware('permission:user.manage');
         Route::put('/users/{id}/status', [UserController::class, 'updateStatus'])->middleware('permission:user.manage');
         Route::put('/users/{id}/password', [UserController::class, 'changePassword'])->middleware('permission:user.manage');
+
+        // 会员积分（会员成长计划 S1）：查看 member.view / 人工调整 member.manage
+        // ⚠️ 权限与 user.manage 解耦：查看积分不需要用户管理权，调整才需要会员管理权
+        Route::get('/users/{id}/points', [UserPointController::class, 'show'])->middleware('permission:member.view');
+        Route::post('/users/{id}/points/adjust', [UserPointController::class, 'adjust'])->middleware('permission:member.manage');
 
         // 收货地址管理（设计文档 CubeShop_Address_Design_v1.0 §5）
         // 查看：address.view（运营可核对）；代改：address.manage（仅超管，禁改默认/归属）

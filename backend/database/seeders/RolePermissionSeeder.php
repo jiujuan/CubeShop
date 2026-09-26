@@ -98,6 +98,12 @@ class RolePermissionSeeder extends Seeder
         'sms.manage',
         'payment.reconcile.view',
         'payment.reconcile.handle',
+        // 会员与积分（会员成长计划 S1）：member.view 查看积分账户与流水，
+        // member.manage 人工调整积分 / 补签 / 改会员规则。两档都给运营——
+        // 运营已有的 payment.offline.review 可直接加真金白银的余额，
+        // 积分调整的量级与可追溯性（流水 + 操作日志 + 原因必填）都不弱于它。
+        'member.view',
+        'member.manage',
     ];
 
     public function run(): void
@@ -136,6 +142,8 @@ class RolePermissionSeeder extends Seeder
             'dashboard.view',
             'address.view',
             'review.manage', 'report.view', 'inventory.manage', 'inventory.check',
+            // 会员与积分（会员成长计划 S1）：运营日常做会员运营（查看积分、调整、补签）
+            'member.view', 'member.manage',
             // 营销管理（V1.1 二期 T-032）：运营可自助发券/建满减活动
             'marketing.manage',
             // 公告管理（P-Announcement）：运营可自助发布/管理前台公告
