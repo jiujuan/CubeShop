@@ -156,6 +156,61 @@ export function batchProducts(ids: number[], action: 'on_shelf' | 'off_shelf') {
   return request.post<ApiResult<{ count: number }>>('/admin/products/batch', { ids, action })
 }
 
+// ---------- 商品批量导入 ----------
+
+/** 导入模式：create=新建商品，update=按 SKU 编码改价/库存/状态 */
+export type ProductImportMode = 'create' | 'update'
+
+export interface ProductImportFailedRow {
+  /** Excel 行号（含表头） */
+  row: number
+  code: string
+  sku_code: string
+  reason: string
+}
+
+export interface ProductImportResult {
+  mode: ProductImportMode
+  total: number
+  /** 成功行数（SKU 行） */
+  success: number
+  /** 新建模式下新建的商品数 */
+  products: number
+  failed: ProductImportFailedRow[]
+}
+
+/** 上传 xlsx 执行导入（预校验全部通过才落库，失败返回逐行明细） */
+export function importProducts(file: File, mode: ProductImportMode) {
+  const form = new FormData()
+  form.append('file', file)
+  form.append('mode', mode)
+  return request.post<ApiResult<ProductImportResult>>('/admin/products/import', form, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+    timeout: 120000,
+  })
+}
+
+/** 模板下载（xlsx：主表 + 填写说明 + 分类对照 + 品牌对照） */
+export async function downloadProductImportTemplate(mode: ProductImportMode) {
+  const response = await request.get('/admin/products/import/template', {
+    params: { mode },
+    responseType: 'blob',
+    timeout: 60000,
+  })
+
+  let name = '商品导入模板.xlsx'
+  const disposition = String(response.headers['content-disposition'] || '')
+  const match = /filename\*?=(?:UTF-8'')?"?([^";]+)/i.exec(disposition)
+  if (match) name = decodeURIComponent(match[1])
+
+  const url = URL.createObjectURL(response.data as Blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = name
+  link.click()
+  URL.revokeObjectURL(url)
+}
+
 // ---------- 图片上传（API 文档 12.5） ----------
 
 export function uploadImage(file: File) {

@@ -69,6 +69,12 @@ const router = createRouter({
           meta: { title: '商品管理 / 编辑商品', permission: 'product.update' },
         },
         {
+          path: 'products/import',
+          name: 'product-import',
+          component: () => import('@/views/product/ProductImportView.vue'),
+          meta: { title: '商品管理 / 批量导入', permission: 'product.import' },
+        },
+        {
           path: 'products/:id',
           name: 'product-view',
           component: () => import('@/views/product/ProductDetailView.vue'),
