@@ -2,7 +2,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import {
-  Bell, ChevronRight, Clock, Heart, KeyRound, LifeBuoy, LogOut, MapPin, PackageCheck,
+  Bell, CalendarCheck, ChevronRight, Clock, Heart, KeyRound, LifeBuoy, LogOut, MapPin, PackageCheck,
   ClipboardList, ShieldCheck, Ticket, UserRound, Wallet,
 } from 'lucide-vue-next'
 import { changePassword, getProfile, updateProfile, uploadImage, type UserProfile } from '@/api/user'
@@ -11,6 +11,10 @@ import {
   type BalanceAccount, type RechargeRecord, type BalanceLogItem,
 } from '@/api/balance'
 import { getUnreadCount } from '@/api/notification'
+import {
+  getCheckinStatus, postCheckin,
+  type CheckinStatus,
+} from '@/api/points'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import LoadingSpinner from '@/components/LoadingSpinner.vue'
 import ShopFooter from '@/components/ShopFooter.vue'
@@ -46,6 +50,10 @@ const logTotal = ref(0)
 const logPage = ref(1)
 const logLoading = ref(false)
 const balanceLoaded = ref(false)
+
+// 签到（会员成长计划 S2）
+const checkin = ref<CheckinStatus | null>(null)
+const checkinSubmitting = ref(false)
 
 // 资料编辑
 const nickname = ref('')
@@ -111,8 +119,35 @@ async function load() {
     } catch {
       balance.value = null
     }
+    try {
+      checkin.value = (await getCheckinStatus()).data.data
+    } catch {
+      checkin.value = null
+    }
   } finally {
     loading.value = false
+  }
+}
+
+/** 签到：成功后用返回结果刷新卡片（含实发积分与最新连续天数/余额），无需再拉一次状态 */
+async function doCheckin() {
+  if (!checkin.value || checkin.value.checked || checkinSubmitting.value) return
+  checkinSubmitting.value = true
+  try {
+    const { data } = await postCheckin()
+    checkin.value = data.data
+    notify('ok', `签到成功，获得 ${data.data.points} 积分`)
+  } catch (err) {
+    // 重复签到（409 / 40009）属正常状态，刷新卡片同步即可
+    const msg = err instanceof Error ? err.message : '签到失败'
+    try {
+      checkin.value = (await getCheckinStatus()).data.data
+    } catch {
+      /* 忽略 */
+    }
+    notify('err', msg)
+  } finally {
+    checkinSubmitting.value = false
   }
 }
 
@@ -299,6 +334,32 @@ onMounted(() => {
                 <button class="rounded-full bg-[#1677ff] px-4 py-1.5 text-[13px] text-white hover:bg-[#4096ff]" data-testid="recharge-btn" @click="goRecharge">充值</button>
               </div>
             </div>
+          </section>
+
+          <!-- 每日签到（会员成长计划 S2） -->
+          <section v-if="checkin" class="mb-4 rounded-xl border border-slate-100 bg-white p-5" data-testid="checkin-card">
+            <template v-if="checkin.available">
+              <div class="flex items-center justify-between">
+                <div>
+                  <p class="flex items-center gap-1.5 text-sm font-semibold text-slate-700"><CalendarCheck class="h-4 w-4 text-[#1677ff]" /> 每日签到</p>
+                  <p class="mt-2 text-2xl font-bold text-[#1677ff]" data-testid="checkin-streak">已连续 {{ checkin.streak }} 天</p>
+                  <p class="mt-1 text-xs text-slate-400">
+                    今日可得 <span class="font-medium text-[#52c41a]">+{{ checkin.today_points }}</span>
+                    · 明日可得 +{{ checkin.next_points }}
+                    · 累计 {{ checkin.total_days }} 天
+                  </p>
+                  <p class="mt-0.5 text-xs text-slate-400">可用积分 {{ checkin.balance }}</p>
+                </div>
+                <button
+                  class="shrink-0 rounded-full px-5 py-2 text-[13px] text-white transition-colors"
+                  :class="checkin.checked ? 'cursor-not-allowed bg-slate-300' : 'bg-[#1677ff] hover:bg-[#4096ff]'"
+                  :disabled="checkin.checked || checkinSubmitting"
+                  data-testid="checkin-btn"
+                  @click="doCheckin"
+                >{{ checkin.checked ? '今日已签' : (checkinSubmitting ? '签到中…' : '签到') }}</button>
+              </div>
+            </template>
+            <p v-else class="text-sm text-slate-400" data-testid="checkin-disabled">每日签到功能暂未开放</p>
           </section>
 
           <section class="mb-4 rounded-xl border border-slate-100 bg-white p-5">

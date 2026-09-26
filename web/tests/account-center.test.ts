@@ -45,6 +45,11 @@ vi.mock('@/api/notification', () => ({
   markAllRead: vi.fn(),
 }))
 
+vi.mock('@/api/points', () => ({
+  getCheckinStatus: vi.fn().mockResolvedValue({ data: { data: null } }),
+  postCheckin: vi.fn(),
+}))
+
 vi.mock('@/api/shop', () => ({
   getCategories: vi.fn().mockResolvedValue({ data: { data: [] } }),
   getProducts: vi.fn(),
