@@ -40,6 +40,8 @@ const pagination = ref({ page: 1, page_size: 20, total: 0, total_pages: 1 })
 const loading = ref(true)
 const tip = ref('')
 const statusFilter = ref<'' | RefundStatus>('')
+const refundNo = ref('')
+const orderNo = ref('')
 
 const MAX_IMAGES = 9
 
@@ -48,6 +50,8 @@ async function load() {
   loading.value = true
   try {
     const res = await getRefunds({
+      refund_no: refundNo.value.trim() || undefined,
+      order_no: orderNo.value.trim() || undefined,
       status: statusFilter.value || undefined,
       page: pagination.value.page,
       page_size: pagination.value.page_size,
@@ -63,6 +67,18 @@ onMounted(load)
 
 function filterStatus(status: '' | RefundStatus) {
   statusFilter.value = status
+  pagination.value.page = 1
+  load()
+}
+
+function search() {
+  pagination.value.page = 1
+  load()
+}
+
+function reset() {
+  refundNo.value = ''
+  orderNo.value = ''
   pagination.value.page = 1
   load()
 }
@@ -344,7 +360,11 @@ async function doExport() {
   exporting.value = true
   tip.value = ''
   try {
-    await exportRefunds({ status: statusFilter.value || undefined })
+    await exportRefunds({
+      refund_no: refundNo.value.trim() || undefined,
+      order_no: orderNo.value.trim() || undefined,
+      status: statusFilter.value || undefined,
+    })
   } catch (e) {
     tip.value = e instanceof Error ? e.message : '导出失败，请稍后重试'
   } finally {
@@ -359,6 +379,12 @@ async function doExport() {
     <!-- 标题 -->
     <div class="mb-4 flex items-center justify-between">
       <h2 class="text-lg font-semibold text-slate-800">退款处理</h2>
+      <button
+        class="rounded bg-[#1677ff] px-3 py-1.5 text-sm text-white hover:bg-[#4096ff] disabled:opacity-50"
+        data-testid="export-refunds"
+        :disabled="exporting"
+        @click="doExport"
+      >{{ exporting ? '导出中…' : '导出 CSV' }}</button>
     </div>
 
     <p v-if="tip" class="mb-4 rounded-md bg-red-50 px-3 py-2 text-xs text-red-500">{{ tip }}</p>
@@ -374,14 +400,31 @@ async function doExport() {
       >{{ tab[1] }}</button>
     </div>
 
-    <!-- 批量审核 + 导出工具条（#5） -->
-    <div class="mb-4 flex flex-wrap items-center gap-3">
+    <!-- 搜索 -->
+    <div class="mb-4 flex flex-wrap items-center gap-2 text-[13px]">
+      <input
+        v-model="refundNo" type="text" placeholder="退款单号"
+        class="w-56 rounded-md border border-slate-300 px-3 py-1.5 outline-none focus:border-[#1677ff]"
+        data-testid="filter-refund-no" @keyup.enter="search"
+      />
+      <input
+        v-model="orderNo" type="text" placeholder="订单号"
+        class="w-56 rounded-md border border-slate-300 px-3 py-1.5 outline-none focus:border-[#1677ff]"
+        data-testid="filter-order-no" @keyup.enter="search"
+      />
       <button
-        class="rounded border border-slate-200 px-3 py-1 text-xs text-slate-600 hover:border-[#1677ff] hover:text-[#1677ff] disabled:opacity-50"
-        data-testid="export-refunds"
-        :disabled="exporting"
-        @click="doExport"
-      >{{ exporting ? '导出中…' : '导出 CSV' }}</button>
+        class="rounded bg-[#1677ff] px-5 py-1.5 text-sm text-white hover:bg-[#4096ff]"
+        data-testid="filter-search"
+        @click="search"
+      >搜索</button>
+      <button
+        class="rounded border border-slate-300 px-4 py-1.5 text-sm text-slate-600 hover:border-[#1677ff] hover:text-[#1677ff]"
+        @click="reset"
+      >重置</button>
+    </div>
+
+    <!-- 批量审核工具条（#5） -->
+    <div class="mb-4 flex flex-wrap items-center gap-3">
       <template v-if="selectedIds.length">
         <span class="text-xs text-slate-500" data-testid="selected-count">已选 {{ selectedIds.length }} 单</span>
         <button
