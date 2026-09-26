@@ -494,6 +494,7 @@ Route::middleware(['auth:sanctum', 'account.active'])->group(function () {
         Route::get('/refunds/{id}', [RefundController::class, 'show'])->middleware('permission:refund.view');
         Route::post('/refunds/{id}/process', [RefundController::class, 'process'])->middleware('permission:refund.process');
         Route::post('/refunds/{id}/receive', [RefundController::class, 'receive'])->middleware('permission:refund.process');
+        Route::post('/refunds/{id}/retry', [RefundController::class, 'retry'])->middleware('permission:refund.process');
 
         // WMS 对接配置（WMS 计划 P0 / §9.1）：仓库档案 + 按仓配置 + SKU 映射
         // 权限码 wms.config.manage（超管 + 运营）；P6 起追加发货单/退货单页面复用 wms.order.* / wms.return.manage

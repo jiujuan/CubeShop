@@ -7,7 +7,14 @@ use App\Models\Order;
 use App\Models\OrderLog;
 use App\Models\Refund;
 use App\Models\SysOperationLog;
+use App\Models\Payment;
 use App\Services\Common\NoGeneratorService;
+use App\Services\Payment\Dto\RefundResult;
+use App\Services\Payment\PaymentChannelService;
+use App\Services\Payment\PaymentGatewayFactory;
+use App\Services\Refund\RefundLogger;
+use Illuminate\Support\Str;
+use Throwable;
 use App\Services\Common\OperationLogService;
 use App\Services\Inventory\InventoryService;
 use App\Services\Order\OrderService;
@@ -35,6 +42,8 @@ class RefundService
         private NoGeneratorService $noGenerator,
         private OperationLogService $operationLog,
         private InventoryService $inventory,
+        private PaymentGatewayFactory $factory,
+        private PaymentChannelService $channels,
     ) {
     }
 
@@ -300,19 +309,9 @@ class RefundService
                     $refund->return_status = Refund::RETURN_STATUS_WAITING_RETURN;
                     // 订单保持 refunding，不流转；后续由 receiveReturn() 推进
                 } else {
-                    // 仅退款：沙箱直接标记渠道退款成功（生产环境对接渠道退款 API）
-                    $refund->status = Refund::STATUS_SUCCESS;
-                    $this->orders->transitionTo($order, Order::STATUS_REFUNDED, '退款成功', 'order', $adminId, OrderLog::OPERATOR_ADMIN);
-
-                    // T-036：整单全额退款 → 原样返还券（一券一单，releaseCoupon 幂等且仅返还本单占用券）；
-                    // 部分退款默认不返还已使用券（防止「退了钱又白拿券」的资损）。
-                    if (abs((float) $refund->amount - (float) $order->pay_amount) < 0.005) {
-                        $this->orders->releaseCoupon($order);
-                        $this->operationLog->record(
-                            $adminId, 'refund', 'coupon_returned', 'order', $order->id,
-                            ['order_no' => $order->order_no, 'coupon_id' => $order->coupon_id, 'reason' => '整单退款返还'],
-                        );
-                    }
+                    // 仅退款：审核通过即发起渠道退款（原路退回）。微信异步进入 processing，
+                    // 支付宝/余额/Mock 同步成功；终态由 executeChannelRefund 驱动。
+                    $refund->status = Refund::STATUS_PROCESSING; // 过渡态，executeChannelRefund 落终态
                 }
             } else {
                 $refund->status = Refund::STATUS_REJECTED;
@@ -329,6 +328,12 @@ class RefundService
             return $refund;
         });
 
+        // 仅退款审核通过：立即驱动渠道退款（同步渠道在此落 success，微信异步落 processing）；
+        // 拒绝 / 退货退款（待收货）不在此发起
+        if ($action === 'approve' && ! $refund->isReturnRefund()) {
+            $refund = $this->executeChannelRefund($refund, $adminId, OrderLog::OPERATOR_ADMIN);
+        }
+
         $this->operationLog->record($adminId, 'refund', 'process_'.$action, 'refund', $refund->id, [
             'refund_no' => $refund->refund_no,
             'order_no' => $refund->order_no,
@@ -339,7 +344,7 @@ class RefundService
         ]);
 
         // V1.1 F02 / T-018：退款结果通知买家（失败不影响审核结果）
-        event(new \App\Events\RefundResult($refund));
+        event(new \App\Events\RefundResult($refund->fresh()));
 
         // WMS 计划 P4 / Step 3：退货退款审核通过 → 触发退货入库单创建（监听器内部
         // 捕获异常，绝不阻断审核结果；仅退款类型不发本事件，老路径零变化）
@@ -364,8 +369,8 @@ class RefundService
         if (! $refund->isReturnRefund()) {
             throw BusinessException::badRequest('仅退货退款类型需要确认收货');
         }
-        // 幂等：已收货完成直接返回，不重复回库存（WMS 回传可能重放）
-        if ($refund->status === Refund::STATUS_SUCCESS) {
+        // 幂等：已收货完成 / 渠道退款处理中直接返回，不重复回库存或重复发起退款（WMS 回传可能重放）
+        if (in_array($refund->status, [Refund::STATUS_SUCCESS, Refund::STATUS_PROCESSING], true)) {
             return $refund;
         }
         if ($refund->status !== Refund::STATUS_APPROVED) {
@@ -432,8 +437,7 @@ class RefundService
                     }
                 }
 
-                // 退款完成 + 订单 refunded（保持与仅退款一致的收尾）
-                $refund->status = Refund::STATUS_SUCCESS;
+                // 退款完成（回库存后由 executeChannelRefund 驱动终态：同步成功 / 微信异步 processing）
                 $refund->return_status = Refund::RETURN_STATUS_RECEIVED;
                 $refund->return_received_details = $normalized;
                 $refund->return_received_at = now();
@@ -441,18 +445,14 @@ class RefundService
                 // 差异单不阻断退款完成，仅记录（金额以审核金额为准）
                 $refund->save();
 
-                $this->orders->transitionTo($order, Order::STATUS_REFUNDED, '退货收货完成退款', 'order', $adminId, OrderLog::OPERATOR_ADMIN);
-
-                // 整单退货退款且金额等于实付：返还券（与仅退款一致）
-                if (abs((float) $refund->amount - (float) $order->pay_amount) < 0.005) {
-                    $this->orders->releaseCoupon($order);
-                }
-
                 return $refund;
             });
         } catch (BusinessException $e) {
             throw $e;
         }
+
+        // 收货确认后发起渠道退款（与仅退款一致：同步成功 / 微信异步 processing）
+        $refund = $this->executeChannelRefund($refund, $adminId, OrderLog::OPERATOR_ADMIN);
 
         $this->operationLog->record($adminId, 'refund', 'return_received', 'refund', $refund->id, [
             'refund_no' => $refund->refund_no,
@@ -461,7 +461,208 @@ class RefundService
         ]);
 
         // 通知买家退款完成
-        event(new \App\Events\RefundResult($refund));
+        event(new \App\Events\RefundResult($refund->fresh()));
+
+        return $refund;
+    }
+
+    /**
+     * 最大重试次数（超限转人工）
+     */
+    public const MAX_RETRY = 3;
+
+    /**
+     * 调用支付网关执行渠道退款（Phase 3 核心编排）。
+     *
+     * 取订单成功支付单 → 原路 → 复用/生成 out_refund_no → 调网关 → 落 success/processing/failed。
+     * 每个节点写 refund_logs 便于全链路追溯。失败重试、异步回调、定时轮询均复用本方法。
+     *
+     * @param  int|null  $actorId  触发本次渠道退款的操作人（审核/重试的管理员；回调/轮询为系统 0）
+     * @param  string  $actorType  OrderLog 操作方类型（OPERATOR_ADMIN / OPERATOR_SYSTEM）
+     */
+    public function executeChannelRefund(Refund $refund, ?int $actorId = null, string $actorType = OrderLog::OPERATOR_SYSTEM): Refund
+    {
+        $order = Order::whereKey($refund->order_id)->firstOrFail();
+
+        $payment = Payment::where('order_id', $order->id)
+            ->where('biz_type', Payment::BIZ_TYPE_ORDER)
+            ->where('status', Payment::STATUS_SUCCESS)
+            ->firstOrFail();
+
+        $channel = $payment->channel;
+        $config = $this->channels->decryptedConfig($channel);
+
+        // 幂等单号：首次生成并持久化，重试复用（微信同单必须用相同 out_refund_no）
+        if (empty($refund->out_refund_no)) {
+            $refund->out_refund_no = 'R'.strtoupper((string) Str::ulid());
+            $refund->channel = $channel;
+            $refund->payment_no = $payment->payment_no;
+            $refund->save();
+        }
+
+        RefundLogger::record($refund, RefundLogger::TYPE_CHANNEL_REQUEST, [
+            'channel' => $channel,
+            'out_refund_no' => $refund->out_refund_no,
+            'request' => [
+                'payment_no' => $payment->payment_no,
+                'amount' => (string) $refund->amount,
+                'reason' => $refund->reason,
+            ],
+            'actor_type' => 'system',
+            'actor_id' => 0,
+        ]);
+
+        $gateway = $this->factory->make($channel);
+        try {
+            $result = $gateway->refund(
+                $payment,
+                (string) $refund->amount,
+                (string) $refund->reason,
+                $config,
+                $refund->out_refund_no,
+            );
+        } catch (Throwable $e) {
+            $result = RefundResult::fail($e->getMessage());
+        }
+
+        RefundLogger::record($refund, RefundLogger::TYPE_CHANNEL_RESPONSE, [
+            'channel' => $channel,
+            'out_refund_no' => $refund->out_refund_no,
+            'response' => $result->raw ?: ['message' => $result->message],
+            'channel_status' => $result->channelStatus,
+            'actor_type' => 'system',
+            'actor_id' => 0,
+        ]);
+
+        // 网关失败：落 failed，订单保持 refunding，等后台重试
+        if (! $result->ok) {
+            DB::transaction(function () use ($refund, $result) {
+                $refund->status = Refund::STATUS_FAILED;
+                $refund->failed_reason = $result->message;
+                $refund->channel_raw = $result->raw;
+                $refund->save();
+            });
+            RefundLogger::record($refund, RefundLogger::TYPE_FAILED, [
+                'channel' => $channel,
+                'out_refund_no' => $refund->out_refund_no,
+                'note' => $refund->failed_reason,
+                'actor_type' => 'system',
+                'actor_id' => 0,
+            ]);
+
+            return $refund;
+        }
+
+        // 异步渠道（微信）进入 processing，等待回调/轮询确认终态
+        // （真实 WechatGateway 成功时显式返回 PROCESSING；沙箱/Mock 成功 channelStatus 为空或 SUCCESS，不走此分支）
+        if ($channel === Payment::CHANNEL_WECHAT && ($result->channelStatus ?? '') === 'PROCESSING') {
+            DB::transaction(function () use ($refund, $result) {
+                $refund->status = Refund::STATUS_PROCESSING;
+                $refund->refund_status = $result->channelStatus ?? 'PROCESSING';
+                $refund->channel_refund_no = $result->refundNo;
+                $refund->channel_raw = $result->raw;
+                $refund->save();
+            });
+
+            return $refund;
+        }
+
+        // 同步渠道（支付宝/余额/Mock）→ 直接成功
+        $this->markRefundSuccess($refund, $result, $order, $actorId, $actorType);
+
+        return $refund;
+    }
+
+    /**
+     * 退款成功收尾（订单 refunded + 整单退券），供 process / receiveReturn / 重试 / 回调 / 轮询复用。
+     *
+     * 订单状态机由 OrderService 驱动（网关纯净约束），本方法不再重复判断。
+     *
+     * @param  int|null  $actorId  操作人（管理员或系统 0）
+     * @param  string  $actorType  OrderLog 操作方类型
+     */
+    public function markRefundSuccess(
+        Refund $refund,
+        RefundResult $result,
+        Order $order,
+        ?int $actorId = null,
+        string $actorType = OrderLog::OPERATOR_ADMIN,
+    ): void {
+        DB::transaction(function () use ($refund, $result) {
+            $refund->status = Refund::STATUS_SUCCESS;
+            $refund->refunded_at = now();
+            $refund->channel_refund_no = $result->refundNo;
+            $refund->channel_raw = $result->raw;
+            $refund->refund_status = $result->channelStatus ?? 'SUCCESS';
+            if ($refund->isReturnRefund()) {
+                $refund->return_status = Refund::RETURN_STATUS_RECEIVED;
+            }
+            $refund->save();
+        });
+
+        // 订单 refunded（幂等：已终态则跳过，防止回调/轮询重放触发状态机冲突）
+        if (Order::whereKey($order->id)->value('status') !== Order::STATUS_REFUNDED) {
+            $this->orders->transitionTo($order, Order::STATUS_REFUNDED, '退款成功', 'order', $actorId, $actorType);
+        }
+
+        // 整单全额退款 → 原样返还券（一券一单，releaseCoupon 幂等且仅返还本单占用券）
+        if (abs((float) $refund->amount - (float) $order->pay_amount) < 0.005) {
+            $this->orders->releaseCoupon($order);
+            $this->operationLog->record(
+                $actorId ?? 0, 'refund', 'coupon_returned', 'order', $order->id,
+                ['order_no' => $order->order_no, 'coupon_id' => $order->coupon_id, 'reason' => '整单退款返还'],
+                $actorType === OrderLog::OPERATOR_SYSTEM ? SysOperationLog::ACTOR_SYSTEM : SysOperationLog::ACTOR_ADMIN,
+            );
+        }
+
+        RefundLogger::record($refund, RefundLogger::TYPE_SUCCESS, [
+            'channel' => $refund->channel,
+            'out_refund_no' => $refund->out_refund_no,
+            'channel_status' => $result->channelStatus ?? 'SUCCESS',
+            'actor_type' => $actorType === OrderLog::OPERATOR_SYSTEM ? 'system' : 'admin',
+            'actor_id' => $actorId,
+        ]);
+    }
+
+    /**
+     * 失败退款重试：复用 out_refund_no 幂等重新发起渠道退款。
+     *
+     * 仅 failed 态可重试；每次自增 retry_count；达 MAX_RETRY(3) 仍失败则转人工。
+     *
+     * @throws \App\Exceptions\BusinessException
+     */
+    public function retry(Refund $refund, ?int $adminId = null): Refund
+    {
+        if ($refund->status !== Refund::STATUS_FAILED) {
+            throw BusinessException::badRequest('仅失败状态的退款可重试');
+        }
+        if ($refund->retry_count >= self::MAX_RETRY) {
+            throw BusinessException::badRequest('已达最大重试次数（'.self::MAX_RETRY.'），请转人工处理');
+        }
+
+        DB::transaction(function () use ($refund, $adminId) {
+            $refund->retry_count += 1;
+            $refund->status = Refund::STATUS_PROCESSING; // 重试视为重新发起，先回 processing
+            $refund->save();
+        });
+
+        RefundLogger::record($refund, RefundLogger::TYPE_RETRY, [
+            'out_refund_no' => $refund->out_refund_no,
+            'channel' => $refund->channel,
+            'note' => '第 '.$refund->retry_count.' 次重试',
+            'actor_type' => 'admin',
+            'actor_id' => $adminId,
+        ]);
+
+        $refund = $this->executeChannelRefund($refund, $adminId, OrderLog::OPERATOR_ADMIN);
+
+        // 达到上限仍失败 → 标记转人工
+        if ($refund->status === Refund::STATUS_FAILED && $refund->retry_count >= self::MAX_RETRY) {
+            DB::transaction(function () use ($refund) {
+                $refund->failed_reason = '已达最大重试次数，转人工';
+                $refund->save();
+            });
+        }
 
         return $refund;
     }

@@ -96,14 +96,19 @@ test('TC-FUNDS-001 余额支付全链路聚合：支付单/事件/余额流水/�
     expect($events->pluck('event'))->toContain('create')
         ->and($events->every(fn ($e) => $e['payment_no'] === $data['payments'][0]['payment_no']))->toBeTrue();
 
-    // 余额流水：消费 −70（余额退回流水仅在退款走余额网关时产生；当前沙箱审核直接置成功、不经网关）
+    // 余额流水：消费 −70，退款 +70（Phase 3 起审核通过真实走余额网关退回，产生退款流水）
     $logs = collect($data['balance_logs']);
     $consume = $logs->firstWhere('type', 'consume');
     expect($consume)->not->toBeNull()
         ->and($consume['amount'])->toBe('-70.00')
         ->and($consume['balance_before'])->toBe('500.00')
-        ->and($consume['balance_after'])->toBe('430.00')
-        ->and($logs->firstWhere('type', 'refund'))->toBeNull();
+        ->and($consume['balance_after'])->toBe('430.00');
+
+    $refundLog = $logs->firstWhere('type', 'refund');
+    expect($refundLog)->not->toBeNull()
+        ->and($refundLog['amount'])->toBe('70.00')
+        ->and($refundLog['balance_before'])->toBe('430.00')
+        ->and($refundLog['balance_after'])->toBe('500.00');
 
     // 退款单：成功 + 优惠构成快照随行
     expect($data['refunds'])->toHaveCount(1)
@@ -117,7 +122,7 @@ test('TC-FUNDS-001 余额支付全链路聚合：支付单/事件/余额流水/�
     expect($data['summary']['pay_success_amount'])->toBe('70.00')
         ->and($data['summary']['refund_success_amount'])->toBe('70.00')
         ->and($data['summary']['balance_consume_amount'])->toBe('70.00')
-        ->and($data['summary']['balance_refund_amount'])->toBe('0.00')
+        ->and($data['summary']['balance_refund_amount'])->toBe('70.00')
         ->and($data['summary']['net_amount'])->toBe('0.00');
 });
 

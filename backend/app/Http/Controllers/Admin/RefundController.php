@@ -172,6 +172,23 @@ class RefundController extends Controller
     }
 
     /**
+     * 后台重试退款（失败态）：POST /admin/refunds/{id}/retry
+     *
+     * 仅 failed 态可重试；复用 out_refund_no 幂等，达 MAX_RETRY(3) 转人工。
+     */
+    public function retry(Request $request, int $id): JsonResponse
+    {
+        $refund = Refund::find($id);
+        if (! $refund) {
+            throw BusinessException::notFound('退款单不存在');
+        }
+
+        $refund = $this->refunds->retry($refund, $request->user()->id);
+
+        return $this->success($this->row($refund->fresh()), '已发起重试');
+    }
+
+    /**
      * 解码操作日志 content（JSON 字符串）为结构化数据
      *
      * 后台「处理记录」需要按中文键值渲染（含图片），直接展示原始 JSON 不可读。

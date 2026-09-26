@@ -24,6 +24,20 @@ function createPaidOrder(string $price = '100.00'): array
     $order = $service->createFromCart($user->id, $address->id, null, null);
     $order = $service->transitionTo($order, Order::STATUS_PAID);
 
+    // 真实「已支付」订单必须存在成功支付单（原路退回依据）；Phase 3 executeChannelRefund 依赖它
+    \App\Models\Payment::create([
+        'payment_no' => 'PAY'.strtoupper((string) \Illuminate\Support\Str::random(16)),
+        'order_id' => $order->id,
+        'order_no' => $order->order_no,
+        'user_id' => $user->id,
+        'channel' => \App\Models\Payment::CHANNEL_BALANCE,
+        'amount' => $order->pay_amount,
+        'status' => \App\Models\Payment::STATUS_SUCCESS,
+        'biz_type' => \App\Models\Payment::BIZ_TYPE_ORDER,
+        'biz_no' => $order->order_no,
+        'paid_at' => now(),
+    ]);
+
     return [$user, $sku, $order];
 }
 
