@@ -13,6 +13,7 @@ import {
   type AdminUserAddress,
   type AdminUserDetail,
 } from '@/api/user'
+import { getUserPoints, adjustUserPoints, type UserPointsDetail } from '@/api/points'
 import {
   listCities, listDistricts, listProvinces, type RegionNode,
 } from '@/lib/region'
@@ -39,6 +40,8 @@ const endDate = ref('')
 const detailUser = ref<AdminUserDetail | null>(null)
 const detailLoading = ref(false)
 const detailAddresses = ref<AdminUserAddress[] | null>(null)
+// 会员积分（S1）：账户与最近流水；无 member.view 时接口 403，整块不展示
+const detailPoints = ref<UserPointsDetail | null>(null)
 const editTarget = ref<AdminUser | null>(null)
 const editForm = ref({ nickname: '', phone: '', email: '' })
 const saving = ref(false)
@@ -55,6 +58,12 @@ const addrEditTarget = ref<AdminUserAddress | null>(null)
 const addrForm = ref({ contact_name: '', contact_phone: '', detail_address: '' })
 const addrSaving = ref(false)
 const addrConfirm = ref<AdminUserAddress | null>(null)
+
+// 积分人工调整（member.manage）：数量 + 原因，二次确认后生效
+const pointsTarget = ref<AdminUserDetail | null>(null)
+const pointsForm = ref({ points: '', reason: '' })
+const pointsSaving = ref(false)
+const pointsError = ref('')
 
 // 所在地区：统一走公共地区字典下拉，禁止手输（避免脏数据影响运费按省匹配）
 const provinces = ref<RegionNode[]>([])
@@ -123,9 +132,15 @@ async function openDetail(user: AdminUser) {
   detailLoading.value = true
   detailUser.value = { ...user, recent_orders: [] }
   detailAddresses.value = null
+  detailPoints.value = null
   try {
-    // 详情与地址并行加载；地址接口挂 address.view，无权限时详情仍可看
-    const [detailRes, addrRes] = await Promise.allSettled([getUser(user.id), getUserAddresses(user.id)])
+    // 详情 / 地址 / 积分并行加载；后两者分别挂 address.view 与 member.view，
+    // 无权限时请求失败但不阻塞详情（各自置空即可）
+    const [detailRes, addrRes, pointsRes] = await Promise.allSettled([
+      getUser(user.id),
+      getUserAddresses(user.id),
+      getUserPoints(user.id),
+    ])
     if (detailRes.status === 'fulfilled') {
       detailUser.value = detailRes.value.data.data
     }
@@ -135,6 +150,8 @@ async function openDetail(user: AdminUser) {
       // 无 address.view 权限或网络异常：置空展示，不阻塞详情
       detailAddresses.value = []
     }
+    // 无 member.view 时不展示积分区块（而不是展示 0）
+    detailPoints.value = pointsRes.status === 'fulfilled' ? pointsRes.value.data.data : null
   } finally {
     detailLoading.value = false
   }
@@ -143,8 +160,52 @@ async function openDetail(user: AdminUser) {
 function closeDetail() {
   detailUser.value = null
   detailAddresses.value = null
+  detailPoints.value = null
   addrEditTarget.value = null
   addrConfirm.value = null
+}
+
+function openPointsAdjust() {
+  if (!detailUser.value) return
+  pointsError.value = ''
+  pointsForm.value = { points: '', reason: '' }
+  pointsTarget.value = detailUser.value
+}
+
+/** 调整积分：数量非零整数 + 原因必填，成功后就地刷新账户与流水 */
+async function doAdjustPoints() {
+  const user = pointsTarget.value
+  if (!user || pointsSaving.value) return
+
+  const points = Number(pointsForm.value.points)
+  if (!Number.isInteger(points) || points === 0) {
+    pointsError.value = '请输入非零整数：正数加分，负数减分'
+    return
+  }
+  if (pointsForm.value.reason.trim() === '') {
+    pointsError.value = '请填写调整原因'
+    return
+  }
+
+  pointsSaving.value = true
+  try {
+    const { data } = await adjustUserPoints(user.id, {
+      points,
+      reason: pointsForm.value.reason.trim(),
+    })
+    if (detailPoints.value) {
+      detailPoints.value = {
+        ...detailPoints.value,
+        account: data.data.account,
+        logs: [data.data.log, ...detailPoints.value.logs].slice(0, 10),
+      }
+    }
+    pointsTarget.value = null
+  } catch {
+    // 错误提示由全局拦截器统一处理
+  } finally {
+    pointsSaving.value = false
+  }
 }
 
 /** 地址展示用完整文本 */
@@ -440,6 +501,48 @@ onMounted(() => load())
             <p>累计消费：<span class="font-semibold text-[#ff4d4f]">¥{{ detailUser.total_paid }}</span>（{{ detailUser.order_count }} 笔有效订单）</p>
           </div>
 
+          <!-- 会员积分（S1）：member.view 可见；调整入口另需 member.manage -->
+          <div v-if="detailPoints" class="mb-4 rounded-lg bg-slate-50 p-3 text-[13px] text-slate-600">
+            <div class="mb-2 flex items-center justify-between">
+              <h3 class="font-semibold text-slate-700">会员积分</h3>
+              <button
+                v-permission="'member.manage'"
+                data-testid="open-points-adjust"
+                class="text-[#1677ff] hover:underline"
+                @click="openPointsAdjust"
+              >调整积分</button>
+            </div>
+            <div class="mb-2 grid grid-cols-4 gap-x-4 gap-y-1">
+              <p>可用：<span class="font-semibold text-[#1677ff]" data-testid="points-balance">{{ detailPoints.account.balance }}</span></p>
+              <p>冻结：<span data-testid="points-frozen">{{ detailPoints.account.frozen }}</span></p>
+              <p>累计获得：{{ detailPoints.account.total_earn }}</p>
+              <p>累计消耗：{{ detailPoints.account.total_spend }}</p>
+            </div>
+            <table v-if="detailPoints.logs.length" class="w-full text-[13px]">
+              <thead>
+                <tr class="text-left text-slate-400">
+                  <th class="py-1 font-normal">类型</th>
+                  <th class="py-1 font-normal">变动</th>
+                  <th class="py-1 font-normal">调整后</th>
+                  <th class="py-1 font-normal">说明</th>
+                  <th class="py-1 font-normal">时间</th>
+                </tr>
+              </thead>
+              <tbody data-testid="points-logs">
+                <tr v-for="log in detailPoints.logs" :key="log.id" class="border-t border-white">
+                  <td class="py-1 text-slate-600">{{ log.type_label }}</td>
+                  <td class="py-1" :class="log.points >= 0 ? 'text-green-600' : 'text-red-500'">
+                    {{ log.points > 0 ? '+' : '' }}{{ log.points }}
+                  </td>
+                  <td class="py-1 text-slate-700">{{ log.balance_after }}</td>
+                  <td class="py-1 text-slate-500">{{ log.remark || '—' }}</td>
+                  <td class="py-1 text-slate-400">{{ log.created_at }}</td>
+                </tr>
+              </tbody>
+            </table>
+            <p v-else class="py-2 text-center text-slate-400">暂无积分流水</p>
+          </div>
+
           <h3 class="mb-2 text-[13px] font-semibold text-slate-700">最近订单</h3>
           <table class="mb-4 w-full text-[13px]">
             <thead>
@@ -633,6 +736,37 @@ onMounted(() => load())
         </div>
       </div>
     </div>
+
+    <!-- 积分调整（member.manage）：确认弹层内直接填数量与原因 -->
+    <ConfirmDialog
+      :open="!!pointsTarget"
+      :title="`调整用户 ${pointsTarget?.username} 的积分`"
+      :message="`当前可用 ${detailPoints?.account.balance ?? 0} 积分。调整后立即生效并写入积分流水与操作日志。`"
+      confirm-text="确认调整"
+      :danger="Number(pointsForm.points) < 0"
+      @confirm="doAdjustPoints"
+      @cancel="pointsTarget = null"
+    >
+      <div class="mt-3 space-y-2">
+        <input
+          v-model="pointsForm.points"
+          data-testid="points-input"
+          type="number"
+          step="1"
+          placeholder="调整数量：正数加分 / 负数减分"
+          class="w-full rounded-md border border-slate-300 px-3 py-1.5 text-[13px] outline-none focus:border-[#1677ff]"
+        />
+        <input
+          v-model="pointsForm.reason"
+          data-testid="points-reason"
+          type="text"
+          maxlength="100"
+          placeholder="调整原因（必填，写入流水与操作日志）"
+          class="w-full rounded-md border border-slate-300 px-3 py-1.5 text-[13px] outline-none focus:border-[#1677ff]"
+        />
+        <p v-if="pointsError" data-testid="points-error" class="text-xs text-red-500">{{ pointsError }}</p>
+      </div>
+    </ConfirmDialog>
 
     <!-- 禁用 / 启用确认 -->
     <ConfirmDialog
