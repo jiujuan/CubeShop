@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { MapPin, NotebookPen, RotateCcw, Star } from 'lucide-vue-next'
 import {
   confirmOrder,
   getOrder,
   rebuyOrder,
+  REFUND_CHANNEL_LABELS,
   type OrderDetail,
   type OrderItemView,
 } from '@/api/order'
@@ -47,6 +48,22 @@ async function load() {
   }
 }
 
+// 退款进度轮询（Phase 5）：存在 processing 退款时每 8s 刷新订单详情，状态变更后自动停轮询
+const hasProcessingRefund = computed(() => (order.value?.refunds ?? []).some((r) => r.status === 'processing'))
+let pollTimer: ReturnType<typeof setInterval> | null = null
+
+function startPolling() {
+  if (pollTimer) return
+  pollTimer = setInterval(async () => {
+    if (!hasProcessingRefund.value) { stopPolling(); return }
+    try { await load() } catch { /* 轮询失败静默重试 */ }
+  }, 8000)
+}
+
+function stopPolling() {
+  if (pollTimer) { clearInterval(pollTimer); pollTimer = null }
+}
+
 onMounted(async () => {
   if (route.query.refund_ok) {
     successTip.value = '退款申请已提交，等待商家审核'
@@ -57,7 +74,10 @@ onMounted(async () => {
   }
   if (auth.token) await load()
   else loading.value = false
+  watch(hasProcessingRefund, (v) => { if (v) startPolling(); else stopPolling() }, { immediate: true })
 })
+
+onUnmounted(stopPolling)
 
 /** 后端下发的按钮可用性；老版本响应缺失时按状态兜底 */
 const actions = computed(() => {
@@ -417,6 +437,7 @@ async function onReviewSubmitted() {
               <span class="text-slate-600">
                 {{ r.refund_no }}
                 <span v-if="r.type && REFUND_TYPE_LABELS[r.type]" class="ml-1 rounded bg-[#f0f7ff] px-1.5 py-0.5 text-[10px] text-[#1677ff]">{{ REFUND_TYPE_LABELS[r.type] }}</span>
+                <span v-if="r.channel && REFUND_CHANNEL_LABELS[r.channel]" class="ml-1 rounded bg-slate-100 px-1.5 py-0.5 text-[10px] text-slate-500">{{ REFUND_CHANNEL_LABELS[r.channel] }}</span>
               </span>
               <span class="font-medium text-[#ff4d4f]">¥{{ r.amount }}</span>
             </div>
@@ -425,6 +446,19 @@ async function onReviewSubmitted() {
               <template v-if="r.reason">｜原因：{{ r.reason }}</template>
               <template v-if="r.admin_remark">｜商家备注：{{ r.admin_remark }}</template>
               ｜申请时间：{{ r.created_at }}
+            </p>
+            <!-- 退款进度（Phase 5：processing 异步退款提示；success/failed 结果提示） -->
+            <p v-if="r.status === 'processing'" class="mt-2 rounded-md bg-[#f0f7ff] px-3 py-2 text-xs text-[#1677ff]">
+              退款处理中，预计 1-3 个工作日原路退回（微信/支付宝以渠道到账为准，可稍后刷新查看进度）
+            </p>
+            <p v-else-if="r.status === 'success'" class="mt-2 rounded-md bg-green-50 px-3 py-2 text-xs text-green-600">
+              退款已原路退回{{ r.refunded_at ? '，完成时间 ' + r.refunded_at : '' }}
+            </p>
+            <p v-else-if="r.status === 'failed'" class="mt-2 rounded-md bg-orange-50 px-3 py-2 text-xs text-orange-500">
+              退款失败{{ r.failed_reason ? '：' + r.failed_reason : '' }}，请联系客服处理
+            </p>
+            <p v-if="r.out_refund_no || r.channel_refund_no" class="mt-2 font-mono text-[11px] text-slate-400">
+              退款单号：{{ r.out_refund_no || '-' }}<template v-if="r.channel_refund_no">｜渠道单号：{{ r.channel_refund_no }}</template>
             </p>
             <div v-if="r.images?.length" class="mt-2 flex flex-wrap gap-2">
               <a

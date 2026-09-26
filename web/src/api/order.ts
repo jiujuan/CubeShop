@@ -220,13 +220,25 @@ export interface RefundBrief {
   reason: string | null
   /** 用户上传的凭证图片（URL 数组） */
   images?: string[]
-  status: 'pending' | 'approved' | 'rejected' | 'success' | 'failed'
+  status: 'pending' | 'approved' | 'rejected' | 'success' | 'failed' | 'processing'
   return_status?: 'waiting_return' | 'shipping' | 'received' | 'exception' | null
   return_details?: { sku_id: number; product_title?: string | null; sku_specs?: Record<string, string> | null; quantity: number }[] | null
   return_tracking_no?: string | null
   return_express_company?: string | null
   admin_remark: string | null
   created_at: string
+  channel?: string | null
+  refund_status?: string | null
+  failed_reason?: string | null
+  refunded_at?: string | null
+  retry_count?: number
+}
+
+export const REFUND_CHANNEL_LABELS: Record<string, string> = {
+  wechat: '微信支付',
+  alipay: '支付宝',
+  balance: '余额',
+  offline: '线下',
 }
 
 export interface ApplyRefundPayload {
