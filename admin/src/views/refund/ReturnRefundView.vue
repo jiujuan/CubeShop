@@ -328,7 +328,7 @@ function closeLogs() {
         <div v-if="canReceive(detail)" class="mt-5 rounded-md border border-slate-200 p-3">
           <p class="text-sm font-semibold text-slate-700">确认收货 / 质检</p>
           <div v-if="receiveState && receiveState.refund?.id === detail.id" class="mt-3 space-y-3">
-            <div v-for="(row, i) in receiveState.rows" :key="row.sku_id" class="flex items-center gap-3 text-sm">
+            <div v-for="row in receiveState.rows" :key="row.sku_id" class="flex items-center gap-3 text-sm">
               <span class="w-24 font-mono text-xs">SKU {{ row.sku_id }}</span>
               <span class="w-16 text-slate-400">应退 {{ row.expected }}</span>
               <input

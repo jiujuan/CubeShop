@@ -83,6 +83,9 @@ export const RECONCILE_DIFF_TYPE_BAR: Record<ReconcileDiffType, string> = {
   AMOUNT_MISMATCH: 'bg-amber-400',
   DUPLICATE_CALLBACK: 'bg-violet-400',
   UNKNOWN: 'bg-slate-300',
+  REFUND_STATUS_MISMATCH: 'bg-red-400',
+  REFUND_CHANNEL_MISSING: 'bg-orange-400',
+  REFUND_LOCAL_MISSING: 'bg-amber-400',
 }
 
 export type ReconcileDiffStatus = 'pending' | 'processing' | 'resolved' | 'ignored'

@@ -408,7 +408,7 @@ function closeLogs() {
             <button
               class="rounded border border-slate-200 px-2 py-1 text-xs text-slate-500 hover:text-[#1677ff]"
               :data-testid="`detail-logs-${detailState.data?.id}`"
-              @click="openLogs(detailState.data)"
+              @click="openLogs(detailState.data!)"
             >退款日志</button>
             <button class="text-slate-400 hover:text-slate-600" @click="closeDetail"><X class="h-4 w-4" /></button>
           </div>

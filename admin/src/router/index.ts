@@ -147,6 +147,12 @@ const router = createRouter({
           meta: { title: '退款对账差异', menu: true, icon: 'Scale', permission: 'payment.reconcile.view' },
         },
         {
+          path: 'refund-disputes',
+          name: 'refund-disputes',
+          component: () => import('@/views/refund/RefundDisputeView.vue'),
+          meta: { title: '退款纠纷', menu: true, icon: 'Gavel', permission: 'refund.view' },
+        },
+        {
           path: 'payments',
           name: 'payments',
           component: () => import('@/views/order/PaymentView.vue'),
