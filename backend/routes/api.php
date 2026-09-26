@@ -220,6 +220,12 @@ Route::middleware(['auth:sanctum', 'account.active'])->group(function () {
     Route::post('/orders/{id}/rebuy', [OrderController::class, 'rebuy']);
     Route::post('/orders/{id}/refund', [OrderController::class, 'refund']);
 
+    // 退款纠纷/申诉（#4）：{refund} 为 public_id，归属校验在控制器内
+    Route::post('/refunds/{refund}/dispute', [\App\Http\Controllers\Refund\RefundDisputeController::class, 'open']);
+    Route::get('/refunds/{refund}/disputes', [\App\Http\Controllers\Refund\RefundDisputeController::class, 'index']);
+    Route::get('/refunds/{refund}/disputes/{dispute}', [\App\Http\Controllers\Refund\RefundDisputeController::class, 'show']);
+    Route::post('/refunds/{refund}/disputes/{dispute}/messages', [\App\Http\Controllers\Refund\RefundDisputeController::class, 'message']);
+
     // 评价（V1.1 F01 / T-015）
     Route::post('/orders/{orderId}/items/{itemId}/review', [OrderController::class, 'review']);
     Route::put('/reviews/{id}', [ReviewController::class, 'update']);
@@ -497,6 +503,14 @@ Route::middleware(['auth:sanctum', 'account.active'])->group(function () {
         Route::post('/refunds/{id}/receive', [RefundController::class, 'receive'])->middleware('permission:refund.process');
         Route::post('/refunds/{id}/retry', [RefundController::class, 'retry'])->middleware('permission:refund.process');
         Route::get('/refunds/{id}/logs', [RefundController::class, 'logs'])->middleware('permission:refund.view');
+
+        // 退款纠纷管理（#4）
+        Route::get('/refund-disputes', [\App\Http\Controllers\Admin\RefundDisputeController::class, 'index'])->middleware('permission:refund.view');
+        Route::get('/refund-disputes/{id}', [\App\Http\Controllers\Admin\RefundDisputeController::class, 'show'])->middleware('permission:refund.view');
+        Route::post('/refund-disputes/{id}/assign', [\App\Http\Controllers\Admin\RefundDisputeController::class, 'assign'])->middleware('permission:refund.process');
+        Route::post('/refund-disputes/{id}/resolve', [\App\Http\Controllers\Admin\RefundDisputeController::class, 'resolve'])->middleware('permission:refund.process');
+        Route::get('/refund-disputes/{id}/messages', [\App\Http\Controllers\Admin\RefundDisputeController::class, 'messages'])->middleware('permission:refund.view');
+        Route::post('/refund-disputes/{id}/messages', [\App\Http\Controllers\Admin\RefundDisputeController::class, 'postMessage'])->middleware('permission:refund.process');
 
         // WMS 对接配置（WMS 计划 P0 / §9.1）：仓库档案 + 按仓配置 + SKU 映射
         // 权限码 wms.config.manage（超管 + 运营）；P6 起追加发货单/退货单页面复用 wms.order.* / wms.return.manage

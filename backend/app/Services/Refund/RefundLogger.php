@@ -25,6 +25,11 @@ class RefundLogger
     public const TYPE_FAILED = 'failed';
     public const TYPE_STATUS_CHANGE = 'status_change';
 
+    public const TYPE_DISPUTE_OPENED = 'dispute_opened';
+    public const TYPE_DISPUTE_ASSIGNED = 'dispute_assigned';
+    public const TYPE_DISPUTE_RESOLVED = 'dispute_resolved';
+    public const TYPE_DISPUTE_MESSAGE = 'dispute_message';
+
     public static function record(Refund $refund, string $type, array $payload = []): RefundLog
     {
         return RefundLog::create([

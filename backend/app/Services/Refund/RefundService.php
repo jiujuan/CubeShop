@@ -675,6 +675,48 @@ class RefundService
      * 由 RefundNotifyController 验签后调用：按 out_refund_no 反查退款单 → 写 channel_callback 日志
      * → 据 channelStatus 落终态。幂等：终态退款单直接跳过（微信会重放同一通知）。
      */
+    /**
+     * 纠纷裁决：将已拒绝/失败的退款重新置为待审核，重新进入处理流程。
+     * 仅允许 rejected/failed → pending；订单回到 refunding；写 RefundLog。
+     * 终态仍由后续 process/executeChannelRefund 驱动，绝不直接改终态。
+     */
+    public function reopen(Refund $refund, int $adminId): Refund
+    {
+        if (! in_array($refund->status, [Refund::STATUS_REJECTED, Refund::STATUS_FAILED], true)) {
+            throw BusinessException::badRequest('仅拒绝/失败的退款可重新发起审核');
+        }
+
+        $refund = DB::transaction(function () use ($refund, $adminId) {
+            $order = Order::whereKey($refund->order_id)->lockForUpdate()->first();
+
+            $refund->status = Refund::STATUS_PENDING;
+            $refund->processed_by = $adminId;
+            $refund->processed_at = now();
+            $refund->save();
+
+            if ($order->status !== Order::STATUS_REFUNDING) {
+                $this->orders->transitionTo(
+                    $order,
+                    Order::STATUS_REFUNDING,
+                    '纠纷裁决：重新发起退款审核',
+                    'order',
+                    $adminId,
+                    OrderLog::OPERATOR_ADMIN,
+                );
+            }
+
+            RefundLogger::record($refund, RefundLogger::TYPE_STATUS_CHANGE, [
+                'actor_type' => OrderLog::OPERATOR_ADMIN,
+                'actor_id' => $adminId,
+                'note' => 'dispute_reopen',
+            ]);
+
+            return $refund;
+        });
+
+        return $refund;
+    }
+
     public function applyChannelCallback(RefundCallbackResult $result): void
     {
         if (! $result->ok || $result->outRefundNo === '') {
