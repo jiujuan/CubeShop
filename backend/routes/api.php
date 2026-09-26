@@ -52,6 +52,7 @@ use App\Http\Controllers\HomeBannerController;
 use App\Http\Controllers\BalanceController;
 use App\Http\Controllers\CartController;
 use App\Http\Controllers\CheckinController;
+use App\Http\Controllers\PointsController;
 use App\Http\Controllers\Admin\CsFaqController as AdminCsFaqController;
 use App\Http\Controllers\Admin\CsQuickReplyController as AdminCsQuickReplyController;
 use App\Http\Controllers\Admin\CsTicketController as AdminCsTicketController;
@@ -277,6 +278,10 @@ Route::middleware(['auth:sanctum', 'account.active'])->group(function () {
     // 会员签到（会员成长计划 S2）：状态查询与签到（签到限流 30/min 防连点）
     Route::get('/checkin', [CheckinController::class, 'status']);
     Route::post('/checkin', [CheckinController::class, 'store'])->middleware('throttle:30,1');
+
+    // 我的积分（会员成长计划 S3）：概览 + 流水，买家自身可见
+    Route::get('/user/points', [PointsController::class, 'index']);
+    Route::get('/user/points/logs', [PointsController::class, 'logs']);
 
     // 线下转账凭证上传（需登录，限流 30/min）
     Route::post('/user/upload-voucher', [PaymentController::class, 'uploadVoucher'])->middleware('throttle:voucher');

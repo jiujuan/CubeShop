@@ -20,6 +20,7 @@ use App\Services\Common\OperationLogService;
 use App\Services\Inventory\InventoryService;
 use App\Services\Marketing\CouponService;
 use App\Services\Marketing\PromotionService;
+use App\Services\Member\OrderPointsService;
 use App\Services\Shipping\FreightService;
 use Illuminate\Support\Facades\DB;
 use Throwable;
@@ -52,6 +53,7 @@ class OrderService
         private CouponService $coupons,
         private PromotionService $promotions,
         private FreightService $freight,
+        private OrderPointsService $orderPoints,
     ) {
     }
 
@@ -692,8 +694,31 @@ class OrderService
                 'reason' => $reason,
             ], $this->actorTypeOfOperator($operatorType));
 
+            // 消费返积分（会员成长 S3）：订单支付成功发分。失败只记录不阻断支付主链路。
+            if ($target === Order::STATUS_PAID) {
+                $this->awardOrderPoints($locked);
+            }
+
             return $locked;
         });
+    }
+
+    /**
+     * 订单支付成功发分（S3）
+     *
+     * 放在 transitionTo 内、状态已落库之后调用，覆盖所有进入 paid 的路径
+     * （支付回调 / 后台标记支付 / 退款驳回回退 paid）。幂等由 PointsService 的
+     * biz_key = order:{id}:earn 兜底，重复进入不会产生重复流水。
+     *
+     * 发分失败（配置异常 / DB 抖动）绝不阻断支付成功主链路：仅上报，订单状态不受影响。
+     */
+    private function awardOrderPoints(Order $order): void
+    {
+        try {
+            $this->orderPoints->award($order);
+        } catch (Throwable $e) {
+            report($e);
+        }
     }
 
     /**

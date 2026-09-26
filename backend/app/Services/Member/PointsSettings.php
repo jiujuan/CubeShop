@@ -22,6 +22,9 @@ final class PointsSettings
     /** 后台可维护的开关：`键 => 默认值` */
     public const SWITCHES = [
         'points.enabled' => '1',
+        'points.name' => '积分',
+        'points.earn_rate' => '100',
+        'points.earn_on_freight' => '0',
         'points.signin_enabled' => '1',
         'points.signin_base' => (string) SigninReward::DEFAULT_BASE,
         'points.signin_step' => (string) SigninReward::DEFAULT_STEP,
@@ -37,6 +40,28 @@ final class PointsSettings
     public function enabled(): bool
     {
         return $this->flag('points.enabled');
+    }
+
+    /** 积分名称（后台可改成「金币」等，前端展示用） */
+    public function name(): string
+    {
+        return (string) $this->config->get('points.name', self::SWITCHES['points.name']);
+    }
+
+    /**
+     * 消费返积分比率：消费 X 元得 1 分；0 = 不返积分
+     *
+     * 基数按实付（pay_amount），运费是否计入见 {@see self::earnOnFreight()}。
+     */
+    public function earnRate(): int
+    {
+        return $this->int('points.earn_rate', 100);
+    }
+
+    /** 运费是否计入返分基数（默认 false：运费不计分，见 D5） */
+    public function earnOnFreight(): bool
+    {
+        return $this->flag('points.earn_on_freight');
     }
 
     /** 签到开关 */
