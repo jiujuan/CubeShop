@@ -534,3 +534,38 @@ S1 账户 ─┬─ S2 签到
 
 依赖 S1；`biz_key = order:{id}:earn` 幂等，运费不计。
 
+
+---
+
+## 19. S3 实施记录（已完成，2026-09-27）
+
+第一次接支付链路，但**不改任何金额**（`DETAILS_VERSION` 仍为 1，`recomputePayAmount` 不动）。
+
+### 落地内容
+
+| 项 | 实现 | 说明 |
+|---|---|---|
+| 配置 | `PointsSettings` 增 `points.name` / `points.earn_rate` / `points.earn_on_freight` 读口（`name()` / `earnRate()` / `earnOnFreight()`），并入 `SWITCHES` 白名单供 S7 规则页维护 | 无新迁移，配置走 `system_configs` 缺省值 |
+| 发分服务 | `Services/Member/OrderPointsService::award(Order)`：`enabled` + `earn_rate > 0` + 基数 > 0 三道闸；基数 = `pay_amount`（元），`earn_on_freight=0` 时 `bcsub` 扣掉运费；`floor(bcdiv(基数, earn_rate))` 发分；`biz_key = order:{id}:earn` | 金额运算全走 BC 数学函数，避免浮点误差 |
+| 钩子 | `OrderService::transitionTo()` 在 `$target === STATUS_PAID` 落库后调 `awardOrderPoints()`；**try/catch + report，发分失败绝不阻断支付主链路** | 覆盖所有进入 paid 的路径：支付回调（PaymentService:603）、后台标记支付、退款驳回回退 paid（RefundService:331，幂等键防二次发分）、历史回填命令 |
+| 买家接口 | `PointsController`：`GET /user/points`（enabled/name/account/最近流水）+ `GET /user/points/logs`（分页，per_page 上限 50），沿用 `/user/*` 前缀约定（与 §9 的 `/points` 命名有意偏差，对齐 `/user/balance` 体例） | auth:sanctum + account.active 组内 |
+| web | `api/points.ts` 增 `getMyPoints` / `getMyPointLogs` + 类型；新增 `PointsView.vue`（`/points`：可用/累计获得/累计消耗卡片 + 流水分页表 + 未开启提示，未开启时不拉流水）；账户中心「我的服务」加「我的积分」入口 | — |
+
+### 关键设计点
+
+1. **发分时机 = transitionTo 内、状态落库后**：所有 paid 路径唯一入口；`PointsService::credit` 内嵌套事务 + biz_key 幂等兜底退款驳回的二次 paid。
+2. **失败隔离**：发分在 transitionTo 事务内但独立 try/catch，积分侧异常只 report，订单支付状态不受影响。
+3. **基数口径**：`pay_amount` 已含运费，故 `earn_on_freight=0` 的实现是「实付减运费」而非「仅商品额另算」；0 元单（扣完运费 ≤ 0）直接不返。
+
+### 测试
+
+- 后端 `tests/Unit/OrderPointsServiceTest.php`：**6 passed**（运费不计/计入、0 元单、earn_rate=0、功能关闭、biz_key 幂等）
+- 后端 `tests/Feature/OrderEarnTest.php`：**5 passed**（transitionTo paid 自动发分、退款驳回回退 paid 不重复发分、买家概览/流水接口、未登录 401）
+- 回归：订单/支付/退款相关 13 个既有测试文件全绿（**109 passed**，含 PaymentApi / PaymentReliability / PaymentSecurity / Refund 全系）
+- web `tests/points-view.test.ts`：**3 passed**（概览+流水、翻页、未开启不拉流水）；account-center / checkin-card 回归 11 passed
+- `vue-tsc -b` 与 `npm run build` 均通过
+
+### 下一步（S4 会员成长与分层定价）
+
+迁移自 **000140** 起（`user_growth_logs` + `users` 三字段）。
+
