@@ -6,6 +6,7 @@ use App\Models\Refund;
 use App\Models\UserBalanceLog;
 use App\Services\Order\OrderService;
 use App\Services\Refund\RefundService;
+use App\Services\Refund\RefundSettings;
 use App\Services\Payment\Contracts\PaymentGateway;
 use App\Services\Payment\PaymentGatewayFactory;
 use App\Services\Payment\Dto\RefundResult;
@@ -30,6 +31,8 @@ function makeRefundService(?PaymentGatewayFactory $factory = null): RefundServic
         inventory: app(InventoryService::class),
         factory: $factory ?? app(PaymentGatewayFactory::class),
         channels: app(PaymentChannelService::class),
+        // 退款策略（#6）：RefundService 构造器新增 RefundSettings，手工 new 时必须一并传入
+        settings: app(RefundSettings::class),
     );
 }
 

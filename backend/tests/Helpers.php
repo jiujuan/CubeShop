@@ -12,9 +12,11 @@ use App\Models\ProductSku;
 use App\Models\ReturnInboundOrder;
 use App\Models\Shipping;
 use App\Models\ShippingPackage;
+use App\Models\UserAddress;
 use App\Models\Warehouse;
 use App\Models\WmsConfig;
 use App\Models\WmsApiLog;
+use App\Services\Order\OrderService;
 use App\Services\Wms\Callback\CallbackDeduplicator;
 use App\Services\Wms\Callback\CallbackDispatcher;
 use Illuminate\Support\Facades\Http;
@@ -61,6 +63,41 @@ if (! function_exists('createTestSku')) {
         Inventory::create(['sku_id' => $sku->id, 'stock' => $stock, 'locked_stock' => 0]);
 
         return $sku;
+    }
+}
+
+if (! function_exists('createPaidOrder')) {
+    /** 已支付订单（含成功支付单，供原路退回使用） */
+    function createPaidOrder(string $price = '100.00'): array
+    {
+        $user = createTestUser();
+        $sku = createTestSku(stock: 20, price: $price);
+        \App\Models\CartItem::create(['user_id' => $user->id, 'sku_id' => $sku->id, 'quantity' => 1]);
+        $address = UserAddress::create([
+            'user_id' => $user->id,
+            'contact_name' => 'a', 'contact_phone' => 'b',
+            'province' => 'p', 'city' => 'c', 'district' => 'd', 'detail_address' => 'e',
+        ]);
+
+        $service = app(OrderService::class);
+        $order = $service->createFromCart($user->id, $address->id, null, null);
+        $order = $service->transitionTo($order, Order::STATUS_PAID);
+
+        // 真实「已支付」订单必须存在成功支付单（原路退回依据）；Phase 3 executeChannelRefund 依赖它
+        \App\Models\Payment::create([
+            'payment_no' => 'PAY'.strtoupper((string) \Illuminate\Support\Str::random(16)),
+            'order_id' => $order->id,
+            'order_no' => $order->order_no,
+            'user_id' => $user->id,
+            'channel' => \App\Models\Payment::CHANNEL_BALANCE,
+            'amount' => $order->pay_amount,
+            'status' => \App\Models\Payment::STATUS_SUCCESS,
+            'biz_type' => \App\Models\Payment::BIZ_TYPE_ORDER,
+            'biz_no' => $order->order_no,
+            'paid_at' => now(),
+        ]);
+
+        return [$user, $sku, $order];
     }
 }
 
