@@ -333,7 +333,7 @@ onMounted(() => load())
       <thead>
         <tr class="border-b border-slate-200 text-left text-slate-500">
           <th class="w-14 px-3 py-1.5">ID</th>
-          <th class="px-3 py-1.5">用户</th>
+          <th class="w-40 px-3 py-1.5">用户</th>
           <th class="w-32 px-3 py-1.5">手机号</th>
           <th class="w-44 px-3 py-1.5">邮箱</th>
           <th class="w-20 px-3 py-1.5">订单数</th>
@@ -341,7 +341,7 @@ onMounted(() => load())
           <th class="w-20 px-3 py-1.5">状态</th>
           <th class="w-40 px-3 py-1.5">注册时间</th>
           <th class="w-40 px-3 py-1.5">最后登录</th>
-          <th class="w-36 px-3 py-1.5">操作</th>
+          <th class="w-48 px-3 py-1.5">操作</th>
         </tr>
       </thead>
       <tbody>
@@ -355,8 +355,8 @@ onMounted(() => load())
                 class="flex h-7 w-7 items-center justify-center rounded-full bg-[#e6f4ff] text-xs text-[#1677ff]"
               >{{ (user.nickname || user.username).slice(0, 1).toUpperCase() }}</span>
               <div class="min-w-0 leading-tight">
-                <p class="truncate text-black">{{ user.nickname || '-' }}</p>
-                <p class="truncate text-xs text-slate-400">{{ user.username }}</p>
+                <p class="truncate text-black" :title="user.nickname || user.username">{{ user.nickname || '-' }}</p>
+                <p class="truncate text-xs text-slate-400" :title="user.username">{{ user.username }}</p>
               </div>
             </div>
           </td>
@@ -376,7 +376,7 @@ onMounted(() => load())
             <template v-else>-</template>
           </td>
           <td class="px-3 py-1.5">
-            <div class="flex items-center gap-1 text-[#1677ff]">
+            <div class="flex items-center gap-1 whitespace-nowrap text-[#1677ff]">
               <button class="hover:underline" @click="openDetail(user)">详情</button>
               <template v-if="!isProtected(user)">
                 <span class="text-slate-200">|</span>
