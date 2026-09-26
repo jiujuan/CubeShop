@@ -53,3 +53,18 @@ export function adjustUserPoints(userId: number, payload: AdjustPointsPayload) {
     payload,
   )
 }
+
+export interface BackfillCheckinResult {
+  date: string
+  streak: number
+  points: number
+  is_backfill: boolean
+}
+
+/** 后台补签（member.manage）：补历史某天漏签，按当日连续天数发积分并写操作日志 */
+export function backfillUserCheckin(userId: number, date: string) {
+  return request.post<ApiResult<BackfillCheckinResult>>(
+    `/admin/users/${userId}/checkins/backfill`,
+    { date },
+  )
+}

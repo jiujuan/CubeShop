@@ -13,7 +13,7 @@ import {
   type AdminUserAddress,
   type AdminUserDetail,
 } from '@/api/user'
-import { getUserPoints, adjustUserPoints, type UserPointsDetail } from '@/api/points'
+import { getUserPoints, adjustUserPoints, backfillUserCheckin, type UserPointsDetail } from '@/api/points'
 import {
   listCities, listDistricts, listProvinces, type RegionNode,
 } from '@/lib/region'
@@ -64,6 +64,22 @@ const pointsTarget = ref<AdminUserDetail | null>(null)
 const pointsForm = ref({ points: '', reason: '' })
 const pointsSaving = ref(false)
 const pointsError = ref('')
+const pointsToast = ref('')
+
+// 后台补签（member.manage / S2）：选择历史某天补漏签
+const backfillTarget = ref<AdminUserDetail | null>(null)
+const backfillDate = ref('')
+const backfillSaving = ref(false)
+const backfillError = ref('')
+// 补签不支持今天与未来（今天该走前台签到），日期输入上限默认昨天
+const yesterday = (() => {
+  const d = new Date()
+  d.setDate(d.getDate() - 1)
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
+})()
 
 // 所在地区：统一走公共地区字典下拉，禁止手输（避免脏数据影响运费按省匹配）
 const provinces = ref<RegionNode[]>([])
@@ -133,6 +149,7 @@ async function openDetail(user: AdminUser) {
   detailUser.value = { ...user, recent_orders: [] }
   detailAddresses.value = null
   detailPoints.value = null
+  pointsToast.value = ''
   try {
     // 详情 / 地址 / 积分并行加载；后两者分别挂 address.view 与 member.view，
     // 无权限时请求失败但不阻塞详情（各自置空即可）
@@ -161,6 +178,8 @@ function closeDetail() {
   detailUser.value = null
   detailAddresses.value = null
   detailPoints.value = null
+  pointsToast.value = ''
+  backfillTarget.value = null
   addrEditTarget.value = null
   addrConfirm.value = null
 }
@@ -170,6 +189,45 @@ function openPointsAdjust() {
   pointsError.value = ''
   pointsForm.value = { points: '', reason: '' }
   pointsTarget.value = detailUser.value
+}
+
+function openBackfill() {
+  if (!detailUser.value) return
+  backfillError.value = ''
+  backfillDate.value = yesterday
+  backfillTarget.value = detailUser.value
+}
+
+/** 补签：历史日期兜底（今天/未来由后台 before:today 拦截），成功后重拉积分体现新流水与余额 */
+async function doBackfill() {
+  const user = backfillTarget.value
+  if (!user || backfillSaving.value) return
+
+  if (!backfillDate.value) {
+    backfillError.value = '请选择补签日期'
+    return
+  }
+  const today = new Date().toISOString().slice(0, 10)
+  if (backfillDate.value >= today) {
+    backfillError.value = '补签日期不能晚于今天'
+    return
+  }
+
+  backfillSaving.value = true
+  try {
+    const { data } = await backfillUserCheckin(user.id, backfillDate.value)
+    // 重拉积分账户与流水：补签写入了签到流水并发了积分，余额随之变化
+    if (detailPoints.value) {
+      const res = await getUserPoints(user.id)
+      detailPoints.value = res.data.data
+    }
+    pointsToast.value = `补签成功：${data.data.date} 第 ${data.data.streak} 天，发放 ${data.data.points} 积分`
+    backfillTarget.value = null
+  } catch (e) {
+    backfillError.value = e instanceof Error ? e.message : '补签失败'
+  } finally {
+    backfillSaving.value = false
+  }
 }
 
 /** 调整积分：数量非零整数 + 原因必填，成功后就地刷新账户与流水 */
@@ -501,16 +559,23 @@ onMounted(() => load())
             <p>累计消费：<span class="font-semibold text-[#ff4d4f]">¥{{ detailUser.total_paid }}</span>（{{ detailUser.order_count }} 笔有效订单）</p>
           </div>
 
-          <!-- 会员积分（S1）：member.view 可见；调整入口另需 member.manage -->
+          <!-- 会员积分（S1）：member.view 可见；调整/补签入口另需 member.manage -->
           <div v-if="detailPoints" class="mb-4 rounded-lg bg-slate-50 p-3 text-[13px] text-slate-600">
+            <p v-if="pointsToast" data-testid="points-toast" class="mb-2 rounded bg-green-50 px-3 py-2 text-[13px] text-green-600">{{ pointsToast }}</p>
             <div class="mb-2 flex items-center justify-between">
               <h3 class="font-semibold text-slate-700">会员积分</h3>
-              <button
-                v-permission="'member.manage'"
-                data-testid="open-points-adjust"
-                class="text-[#1677ff] hover:underline"
-                @click="openPointsAdjust"
-              >调整积分</button>
+              <div v-permission="'member.manage'" class="flex items-center gap-3">
+                <button
+                  data-testid="open-backfill"
+                  class="text-[#1677ff] hover:underline"
+                  @click="openBackfill"
+                >补签</button>
+                <button
+                  data-testid="open-points-adjust"
+                  class="text-[#1677ff] hover:underline"
+                  @click="openPointsAdjust"
+                >调整积分</button>
+              </div>
             </div>
             <div class="mb-2 grid grid-cols-4 gap-x-4 gap-y-1">
               <p>可用：<span class="font-semibold text-[#1677ff]" data-testid="points-balance">{{ detailPoints.account.balance }}</span></p>
@@ -765,6 +830,27 @@ onMounted(() => load())
           class="w-full rounded-md border border-slate-300 px-3 py-1.5 text-[13px] outline-none focus:border-[#1677ff]"
         />
         <p v-if="pointsError" data-testid="points-error" class="text-xs text-red-500">{{ pointsError }}</p>
+      </div>
+    </ConfirmDialog>
+
+    <!-- 后台补签（member.manage / S2）：选择历史某天补漏签 -->
+    <ConfirmDialog
+      :open="!!backfillTarget"
+      :title="`为用户 ${backfillTarget?.username} 补签`"
+      :message="`补签会按所选日期的连续天数发放积分，并写入积分流水与操作日志。仅支持历史日期，今天请走前台签到。`"
+      confirm-text="确认补签"
+      @confirm="doBackfill"
+      @cancel="backfillTarget = null"
+    >
+      <div class="mt-3 space-y-2">
+        <input
+          v-model="backfillDate"
+          data-testid="backfill-date"
+          type="date"
+          :max="yesterday"
+          class="w-full rounded-md border border-slate-300 px-3 py-1.5 text-[13px] outline-none focus:border-[#1677ff]"
+        />
+        <p v-if="backfillError" data-testid="backfill-error" class="text-xs text-red-500">{{ backfillError }}</p>
       </div>
     </ConfirmDialog>
 

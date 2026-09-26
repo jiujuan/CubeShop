@@ -5,12 +5,13 @@ import { createMemoryHistory, createRouter } from 'vue-router'
 import permission from '@/directives/permission'
 import { useAuthStore } from '@/stores/auth'
 
-const { getUsersMock, getUserMock, getUserAddressesMock, getUserPointsMock, adjustUserPointsMock } = vi.hoisted(() => ({
+const { getUsersMock, getUserMock, getUserAddressesMock, getUserPointsMock, adjustUserPointsMock, backfillUserCheckinMock } = vi.hoisted(() => ({
   getUsersMock: vi.fn(),
   getUserMock: vi.fn(),
   getUserAddressesMock: vi.fn(),
   getUserPointsMock: vi.fn(),
   adjustUserPointsMock: vi.fn(),
+  backfillUserCheckinMock: vi.fn(),
 }))
 
 vi.mock('@/api/user', () => ({
@@ -26,6 +27,7 @@ vi.mock('@/api/user', () => ({
 vi.mock('@/api/points', () => ({
   getUserPoints: getUserPointsMock,
   adjustUserPoints: adjustUserPointsMock,
+  backfillUserCheckin: backfillUserCheckinMock,
 }))
 
 vi.mock('@/lib/region', () => ({
@@ -145,6 +147,11 @@ beforeEach(() => {
   getUserMock.mockResolvedValue({ data: { data: { ...user(), recent_orders: [] } } })
   getUserAddressesMock.mockResolvedValue({ data: { data: [] } })
   getUserPointsMock.mockResolvedValue({ data: { data: pointsFixture() } })
+  backfillUserCheckinMock.mockResolvedValue({
+    data: {
+      data: { date: '2026-09-20', streak: 4, points: 11, is_backfill: true },
+    },
+  })
   adjustUserPointsMock.mockResolvedValue({
     data: {
       data: {
@@ -264,5 +271,75 @@ describe('用户管理 - 会员积分区块（S1）', () => {
 
     expect(adjustUserPointsMock).not.toHaveBeenCalled()
     expect(el('[data-testid="points-error"]')?.textContent).toContain('非零整数')
+  })
+})
+
+describe('用户管理 - 后台补签入口（S2）', () => {
+  it('有 member.manage：积分区块出现「补签」入口并打开日期弹窗', async () => {
+    await mountView(['user.manage', 'member.view', 'member.manage'])
+    await openDetail()
+
+    expect(el('[data-testid="open-backfill"]')).not.toBeNull()
+    await click('[data-testid="open-backfill"]')
+
+    expect(el('[data-testid="backfill-date"]')).not.toBeNull()
+    expect(buttonByText('确认补签')).toBeTruthy()
+  })
+
+  it('无 member.manage：不出现补签入口', async () => {
+    await mountView(['user.manage', 'member.view'])
+    await openDetail()
+
+    expect(el('[data-testid="points-balance"]')).not.toBeNull()
+    expect(el('[data-testid="open-backfill"]')).toBeNull()
+  })
+
+  it('选择历史日期确认补签：调用接口、回拉积分、提示成功并关闭弹窗', async () => {
+    // 详情首次拉取（账户余额 100）+ 补签成功后回拉（余额体现新增签到积分）
+    getUserPointsMock
+      .mockResolvedValueOnce({ data: { data: pointsFixture({ account: { balance: 100, frozen: 20, total: 120, total_earn: 300, total_spend: 200 } }) } })
+      .mockResolvedValueOnce({
+        data: {
+          data: pointsFixture({
+            account: { balance: 111, frozen: 20, total: 131, total_earn: 311, total_spend: 200 },
+            logs: [
+              {
+                id: 11, type: 'signin', type_label: '签到奖励', points: 11, frozen_points: 0,
+                balance_before: 100, balance_after: 111, remark: '后台补签奖励', created_at: '2026-09-20 00:00:00',
+              },
+              ...pointsFixture().logs,
+            ],
+          }),
+        },
+      })
+
+    await mountView()
+    await openDetail()
+    await click('[data-testid="open-backfill"]')
+
+    await typeInto('[data-testid="backfill-date"]', '2026-09-20')
+    await click('[data-testid="confirm-ok"]')
+
+    expect(backfillUserCheckinMock).toHaveBeenCalledWith(100, '2026-09-20')
+    // 成功后回拉积分：getUserPoints 至少被调用两次（详情一次 + 补签一次）
+    expect(getUserPointsMock).toHaveBeenCalledTimes(2)
+    expect(el('[data-testid="points-toast"]')?.textContent).toContain('补签成功')
+    expect(el('[data-testid="points-toast"]')?.textContent).toContain('发放 11 积分')
+    // 弹窗关闭，日期输入框已不在 body 中
+    expect(el('[data-testid="backfill-date"]')).toBeNull()
+    // 积分余额随补签刷新为 111
+    expect(el('[data-testid="points-balance"]')?.textContent).toBe('111')
+  })
+
+  it('补签未来日期（含今天）前端拦截，不调用接口', async () => {
+    await mountView()
+    await openDetail()
+    await click('[data-testid="open-backfill"]')
+
+    await typeInto('[data-testid="backfill-date"]', '2026-09-27')
+    await click('[data-testid="confirm-ok"]')
+
+    expect(backfillUserCheckinMock).not.toHaveBeenCalled()
+    expect(el('[data-testid="backfill-error"]')?.textContent).toContain('不能晚于今天')
   })
 })
