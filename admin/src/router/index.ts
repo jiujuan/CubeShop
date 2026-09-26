@@ -135,6 +135,18 @@ const router = createRouter({
           meta: { title: '退款处理', menu: true, icon: 'RotateCcw', permission: 'refund.view' },
         },
         {
+          path: 'return-refunds',
+          name: 'return-refunds',
+          component: () => import('@/views/refund/ReturnRefundView.vue'),
+          meta: { title: '退货处理', menu: true, icon: 'PackageCheck', permission: 'refund.view' },
+        },
+        {
+          path: 'refund-reconcile',
+          name: 'refund-reconcile',
+          component: () => import('@/views/refund/RefundReconcileView.vue'),
+          meta: { title: '退款对账差异', menu: true, icon: 'Scale', permission: 'payment.reconcile.view' },
+        },
+        {
           path: 'payments',
           name: 'payments',
           component: () => import('@/views/order/PaymentView.vue'),

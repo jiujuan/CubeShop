@@ -136,7 +136,7 @@ export interface RefundListResult {
   pagination: { page: number; page_size: number; total: number; total_pages: number }
 }
 
-export function getRefunds(params: { refund_no?: string; order_no?: string; status?: RefundStatus; page?: number; page_size?: number }) {
+export function getRefunds(params: { refund_no?: string; order_no?: string; status?: RefundStatus; type?: RefundType; return_status?: string; page?: number; page_size?: number }) {
   return request.get<ApiResult<RefundListResult>>('/admin/refunds', { params })
 }
 
@@ -187,6 +187,12 @@ export const RETURN_STATUS_LABELS: Record<Exclude<ReturnStatus, null>, string> =
   shipping: '退货中',
   received: '已收货',
   exception: '异常',
+}
+
+/** 实收商品状态（良品/残次）中文 */
+export const RETURN_CONDITION_LABELS: Record<ReturnCondition, string> = {
+  good: '良品',
+  defective: '残次',
 }
 
 /** 后台处理动作中文（用于处理流水） */

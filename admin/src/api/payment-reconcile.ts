@@ -48,6 +48,9 @@ export type ReconcileDiffType =
   | 'AMOUNT_MISMATCH'
   | 'DUPLICATE_CALLBACK'
   | 'UNKNOWN'
+  | 'REFUND_STATUS_MISMATCH'
+  | 'REFUND_CHANNEL_MISSING'
+  | 'REFUND_LOCAL_MISSING'
 
 /** 差异类型中文（后端 PaymentReconciliationDiff::TYPE_LABELS 镜像） */
 export const RECONCILE_DIFF_TYPE_LABELS: Record<ReconcileDiffType, string> = {
@@ -56,6 +59,9 @@ export const RECONCILE_DIFF_TYPE_LABELS: Record<ReconcileDiffType, string> = {
   AMOUNT_MISMATCH: '金额不一致',
   DUPLICATE_CALLBACK: '重复回调',
   UNKNOWN: '未知差异',
+  REFUND_STATUS_MISMATCH: '退款状态不一致',
+  REFUND_CHANNEL_MISSING: '退款·渠道无记录(疑似漏退)',
+  REFUND_LOCAL_MISSING: '渠道退款·本地无单',
 }
 
 /** 语义配色：渠道长款(橙) > 本地短款/资金风险(红) > 长短款(琥珀) > 重复回调(紫) > 未知(灰) */
@@ -65,6 +71,9 @@ export const RECONCILE_DIFF_TYPE_CLASS: Record<ReconcileDiffType, string> = {
   AMOUNT_MISMATCH: 'bg-amber-50 text-amber-600',
   DUPLICATE_CALLBACK: 'bg-violet-50 text-violet-600',
   UNKNOWN: 'bg-slate-100 text-slate-500',
+  REFUND_STATUS_MISMATCH: 'bg-red-50 text-red-600',
+  REFUND_CHANNEL_MISSING: 'bg-orange-50 text-orange-600',
+  REFUND_LOCAL_MISSING: 'bg-amber-50 text-amber-600',
 }
 
 /** 看板分布条实心配色（语义与列表徽章一致，用于可视化条形） */
@@ -184,6 +193,8 @@ export interface PaymentReconcileDiffListParams {
   date?: string
   channel?: PaymentChannel
   diff_type?: ReconcileDiffType
+  /** payment=仅支付差异，refund=仅退款差异；不传=全部 */
+  category?: 'payment' | 'refund'
   status?: ReconcileDiffStatus
   platform?: PayPlatform
   keyword?: string
