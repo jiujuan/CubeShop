@@ -194,10 +194,34 @@ const menuGroups = computed<MenuGroup[]>(() => {
     .filter((g) => g.items.length > 0)
 })
 
-/** 菜单激活判断：完全相等或其子路径（startsWith 会把 /refunds-overview 误判进 /refunds） */
-function isActive(path: string): boolean {
+/**
+ * 菜单激活判断：完全相等或其子路径（startsWith 不加尾斜杠会把 /refunds-overview 误判进 /refunds）
+ * ⚠️ 父子路径同时是菜单项时（/products 与 /products/import）两者都会命中、双双高亮，
+ * 故改为「最长匹配唯一命中」：只有匹配度最高的那一项亮，进导入页时「商品管理」不再跟着亮。
+ * 非菜单路径（如 /products/12/edit）仍会命中父级 /products，详情页高亮行为不变。
+ */
+function matchScore(path: string, current: string): number {
+  if (current === path) return path.length + 1
+  return current.startsWith(`${path}/`) ? path.length : -1
+}
+
+/** 当前唯一激活的菜单路径；无匹配时为空串（都不高亮） */
+const activeMenuPath = computed(() => {
   const current = router.currentRoute.value.path
-  return current === path || current.startsWith(`${path}/`)
+  let best = ''
+  let bestScore = matchScore('', current)
+  for (const menu of flatMenus.value) {
+    const score = matchScore(menu.path, current)
+    if (score > bestScore) {
+      bestScore = score
+      best = menu.path
+    }
+  }
+  return best
+})
+
+function isActive(path: string): boolean {
+  return activeMenuPath.value === path
 }
 
 const pageTitle = computed(() => (router.currentRoute.value.meta.title as string) || '')
