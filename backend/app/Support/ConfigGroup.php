@@ -31,6 +31,9 @@ final class ConfigGroup
         'waybill' => '物流配送',
         'search' => '搜索与推荐',
         'sms' => '消息通知',
+        // 会员与积分（成长计划 S2 起）：points.* 与 member.* 合并为同一 Tab
+        'points' => '会员与积分',
+        'member' => '会员与积分',
     ];
 
     /** 未登记前缀的兜底分组 */

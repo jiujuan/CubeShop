@@ -38,6 +38,7 @@ use App\Http\Controllers\Admin\SmsConfigController as AdminSmsConfigController;
 use App\Http\Controllers\Admin\UploadController;
 use App\Http\Controllers\Admin\UserController;
 use App\Http\Controllers\Admin\UserPointController;
+use App\Http\Controllers\Admin\UserCheckinController;
 use App\Http\Controllers\Admin\WmsConfigController;
 use App\Http\Controllers\Admin\WmsApiLogController;
 use App\Http\Controllers\Admin\WmsConsoleController;
@@ -50,6 +51,7 @@ use App\Http\Controllers\AnnouncementController;
 use App\Http\Controllers\HomeBannerController;
 use App\Http\Controllers\BalanceController;
 use App\Http\Controllers\CartController;
+use App\Http\Controllers\CheckinController;
 use App\Http\Controllers\Admin\CsFaqController as AdminCsFaqController;
 use App\Http\Controllers\Admin\CsQuickReplyController as AdminCsQuickReplyController;
 use App\Http\Controllers\Admin\CsTicketController as AdminCsTicketController;
@@ -271,6 +273,10 @@ Route::middleware(['auth:sanctum', 'account.active'])->group(function () {
     Route::put('/user/addresses/{id}', [AddressController::class, 'update']);
     Route::post('/user/addresses/{id}/default', [AddressController::class, 'setDefault']);
     Route::delete('/user/addresses/{id}', [AddressController::class, 'destroy']);
+
+    // 会员签到（会员成长计划 S2）：状态查询与签到（签到限流 30/min 防连点）
+    Route::get('/checkin', [CheckinController::class, 'status']);
+    Route::post('/checkin', [CheckinController::class, 'store'])->middleware('throttle:30,1');
 
     // 线下转账凭证上传（需登录，限流 30/min）
     Route::post('/user/upload-voucher', [PaymentController::class, 'uploadVoucher'])->middleware('throttle:voucher');
@@ -708,6 +714,8 @@ Route::middleware(['auth:sanctum', 'account.active'])->group(function () {
         // ⚠️ 权限与 user.manage 解耦：查看积分不需要用户管理权，调整才需要会员管理权
         Route::get('/users/{id}/points', [UserPointController::class, 'show'])->middleware('permission:member.view');
         Route::post('/users/{id}/points/adjust', [UserPointController::class, 'adjust'])->middleware('permission:member.manage');
+        // 签到补签（S2 / D8）：会真实发放积分，故与积分调整同档 member.manage
+        Route::post('/users/{id}/checkins/backfill', [UserCheckinController::class, 'backfill'])->middleware('permission:member.manage');
 
         // 收货地址管理（设计文档 CubeShop_Address_Design_v1.0 §5）
         // 查看：address.view（运营可核对）；代改：address.manage（仅超管，禁改默认/归属）
