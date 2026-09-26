@@ -47,6 +47,20 @@ class Refund extends Model
         self::STATUS_FAILED => '退款失败',
     ];
 
+    /** 类型中文名（后台/导出展示） */
+    public const TYPE_LABELS = [
+        self::TYPE_REFUND => '仅退款',
+        self::TYPE_RETURN_REFUND => '退货退款',
+    ];
+
+    /** 退货状态中文名（后台/导出展示） */
+    public const RETURN_STATUS_LABELS = [
+        self::RETURN_STATUS_WAITING_RETURN => '待退货',
+        self::RETURN_STATUS_SHIPPING => '退货中',
+        self::RETURN_STATUS_RECEIVED => '已收货',
+        self::RETURN_STATUS_EXCEPTION => '异常',
+    ];
+
     protected $table = 'refunds';
     protected $fillable = [
         'refund_no', 'order_id', 'order_no', 'user_id', 'type', 'warehouse_id',

@@ -12,6 +12,7 @@ use App\Services\Refund\RefundService;
 use App\Support\ApiResponse;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 /**
  * 后台退款处理（API 文档 8.4 / Roadmap P5）
@@ -145,6 +146,121 @@ class RefundController extends Controller
         );
 
         return $this->success($this->row($refund->fresh()), '处理成功');
+    }
+
+    /**
+     * 批量审核：POST /admin/refunds/batch-process {ids[], action: approve|reject, remark?}
+     *
+     * 循环复用 RefundService::process（每单独立事务，含渠道退款驱动/事件/操作日志）。
+     * 非 pending 单不中断整批，逐单返回成功/失败结果，便于运营定位问题单。
+     */
+    public function batchProcess(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'ids' => ['required', 'array', 'min:1', 'max:100'],
+            'ids.*' => ['integer'],
+            'action' => ['required', 'string', 'in:approve,reject'],
+            'remark' => ['nullable', 'string', 'max:500'],
+        ]);
+
+        $adminId = $request->user()->id;
+        $succeeded = [];
+        $failed = [];
+
+        $refunds = Refund::whereIn('id', $data['ids'])->orderByDesc('id')->get();
+
+        foreach ($refunds as $refund) {
+            try {
+                /** @var Refund $processed */
+                $processed = $this->refunds->process($refund, $adminId, $data['action'], $data['remark'] ?? null);
+                $succeeded[] = [
+                    'id' => $refund->id,
+                    'refund_no' => $refund->refund_no,
+                    'status' => $processed->status,
+                    'status_label' => Refund::STATUS_LABELS[$processed->status] ?? $processed->status,
+                ];
+            } catch (\Throwable $e) {
+                $failed[] = [
+                    'id' => $refund->id,
+                    'refund_no' => $refund->refund_no,
+                    'reason' => $e->getMessage(),
+                ];
+            }
+        }
+
+        // 入参里有但库里不存在的 id 也如实回报
+        $foundIds = $refunds->pluck('id')->all();
+        foreach (array_diff($data['ids'], $foundIds) as $missingId) {
+            $failed[] = ['id' => (int) $missingId, 'refund_no' => '', 'reason' => '退款单不存在'];
+        }
+
+        return $this->success([
+            'total' => count($data['ids']),
+            'succeeded_count' => count($succeeded),
+            'failed_count' => count($failed),
+            'succeeded' => $succeeded,
+            'failed' => $failed,
+        ], sprintf('批量审核完成：成功 %d 单，失败 %d 单', count($succeeded), count($failed)));
+    }
+
+    /**
+     * 退款列表导出：GET /admin/refunds/export（CSV，随当前筛选全量导出）
+     *
+     * 与 index 同一组筛选条件；流式输出 + UTF-8 BOM（Excel 直接打开不乱码）。
+     */
+    public function export(Request $request): StreamedResponse
+    {
+        $data = $request->validate([
+            'refund_no' => ['nullable', 'string'],
+            'order_no' => ['nullable', 'string'],
+            'status' => ['nullable', 'string', 'in:'.implode(',', [Refund::STATUS_PENDING, Refund::STATUS_APPROVED, Refund::STATUS_REJECTED, Refund::STATUS_SUCCESS, Refund::STATUS_FAILED])],
+            'type' => ['nullable', 'string', 'in:'.implode(',', [Refund::TYPE_REFUND, Refund::TYPE_RETURN_REFUND])],
+            'return_status' => ['nullable', 'string', 'in:'.implode(',', [Refund::RETURN_STATUS_WAITING_RETURN, Refund::RETURN_STATUS_SHIPPING, Refund::RETURN_STATUS_RECEIVED, Refund::RETURN_STATUS_EXCEPTION])],
+        ]);
+
+        $query = Refund::query()
+            ->with(['user:id,nickname'])
+            ->when($data['refund_no'] ?? null, fn ($q, $v) => $q->where('refund_no', $v))
+            ->when($data['order_no'] ?? null, fn ($q, $v) => $q->where('order_no', $v))
+            ->when($data['status'] ?? null, fn ($q, $v) => $q->where('status', $v))
+            ->when($data['type'] ?? null, fn ($q, $v) => $q->where('type', $v))
+            ->when($data['return_status'] ?? null, fn ($q, $v) => $q->where('return_status', $v))
+            ->orderByDesc('id');
+
+        $filename = 'refunds-'.now()->format('YmdHis').'.csv';
+
+        return response()->streamDownload(function () use ($query) {
+            echo "\xEF\xBB\xBF";
+            $out = fopen('php://output', 'w');
+            fputcsv($out, ['退款单号', '订单号', '买家', '类型', '状态', '退货状态', '退款金额',
+                '退款渠道', '渠道退款状态', '失败原因', '申请原因', '审核备注', '处理人',
+                '申请时间', '审核时间', '退款完成时间']);
+
+            $query->cursor()->each(function (Refund $refund) use ($out) {
+                fputcsv($out, [
+                    $refund->refund_no,
+                    $refund->order_no,
+                    $refund->user?->nickname,
+                    Refund::TYPE_LABELS[$refund->type] ?? $refund->type,
+                    Refund::STATUS_LABELS[$refund->status] ?? $refund->status,
+                    $refund->return_status === null ? '' : (Refund::RETURN_STATUS_LABELS[$refund->return_status] ?? $refund->return_status),
+                    (string) $refund->amount,
+                    $refund->channel ?? '',
+                    $refund->refund_status ?? '',
+                    $refund->failed_reason ?? '',
+                    $refund->reason ?? '',
+                    $refund->admin_remark ?? '',
+                    $refund->processor?->nickname ?? '',
+                    $refund->created_at?->format('Y-m-d H:i:s'),
+                    $refund->processed_at?->format('Y-m-d H:i:s'),
+                    $refund->refunded_at?->format('Y-m-d H:i:s'),
+                ]);
+            });
+
+            fclose($out);
+        }, $filename, [
+            'Content-Type' => 'text/csv; charset=UTF-8',
+        ]);
     }
 
     /**

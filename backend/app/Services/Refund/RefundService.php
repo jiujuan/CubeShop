@@ -318,7 +318,10 @@ class RefundService
             } else {
                 $refund->status = Refund::STATUS_REJECTED;
                 // 拒绝后订单回到已支付（状态机 refunding → paid）
-                $this->orders->transitionTo($order, Order::STATUS_PAID, '退款被拒绝', 'order', $adminId, OrderLog::OPERATOR_ADMIN);
+                // 同单多笔退款时订单可能已回到 paid（前一笔已拒），此时不再流转，避免 paid→paid 非法
+                if ($order->status === Order::STATUS_REFUNDING) {
+                    $this->orders->transitionTo($order, Order::STATUS_PAID, '退款被拒绝', 'order', $adminId, OrderLog::OPERATOR_ADMIN);
+                }
             }
 
             $refund->admin_remark = $adminRemark;
