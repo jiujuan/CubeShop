@@ -7,6 +7,10 @@ import {
   getRefunds,
   processRefund,
   receiveRefund,
+  getRefundLogs,
+  retryRefund,
+  REFUND_MAX_RETRY,
+  REFUND_CHANNEL_LABELS,
   REFUND_ACTION_LABELS,
   REFUND_STATUS_CLASS,
   REFUND_STATUS_LABELS,
@@ -17,6 +21,7 @@ import {
   type RefundStatus,
   type ReturnCondition,
   type ReturnReceivedDetail,
+  type RefundLogEntry,
 } from '@/api/refund'
 import { formatRefundLogFields } from '@/lib/refundLog'
 import { uploadImage } from '@/api/product'
@@ -240,6 +245,49 @@ async function doReceive() {
     state.loading = false
   }
 }
+
+// ---------- 重试（失败态，复用 out_refund_no 幂等） ----------
+
+const retryingId = ref<number | null>(null)
+
+function canRetry(refund: Refund): boolean {
+  return refund.status === 'failed' && refund.retry_count < (refund.max_retry ?? REFUND_MAX_RETRY)
+}
+
+async function doRetry(refund: Refund) {
+  if (retryingId.value) return
+  retryingId.value = refund.id
+  tip.value = ''
+  try {
+    await retryRefund(refund.id)
+    await load()
+  } catch (e) {
+    tip.value = e instanceof Error ? e.message : '重试失败'
+  } finally {
+    retryingId.value = null
+  }
+}
+
+// ---------- 退款全链路日志抽屉 ----------
+
+const logState = ref<{ loading: boolean; data: RefundLogEntry[]; tip: string } | null>(null)
+
+async function openLogs(refund: Refund) {
+  logState.value = { loading: true, data: [], tip: '' }
+  try {
+    const { data } = await getRefundLogs(refund.id)
+    if (logState.value) logState.value.data = data.data.logs
+  } catch (e) {
+    if (logState.value) logState.value.tip = e instanceof Error ? e.message : '加载日志失败'
+  } finally {
+    if (logState.value) logState.value.loading = false
+  }
+}
+
+function closeLogs() {
+  logState.value = null
+}
+
 </script>
 
 <template>
@@ -254,7 +302,7 @@ async function doReceive() {
     <!-- 状态快捷筛选（胶囊标签排） -->
     <div class="mb-4 flex flex-wrap gap-2">
       <button
-        v-for="tab in [['', '全部'], ['pending', '待审核'], ['success', '退款成功'], ['rejected', '已拒绝']] as const"
+        v-for="tab in [['', '全部'], ['pending', '待审核'], ['processing', '退款中'], ['success', '退款成功'], ['failed', '退款失败'], ['rejected', '已拒绝']] as const"
         :key="tab[0]"
         class="rounded-full px-3 py-1 text-xs transition-colors"
         :class="statusFilter === tab[0] ? 'bg-[#1677ff] text-white' : 'border border-slate-200 text-slate-500 hover:text-[#1677ff]'"
@@ -272,6 +320,8 @@ async function doReceive() {
           <th class="w-24 px-3 py-1.5">金额</th>
           <th class="px-3 py-1.5">原因</th>
           <th class="w-24 px-3 py-1.5">状态</th>
+          <th class="px-3 py-1.5">渠道退款</th>
+          <th class="w-28 px-3 py-1.5">渠道状态</th>
           <th class="w-40 px-3 py-1.5">申请时间</th>
           <th class="w-52 px-3 py-1.5">操作</th>
         </tr>
@@ -292,6 +342,15 @@ async function doReceive() {
             <span class="rounded px-2 py-0.5 text-xs" :class="REFUND_STATUS_CLASS[refund.status]">{{ REFUND_STATUS_LABELS[refund.status] }}</span>
             <span v-if="refund.type === 'return_refund' && refund.return_status" class="ml-1 text-xs text-purple-500">· 退货{{ RETURN_STATUS_LABELS[refund.return_status] }}</span>
           </td>
+          <td class="px-3 py-1.5 text-black">
+            <p v-if="refund.channel">{{ REFUND_CHANNEL_LABELS[refund.channel] || refund.channel }}</p>
+            <p class="font-mono text-[11px] text-slate-500">{{ refund.out_refund_no || '-' }}</p>
+            <p v-if="refund.channel_refund_no" class="font-mono text-[11px] text-slate-400">渠道：{{ refund.channel_refund_no }}</p>
+          </td>
+          <td class="px-3 py-1.5 text-black">
+            <span class="rounded px-2 py-0.5 text-xs" :class="refund.refund_status === 'SUCCESS' ? 'bg-green-100 text-green-600' : 'bg-slate-100 text-slate-500'">{{ refund.refund_status || '-' }}</span>
+            <p v-if="refund.failed_reason" class="mt-1 text-[11px] text-orange-500">{{ refund.failed_reason }}</p>
+          </td>
           <td class="px-3 py-1.5 text-black">{{ refund.created_at }}</td>
           <td class="px-3 py-1.5">
             <div class="flex items-center gap-2">
@@ -309,6 +368,17 @@ async function doReceive() {
                   :data-testid="`receive-${refund.id}`"
                   @click="askReceive(refund)"
                 >确认收货</button>
+              </template>
+              <span class="text-slate-200">|</span>
+              <button class="text-slate-500 hover:underline" :data-testid="`logs-${refund.id}`" @click="openLogs(refund)">日志</button>
+              <template v-if="canRetry(refund)">
+                <span class="text-slate-200">|</span>
+                <button
+                  class="rounded bg-orange-500 px-2 py-0.5 text-xs text-white hover:bg-orange-600 disabled:opacity-50"
+                  :data-testid="`retry-${refund.id}`"
+                  :disabled="retryingId === refund.id"
+                  @click="doRetry(refund)"
+                >{{ retryingId === refund.id ? '重试中…' : '重试' }}</button>
               </template>
             </div>
           </td>
@@ -334,7 +404,14 @@ async function doReceive() {
       <div class="w-full max-w-3xl rounded-lg bg-white p-5 shadow-lg" data-testid="refund-detail">
         <div class="mb-3 flex items-center justify-between">
           <h3 class="text-base font-semibold text-slate-800">退款详情</h3>
-          <button class="text-slate-400 hover:text-slate-600" @click="closeDetail"><X class="h-4 w-4" /></button>
+          <div class="flex items-center gap-2">
+            <button
+              class="rounded border border-slate-200 px-2 py-1 text-xs text-slate-500 hover:text-[#1677ff]"
+              :data-testid="`detail-logs-${detailState.data?.id}`"
+              @click="openLogs(detailState.data)"
+            >退款日志</button>
+            <button class="text-slate-400 hover:text-slate-600" @click="closeDetail"><X class="h-4 w-4" /></button>
+          </div>
         </div>
 
         <p v-if="detailState.tip" class="mb-3 rounded-md bg-red-50 px-3 py-2 text-xs text-red-500">{{ detailState.tip }}</p>
@@ -354,6 +431,18 @@ async function doReceive() {
               </p>
               <p class="mt-1 text-black">申请时间：{{ detailState.data.created_at }}</p>
               <p class="mt-1 text-black">退款理由：{{ detailState.data.reason || '-' }}</p>
+            </section>
+
+            <!-- 渠道退款信息 -->
+            <section class="rounded-lg border border-slate-100 p-3 text-[13px]" data-testid="detail-channel">
+              <h4 class="mb-2 text-xs font-semibold text-slate-500">渠道退款</h4>
+              <p class="text-black">渠道：{{ detailState.data.channel ? (REFUND_CHANNEL_LABELS[detailState.data.channel] || detailState.data.channel) : '-' }}</p>
+              <p class="mt-1 text-black">我方退款单号：<span class="font-mono">{{ detailState.data.out_refund_no || '-' }}</span></p>
+              <p class="mt-1 text-black">渠道退款单号：<span class="font-mono">{{ detailState.data.channel_refund_no || '-' }}</span></p>
+              <p class="mt-1 text-black">渠道状态：{{ detailState.data.refund_status || '-' }}</p>
+              <p class="mt-1 text-black">退款成功时间：{{ detailState.data.refunded_at || '-' }}</p>
+              <p v-if="detailState.data.failed_reason" class="mt-1 text-orange-500">失败原因：{{ detailState.data.failed_reason }}</p>
+              <p class="mt-1 text-black">重试次数：{{ detailState.data.retry_count }} / {{ detailState.data.max_retry ?? REFUND_MAX_RETRY }}</p>
             </section>
 
             <!-- 用户 / 订单 -->
@@ -667,6 +756,38 @@ async function doReceive() {
             @click="doReceive"
           >{{ receiveState.loading ? '处理中…' : '确认收货' }}</button>
         </div>
+      </div>
+    </div>
+
+    <!-- 退款日志抽屉 -->
+    <div
+      v-if="logState"
+      class="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 px-4 py-8"
+      @click.self="closeLogs"
+    >
+      <div class="w-full max-w-2xl rounded-lg bg-white p-5 shadow-lg" data-testid="refund-logs">
+        <div class="mb-3 flex items-center justify-between">
+          <h3 class="text-base font-semibold text-slate-800">退款全链路日志</h3>
+          <button class="text-slate-400 hover:text-slate-600" @click="closeLogs"><X class="h-4 w-4" /></button>
+        </div>
+        <p v-if="logState.tip" class="mb-3 rounded-md bg-red-50 px-3 py-2 text-xs text-red-500">{{ logState.tip }}</p>
+        <div v-if="logState.loading" class="py-10"><LoadingSpinner /></div>
+        <template v-else>
+          <ol class="space-y-3 text-[13px]">
+            <li v-for="entry in logState.data" :key="entry.id" class="rounded-md border border-slate-100 p-3" data-testid="refund-log-entry">
+              <div class="flex items-center justify-between">
+                <span class="rounded bg-slate-100 px-2 py-0.5 text-xs text-slate-600">{{ entry.type }}</span>
+                <span class="text-xs text-slate-400">{{ entry.created_at }}</span>
+              </div>
+              <p v-if="entry.channel" class="mt-1 text-black">渠道：{{ REFUND_CHANNEL_LABELS[entry.channel] || entry.channel }}</p>
+              <p v-if="entry.out_refund_no" class="mt-1 text-black">退款单号：<span class="font-mono">{{ entry.out_refund_no }}</span></p>
+              <p v-if="entry.channel_status" class="mt-1 text-black">渠道状态：{{ entry.channel_status }}</p>
+              <p v-if="entry.note" class="mt-1 text-black">备注：{{ entry.note }}</p>
+              <p v-if="entry.actor_type" class="mt-1 text-slate-400">操作方：{{ entry.actor_type }}{{ entry.actor_id ? ' #' + entry.actor_id : '' }}</p>
+            </li>
+            <li v-if="!logState.data.length" class="text-slate-400">暂无退款日志</li>
+          </ol>
+        </template>
       </div>
     </div>
 

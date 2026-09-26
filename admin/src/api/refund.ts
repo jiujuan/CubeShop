@@ -3,7 +3,7 @@ import type { ApiResult } from './request'
 
 // ---------- 退款处理（API 文档 8.4 / Roadmap P5，权限 refund.view / refund.process） ----------
 
-export type RefundStatus = 'pending' | 'approved' | 'rejected' | 'success' | 'failed'
+export type RefundStatus = 'pending' | 'approved' | 'rejected' | 'success' | 'failed' | 'processing'
 export type RefundType = 'refund' | 'return_refund'
 export type ReturnStatus = 'waiting_return' | 'shipping' | 'received' | 'exception' | null
 export type ReturnCondition = 'good' | 'defective'
@@ -48,6 +48,15 @@ export interface Refund {
   processed_at: string | null
   created_at: string
   order_status: string
+  // Phase 4/5 渠道退款字段
+  channel: string | null
+  out_refund_no: string | null
+  channel_refund_no: string | null
+  refund_status: string | null
+  failed_reason: string | null
+  retry_count: number
+  refunded_at: string | null
+  max_retry: number
 }
 
 /** 退款详情中的订单商品行（产品图 / 产品链接 / 规格 / 数量） */
@@ -84,6 +93,44 @@ export interface RefundDetail extends Refund {
   logs: RefundDetailLog[]
 }
 
+/** 退款全链路事件日志（refund_logs，append-only；Phase 1 引入，Phase 5 暴露给后台） */
+export interface RefundLogEntry {
+  id: number
+  type: string
+  channel: string | null
+  out_refund_no: string | null
+  channel_status: string | null
+  actor_type: string | null
+  actor_id: number | null
+  note: string | null
+  request: unknown
+  response: unknown
+  created_at: string | null
+}
+
+export interface RefundLogResult {
+  refund_id: number
+  logs: RefundLogEntry[]
+}
+
+/** 退款全链路日志（Phase 5：后台「退款日志」抽屉读取） */
+export function getRefundLogs(id: number) {
+  return request.get<ApiResult<RefundLogResult>>(`/admin/refunds/${id}/logs`)
+}
+
+/** 后台重试退款（失败态，复用 out_refund_no 幂等，达 max_retry 转人工） */
+export function retryRefund(id: number) {
+  return request.post<ApiResult<Refund>>(`/admin/refunds/${id}/retry`)
+}
+
+export const REFUND_MAX_RETRY = 3
+export const REFUND_CHANNEL_LABELS: Record<string, string> = {
+  wechat: '微信支付',
+  alipay: '支付宝',
+  balance: '余额',
+  offline: '线下',
+}
+
 export interface RefundListResult {
   list: Refund[]
   pagination: { page: number; page_size: number; total: number; total_pages: number }
@@ -118,6 +165,7 @@ export const REFUND_STATUS_LABELS: Record<RefundStatus, string> = {
   rejected: '已拒绝',
   success: '退款成功',
   failed: '退款失败',
+  processing: '退款中',
 }
 
 export const REFUND_STATUS_CLASS: Record<RefundStatus, string> = {
@@ -126,6 +174,7 @@ export const REFUND_STATUS_CLASS: Record<RefundStatus, string> = {
   rejected: 'bg-slate-100 text-slate-500',
   success: 'bg-green-100 text-green-600',
   failed: 'bg-red-100 text-red-500',
+  processing: 'bg-blue-50 text-blue-500',
 }
 
 export const REFUND_TYPE_LABELS: Record<RefundType, string> = {
