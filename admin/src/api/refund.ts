@@ -156,6 +156,28 @@ export interface RefundStats {
   }
 }
 
+/** 退款策略（GET/PUT /admin/refunds/policy，refund.* 配置） */
+export interface RefundPolicy {
+  /** 自动同意阈值（元），'0.00' = 不启用 */
+  auto_approve_amount: string
+  /** 渠道退款失败自动重试上限（次），超过转人工 */
+  max_retry: number
+  /** 纠纷处理 SLA（小时），超时列表标记催办 */
+  dispute_sla_hours: number
+  /** 退货地址模板（纯文本，支持换行） */
+  return_address_template: string
+}
+
+export type RefundPolicyUpdate = Partial<RefundPolicy>
+
+export function getRefundPolicy() {
+  return request.get<ApiResult<RefundPolicy>>('/admin/refunds/policy')
+}
+
+export function updateRefundPolicy(payload: RefundPolicyUpdate) {
+  return request.put<ApiResult<RefundPolicy>>('/admin/refunds/policy', payload)
+}
+
 export function getRefundStats() {
   return request.get<ApiResult<RefundStats>>('/admin/refunds/stats')
 }

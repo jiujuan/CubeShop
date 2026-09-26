@@ -129,6 +129,12 @@ const router = createRouter({
           meta: { title: '物流监控', menu: true, icon: 'MapPinned', permission: 'order.view' },
         },
         {
+          path: 'refund-policy',
+          name: 'refund-policy',
+          component: () => import('@/views/refund/RefundPolicyView.vue'),
+          meta: { title: '退款策略', menu: true, icon: 'SlidersHorizontal', permission: 'refund.view' },
+        },
+        {
           path: 'refunds-overview',
           name: 'refunds-overview',
           component: () => import('@/views/refund/RefundOverviewView.vue'),

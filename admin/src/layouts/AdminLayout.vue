@@ -3,7 +3,7 @@ import { computed, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import {
   BarChart3, BookOpen, Box, Calculator, ChevronDown, ChevronRight, ChevronsLeft, ChevronsRight, ClipboardList, CreditCard, FileClock, FolderTree, History, Images, KeyRound,
-  Send, Search, LayoutDashboard, Layers, LayoutList, LifeBuoy, ListTree, LogOut, MapPinned, Menu, MessageSquare, Megaphone, Package, RotateCcw, ScrollText, Settings, ShieldCheck,   SquareUser, Tags, Truck, UploadCloud, UserCog, UserRound, Users, Wallet, Warehouse, Ticket, Undo2, Activity, Diff, Scale, PackageCheck, Gavel, Gauge,
+  Send, Search, LayoutDashboard, Layers, LayoutList, LifeBuoy, ListTree, LogOut, MapPinned, Menu, MessageSquare, Megaphone, Package, RotateCcw, ScrollText, Settings, ShieldCheck,   SquareUser, Tags, Truck, UploadCloud, UserCog, UserRound, Users, Wallet, Warehouse, Ticket, Undo2, Activity, Diff, Scale, PackageCheck, Gavel, Gauge, SlidersHorizontal,
 } from 'lucide-vue-next'
 import { useAuthStore } from '@/stores/auth'
 
@@ -71,6 +71,7 @@ const icons: Record<string, unknown> = {
   PackageCheck,
   Gavel,
   Gauge,
+  SlidersHorizontal,
 }
 
 interface MenuItem {
@@ -127,6 +128,7 @@ const menuGroups = computed<MenuGroup[]>(() => {
       title: '退款管理',
       items: [
         { path: '/refunds-overview', title: '退款概览', icon: 'Gauge', permission: 'refund.view' },
+        { path: '/refund-policy', title: '退款策略', icon: 'SlidersHorizontal', permission: 'refund.view' },
         { path: '/refunds', title: '退款处理', icon: 'RotateCcw', permission: 'refund.view' },
         { path: '/return-refunds', title: '退货处理', icon: 'PackageCheck', permission: 'refund.view' },
         { path: '/refund-disputes', title: '退款纠纷', icon: 'Gavel', permission: 'refund.view' },
