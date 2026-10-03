@@ -15,7 +15,7 @@ return new class extends Migration
     {
         Schema::create('refund_dispute_messages', function (Blueprint $table) {
             $table->id();
-            $table->string('public_id', 24)->unique()->comment('对外 ID');
+            $table->char('public_id', 26)->unique()->comment('对外 ID');
             $table->unsignedBigInteger('dispute_id')->comment('关联 refund_disputes.id');
             $table->string('sender_type', 16)->comment('admin/customer/system');
             $table->unsignedBigInteger('sender_id')->nullable()->comment('发送人 ID');

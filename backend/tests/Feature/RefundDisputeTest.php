@@ -6,6 +6,7 @@ use App\Models\Payment;
 use App\Models\Refund;
 use App\Models\RefundDispute;
 use App\Models\RefundLog;
+use App\Models\SysUser;
 use App\Models\User;
 use App\Models\UserAddress;
 use App\Services\Common\CaptchaService;
@@ -146,10 +147,12 @@ test('后台指派后纠纷进入已介入', function () {
         'reason_code' => 'timeout_no_process', 'status' => RefundDispute::STATUS_OPENED,
     ]);
 
-    $res = $this->postJson("/api/admin/refund-disputes/{$dispute->id}/assign", ['admin_id' => 1], $this->adminAuth)->assertStatus(200);
+    $adminId = SysUser::where('username', 'admin')->value('id');
+
+    $res = $this->postJson("/api/admin/refund-disputes/{$dispute->id}/assign", ['admin_id' => $adminId], $this->adminAuth)->assertStatus(200);
 
     expect($res->json('data.status'))->toBe('platform_involved')
-        ->and($res->json('data.assignee.id'))->toBe(1);
+        ->and($res->json('data.assignee.id'))->toBe($adminId);
 });
 
 test('裁决支持商家不改动退款状态', function () {

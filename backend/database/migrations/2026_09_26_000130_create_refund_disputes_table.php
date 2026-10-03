@@ -16,7 +16,7 @@ return new class extends Migration
     {
         Schema::create('refund_disputes', function (Blueprint $table) {
             $table->id();
-            $table->string('public_id', 24)->unique()->comment('对外 ID');
+            $table->char('public_id', 26)->unique()->comment('对外 ID');
             $table->unsignedBigInteger('refund_id')->comment('关联 refunds.id');
             $table->unsignedBigInteger('order_id')->comment('冗余订单 ID（便于按单查纠纷）');
             $table->unsignedBigInteger('user_id')->nullable()->comment('发起买家');
