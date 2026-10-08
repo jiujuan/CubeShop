@@ -42,7 +42,7 @@ function pcrPayment(string $channel, string $date, array $overrides = []): Payme
 }
 
 test('A7S-01 全匹配无差异：不建单、批次 done、matched=1', function () {
-    $date = '2026-09-20';
+    $date = now()->subDays(3)->format('Y-m-d');
     pcrPayment('mock', $date, ['channel_trade_no' => 'MATCH1', 'amount' => '88.00']);
 
     // mock 默认合成账单 = 本地 success 支付单（金额一致）→ 完全匹配
@@ -60,7 +60,7 @@ test('A7S-01 全匹配无差异：不建单、批次 done、matched=1', function
 });
 
 test('A7S-02 渠道有、本地无 → MISSING_LOCAL（漏单/渠道长款）', function () {
-    $date = '2026-09-20';
+    $date = now()->subDays(3)->format('Y-m-d');
     MockGateway::$syntheticBill = [
         new ChannelTransaction('CH_ONLY_1', null, '30.00', 'paid'),
     ];
@@ -82,7 +82,7 @@ test('A7S-02 渠道有、本地无 → MISSING_LOCAL（漏单/渠道长款）', 
 });
 
 test('A7S-03 双方都有但金额不一致 → AMOUNT_MISMATCH（长短款）', function () {
-    $date = '2026-09-20';
+    $date = now()->subDays(3)->format('Y-m-d');
     $p = pcrPayment('mock', $date, ['channel_trade_no' => 'AMT_1', 'amount' => '99.00']);
     MockGateway::$syntheticBill = [
         new ChannelTransaction('AMT_1', $p->payment_no, '100.00', 'paid'),
@@ -99,7 +99,7 @@ test('A7S-03 双方都有但金额不一致 → AMOUNT_MISMATCH（长短款）',
 });
 
 test('A7S-04 同交易号多次成功回调 → DUPLICATE_CALLBACK（重复回调）', function () {
-    $date = '2026-09-20';
+    $date = now()->subDays(3)->format('Y-m-d');
     $p = pcrPayment('mock', $date, ['channel_trade_no' => 'DUP_1', 'amount' => '50.00']);
     MockGateway::$syntheticBill = [
         new ChannelTransaction('DUP_1', $p->payment_no, '50.00', 'paid'),
@@ -121,7 +121,7 @@ test('A7S-04 同交易号多次成功回调 → DUPLICATE_CALLBACK（重复回�
 });
 
 test('A7S-05 本地 success 但渠道无记录 → MISSING_CHANNEL（本地短款/资金风险）', function () {
-    $date = '2026-09-20';
+    $date = now()->subDays(3)->format('Y-m-d');
     // 余额渠道无远程账单 → 引擎降级日志源；本地该笔无成功回调日志 → 视为渠道侧缺失
     pcrPayment('balance', $date, ['channel_trade_no' => null, 'payment_no' => 'BAL_1', 'amount' => '200.00']);
 
@@ -140,7 +140,7 @@ test('A7S-05 本地 success 但渠道无记录 → MISSING_CHANNEL（本地短�
 });
 
 test('A7S-06 幂等重跑：同一差异只保留一条 pending（每日重跑不重复开单）', function () {
-    $date = '2026-09-20';
+    $date = now()->subDays(3)->format('Y-m-d');
     MockGateway::$syntheticBill = [
         new ChannelTransaction('CH_ONLY_1', null, '30.00', 'paid'),
     ];
@@ -162,7 +162,7 @@ test('A7S-06 幂等重跑：同一差异只保留一条 pending（每日重跑�
 });
 
 test('A7S-07 已处置的差异重跑不重开（保留 resolved/ignored）', function () {
-    $date = '2026-09-20';
+    $date = now()->subDays(3)->format('Y-m-d');
     MockGateway::$syntheticBill = [
         new ChannelTransaction('CH_ONLY_1', null, '30.00', 'paid'),
     ];
@@ -183,7 +183,7 @@ test('A7S-07 已处置的差异重跑不重开（保留 resolved/ignored）', fu
 });
 
 test('A7S-08 resolve 置 resolved 并落审计（处置人 + 类型）', function () {
-    $date = '2026-09-20';
+    $date = now()->subDays(3)->format('Y-m-d');
     $p = pcrPayment('mock', $date, ['channel_trade_no' => 'AMT_1', 'amount' => '99.00']);
     MockGateway::$syntheticBill = [
         new ChannelTransaction('AMT_1', $p->payment_no, '100.00', 'paid'),
@@ -209,7 +209,7 @@ test('A7S-08 resolve 置 resolved 并落审计（处置人 + 类型）', functio
 });
 
 test('A7S-09 ignore 置 ignored 并落审计', function () {
-    $date = '2026-09-20';
+    $date = now()->subDays(3)->format('Y-m-d');
     MockGateway::$syntheticBill = [
         new ChannelTransaction('CH_ONLY_1', null, '30.00', 'paid'),
     ];
@@ -229,7 +229,7 @@ test('A7S-09 ignore 置 ignored 并落审计', function () {
 });
 
 test('A7S-10 处置幂等：已处置的差异重复 resolve/ignore 抛冲突异常', function () {
-    $date = '2026-09-20';
+    $date = now()->subDays(3)->format('Y-m-d');
     MockGateway::$syntheticBill = [
         new ChannelTransaction('CH_ONLY_1', null, '30.00', 'paid'),
     ];
@@ -249,7 +249,7 @@ test('A7S-11 处置不存在的差异 → 404', function () {
 });
 
 test('A7S-12 stats 看板聚合：批次/差异总数、按类型、近14天趋势', function () {
-    $date = '2026-09-20';
+    $date = now()->subDays(3)->format('Y-m-d');
     MockGateway::$syntheticBill = [
         new ChannelTransaction('CH_ONLY_1', null, '30.00', 'paid'),
     ];
@@ -274,7 +274,7 @@ test('A7S-12 stats 看板聚合：批次/差异总数、按类型、近14天趋�
 });
 
 test('A7S-13 平台维度：差异冗余本地支付单 platform，漏单为 null', function () {
-    $date = '2026-09-20';
+    $date = now()->subDays(3)->format('Y-m-d');
     pcrPayment('mock', $date, ['channel_trade_no' => 'LOCAL_H5', 'platform' => Payment::PLATFORM_H5]);
     pcrPayment('mock', $date, ['channel_trade_no' => 'LOCAL_WEB', 'platform' => Payment::PLATFORM_WEB]);
     MockGateway::$syntheticBill = [
@@ -300,7 +300,7 @@ test('A7S-13 平台维度：差异冗余本地支付单 platform，漏单为 nul
 });
 
 test('A7S-14 stats：按渠道拆分 + 平台筛选互不串', function () {
-    $date = '2026-09-20';
+    $date = now()->subDays(3)->format('Y-m-d');
     pcrPayment('mock', $date, ['channel_trade_no' => 'LOCAL_H5', 'platform' => Payment::PLATFORM_H5]);
     pcrPayment('mock', $date, ['channel_trade_no' => 'LOCAL_WEB', 'platform' => Payment::PLATFORM_WEB]);
     MockGateway::$syntheticBill = [
